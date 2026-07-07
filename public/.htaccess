@@ -1,0 +1,16 @@
+Options -Indexes
+RewriteEngine On
+RewriteBase /atc_v2/public/
+
+# ── Route /atc_v2/public/api/* requests to the sibling api/ folder ───────────
+RewriteCond %{REQUEST_URI} ^/atc_v2/public/api/
+RewriteRule ^api/(.*)$ ../api/index.php [QSA,L]
+
+# ── SPA fallback — send everything else to index.html ────────────────────────
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.html [QSA,L]
+
+Header always set X-Content-Type-Options nosniff
+Header always set X-Frame-Options SAMEORIGIN
+Header always set X-XSS-Protection "1; mode=block"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"

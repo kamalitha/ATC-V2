@@ -1,0 +1,416 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="RTAService"
+  targetNamespace="urn:RTAService"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:tns="urn:RTAService"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/">
+
+  <!-- ── Types ──────────────────────────────────────────────────────────────── -->
+  <types>
+    <xsd:schema targetNamespace="urn:RTAService">
+
+      <xsd:complexType name="ServiceStatus">
+        <xsd:all>
+          <xsd:element name="TransactionStatus"   type="xsd:string"/>
+          <xsd:element name="ErrorCode"            type="xsd:string"/>
+          <xsd:element name="ErrorMessage"         type="xsd:string"/>
+          <xsd:element name="TransactionSequence"  type="xsd:string"/>
+          <xsd:element name="ApplicationID"        type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="RTARequestStatusBindingView">
+        <xsd:all>
+          <xsd:element name="EmiratesID"          type="xsd:string"/>
+          <xsd:element name="Id"                  type="xsd:string"/>
+          <xsd:element name="IDPIssueDate"         type="xsd:string"/>
+          <xsd:element name="PaymentDone"          type="xsd:string"/>
+          <xsd:element name="Processed"            type="xsd:string"/>
+          <xsd:element name="TransactionSequence"  type="xsd:string"/>
+          <xsd:element name="LicenseNumber"        type="xsd:string"/>
+          <xsd:element name="Mobile"               type="xsd:string"/>
+          <xsd:element name="BirthDate"            type="xsd:string"/>
+          <xsd:element name="BirthPlace"           type="xsd:string"/>
+          <xsd:element name="IssuePlace"           type="xsd:string"/>
+          <xsd:element name="ExpiryDate"           type="xsd:string"/>
+          <xsd:element name="LicenseTypeId"        type="xsd:string"/>
+          <xsd:element name="FirstIDL"             type="xsd:string"/>
+          <xsd:element name="Name"                 type="xsd:string"/>
+          <xsd:element name="NationalityId"        type="xsd:string"/>
+          <xsd:element name="UAEAddress"           type="xsd:string"/>
+          <xsd:element name="POBox"                type="xsd:string"/>
+          <xsd:element name="Email"                type="xsd:string"/>
+          <xsd:element name="HomeAddress"          type="xsd:string"/>
+          <xsd:element name="DeliveryLicense"      type="xsd:string"/>
+          <xsd:element name="PassportPhoto"        type="xsd:string"/>
+          <xsd:element name="ErrorCode"            type="xsd:string"/>
+          <xsd:element name="ErrorMessage"         type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="EmirateItemBindingView">
+        <xsd:all>
+          <xsd:element name="ArabicDescription"  type="xsd:string"/>
+          <xsd:element name="EnglishDescription" type="xsd:string"/>
+          <xsd:element name="Id"                 type="xsd:string"/>
+          <xsd:element name="ErrorCode"          type="xsd:string"/>
+          <xsd:element name="ErrorMessage"       type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfEmirateItemBindingView">
+        <xsd:sequence>
+          <xsd:element name="EmirateItemBindingView" type="tns:EmirateItemBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="LicenseTypesItemBindingView">
+        <xsd:all>
+          <xsd:element name="ArabicDescription"  type="xsd:string"/>
+          <xsd:element name="EnglishDescription" type="xsd:string"/>
+          <xsd:element name="Id"                 type="xsd:string"/>
+          <xsd:element name="ErrorCode"          type="xsd:string"/>
+          <xsd:element name="ErrorMessage"       type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfLicenseTypesItemBindingView">
+        <xsd:sequence>
+          <xsd:element name="LicenseTypesItemBindingView" type="tns:LicenseTypesItemBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="NationalitiesItemBindingView">
+        <xsd:all>
+          <xsd:element name="ArabicDescription"  type="xsd:string"/>
+          <xsd:element name="EnglishDescription" type="xsd:string"/>
+          <xsd:element name="Id"                 type="xsd:string"/>
+          <xsd:element name="ErrorCode"          type="xsd:string"/>
+          <xsd:element name="ErrorMessage"       type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfNationalitiesItemBindingView">
+        <xsd:sequence>
+          <xsd:element name="NationalitiesItemBindingView" type="tns:NationalitiesItemBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="CPDCountryItemBindingView">
+        <xsd:all>
+          <xsd:element name="CountryID"    type="xsd:string"/>
+          <xsd:element name="CountryName"  type="xsd:string"/>
+          <xsd:element name="ErrorCode"    type="xsd:string"/>
+          <xsd:element name="ErrorMessage" type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfCPDCountryItemBindingView">
+        <xsd:sequence>
+          <xsd:element name="CPDCountryItemBindingView" type="tns:CPDCountryItemBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="PaymentBreakup">
+        <xsd:all>
+          <xsd:element name="Currency"         type="xsd:string"/>
+          <xsd:element name="ForIDPValue"      type="xsd:string"/>
+          <xsd:element name="ForDeliveryValue" type="xsd:string"/>
+          <xsd:element name="ErrorCode"        type="xsd:string"/>
+          <xsd:element name="ErrorMessage"     type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="CPDFees">
+        <xsd:all>
+          <xsd:element name="BookingFee"      type="xsd:string"/>
+          <xsd:element name="GuaranteeAmount" type="xsd:string"/>
+          <xsd:element name="ErrorCode"       type="xsd:string"/>
+          <xsd:element name="ErrorMessage"    type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="CPDVehicleTypeItemBindingView">
+        <xsd:all>
+          <xsd:element name="VehicleType"  type="xsd:string"/>
+          <xsd:element name="ErrorCode"    type="xsd:string"/>
+          <xsd:element name="ErrorMessage" type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfCPDVehicleTypeItemBindingView">
+        <xsd:sequence>
+          <xsd:element name="CPDVehicleTypeItemBindingView" type="tns:CPDVehicleTypeItemBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="CPDBodyTypeItemBindingView">
+        <xsd:all>
+          <xsd:element name="Type"         type="xsd:string"/>
+          <xsd:element name="ErrorCode"    type="xsd:string"/>
+          <xsd:element name="ErrorMessage" type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfCPDBodyTypeItemBindingView">
+        <xsd:sequence>
+          <xsd:element name="CPDBodyTypeItemBindingView" type="tns:CPDBodyTypeItemBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="CPDCityItemBindingView">
+        <xsd:all>
+          <xsd:element name="City"         type="xsd:string"/>
+          <xsd:element name="ErrorCode"    type="xsd:string"/>
+          <xsd:element name="ErrorMessage" type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfCPDCityItemBindingView">
+        <xsd:sequence>
+          <xsd:element name="CPDCityItemBindingView" type="tns:CPDCityItemBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+    </xsd:schema>
+  </types>
+
+  <!-- ── Messages ───────────────────────────────────────────────────────────── -->
+  <message name="CheckIDLRequestStatusRequest">  <part name="ClientEmiratesId" type="xsd:string"/></message>
+  <message name="CheckIDLRequestStatusResponse"> <part name="CheckIDLRequestStatusResult" type="tns:RTARequestStatusBindingView"/></message>
+
+  <message name="CreateIDLRequestRequest">
+    <part name="LicenseNumber"       type="xsd:string"/>
+    <part name="Mobile"              type="xsd:string"/>
+    <part name="BirthDate"           type="xsd:string"/>
+    <part name="BirthPlace"          type="xsd:string"/>
+    <part name="IssuePlace"          type="xsd:string"/>
+    <part name="IssueDate"           type="xsd:string"/>
+    <part name="ExpiryDate"          type="xsd:string"/>
+    <part name="LicenseTypeId"       type="xsd:string"/>
+    <part name="FirstIDL"            type="xsd:string"/>
+    <part name="Name"                type="xsd:string"/>
+    <part name="NationalityId"       type="xsd:string"/>
+    <part name="Sex"                 type="xsd:string"/>
+    <part name="UAEAddress"          type="xsd:string"/>
+    <part name="POBox"               type="xsd:string"/>
+    <part name="Email"               type="xsd:string"/>
+    <part name="EmirateId"           type="xsd:string"/>
+    <part name="HomeAddress"         type="xsd:string"/>
+    <part name="DrivingLicenseFront" type="xsd:string"/>
+    <part name="DrivingLicenseBack"  type="xsd:string"/>
+    <part name="PassportPhoto"       type="xsd:string"/>
+    <part name="DeliveryLicense"     type="xsd:string"/>
+    <part name="AcceptEmail"         type="xsd:string"/>
+    <part name="EmiratesID"          type="xsd:string"/>
+  </message>
+  <message name="CreateIDLRequestResponse"><part name="CreateIDLRequestResult" type="tns:ServiceStatus"/></message>
+
+  <message name="DeleteIDLRequestRequest">
+    <part name="TransactionSequence" type="xsd:string"/>
+    <part name="EmiratesID"          type="xsd:string"/>
+  </message>
+  <message name="DeleteIDLRequestResponse"><part name="DeleteIDLRequestResult" type="tns:ServiceStatus"/></message>
+
+  <message name="GetAllEmiratesRequest"/>
+  <message name="GetAllEmiratesResponse"><part name="GetAllEmiratesResult" type="tns:ArrayOfEmirateItemBindingView"/></message>
+
+  <message name="GetAllLicenseTypesRequest"/>
+  <message name="GetAllLicenseTypesResponse"><part name="LicenseTypesItemBindingView" type="tns:ArrayOfLicenseTypesItemBindingView"/></message>
+
+  <message name="GetAllNationalitiesRequest"/>
+  <message name="GetAllNationalitiesResponse"><part name="NationalitiesItemBindingView" type="tns:ArrayOfNationalitiesItemBindingView"/></message>
+
+  <message name="GetIDLPaymentBreakupRequest"/>
+  <message name="GetIDLPaymentBreakupResponse"><part name="PaymentBreakup" type="tns:PaymentBreakup"/></message>
+
+  <message name="UpdateIDLRequestPaymentStatusRequest">
+    <part name="TransactionSequence" type="xsd:string"/>
+    <part name="ApplicationID"       type="xsd:string"/>
+    <part name="PaymentReference"    type="xsd:string"/>
+  </message>
+  <message name="UpdateIDLRequestPaymentStatusResponse"><part name="UpdatePaymentStatusResult" type="tns:ServiceStatus"/></message>
+
+  <message name="CreateCPDRequestRequest">
+    <part name="OwnerEmiratesID"    type="xsd:string"/>
+    <part name="OwnerFirstName"     type="xsd:string"/>
+    <part name="OwnerLastName"      type="xsd:string"/>
+    <part name="OwnerEmail"         type="xsd:string"/>
+    <part name="OwnerPhoneNo"       type="xsd:string"/>
+    <part name="OwnerNationality"   type="xsd:string"/>
+    <part name="OwnerCity"          type="xsd:string"/>
+    <part name="OwnerDOB"           type="xsd:string"/>
+    <part name="OwnerAddressInUAE"  type="xsd:string"/>
+    <part name="OwnerPOBox"         type="xsd:string"/>
+    <part name="OwnerLIcenseNo"     type="xsd:string"/>
+    <part name="LicenseIssueDate"   type="xsd:string"/>
+    <part name="MulkiyaNo"          type="xsd:string"/>
+    <part name="MulkiyaExpiryDate"  type="xsd:string"/>
+    <part name="VehicleMake"        type="xsd:string"/>
+    <part name="ManufacturingYear"  type="xsd:string"/>
+    <part name="Weight"             type="xsd:string"/>
+    <part name="RegisteredDate"     type="xsd:string"/>
+    <part name="Color"              type="xsd:string"/>
+    <part name="ChassisNo"          type="xsd:string"/>
+    <part name="BodyType"           type="xsd:string"/>
+    <part name="EngineNo"           type="xsd:string"/>
+    <part name="NoOfCylinders"      type="xsd:string"/>
+    <part name="NoOfSeats"          type="xsd:string"/>
+    <part name="HorsePower"         type="xsd:string"/>
+    <part name="MulkiyaFrontImage"  type="xsd:string"/>
+    <part name="MulkiyaBackImage"   type="xsd:string"/>
+    <part name="DLFrontImage"       type="xsd:string"/>
+    <part name="DLBackImage"        type="xsd:string"/>
+    <part name="GuaranteeAmount"    type="xsd:string"/>
+    <part name="CountryList"        type="xsd:string"/>
+  </message>
+  <message name="CreateCPDRequestResponse"><part name="CreateCPDRequestResult" type="tns:ServiceStatus"/></message>
+
+  <message name="UpdateCPDRequestPaymentStatusRequest">
+    <part name="ApplicationID"    type="xsd:string"/>
+    <part name="BookingFee"       type="xsd:string"/>
+    <part name="PaymentReference" type="xsd:string"/>
+  </message>
+  <message name="UpdateCPDRequestPaymentStatusResponse"><part name="UpdateCPDRequestPaymentStatusResult" type="tns:ServiceStatus"/></message>
+
+  <message name="GetCPDCountryListRequest"/>
+  <message name="GetCPDCountryListResponse"><part name="CPDCountryItemBindingView" type="tns:ArrayOfCPDCountryItemBindingView"/></message>
+
+  <message name="GetAllowedVehicleTypesForCPDRequest"/>
+  <message name="GetAllowedVehicleTypesForCPDResponse"><part name="CPDVehicleTypeItemBindingView" type="tns:ArrayOfCPDVehicleTypeItemBindingView"/></message>
+
+  <message name="GetAllowedBodyTypesForCPDRequest"/>
+  <message name="GetAllowedBodyTypesForCPDResponse"><part name="CPDBodyTypeItemBindingView" type="tns:ArrayOfCPDBodyTypeItemBindingView"/></message>
+
+  <message name="GetFeesForCPDRequestRequest">
+    <part name="CountryList"       type="xsd:string"/>
+    <part name="VehicleType"       type="xsd:string"/>
+    <part name="ManufacturingYear" type="xsd:string"/>
+  </message>
+  <message name="GetFeesForCPDRequestResponse"><part name="CPDFees" type="tns:CPDFees"/></message>
+
+  <message name="GetAvailableCitiesForCPDRequest"/>
+  <message name="GetAvailableCitiesForCPDResponse"><part name="CPDCityItemBindingView" type="tns:ArrayOfCPDCityItemBindingView"/></message>
+
+  <message name="GenerateIDLPrintRequest">
+    <part name="ApplicationID"     type="xsd:string"/>
+    <part name="ClientEmiratesID"  type="xsd:string"/>
+  </message>
+  <message name="GenerateIDLPrintResponse"><part name="IDLData" type="xsd:string"/></message>
+
+  <!-- ── PortType ────────────────────────────────────────────────────────────── -->
+  <portType name="RTAServicePortType">
+    <operation name="CheckIDLRequestStatus">
+      <documentation>Check IDL Request</documentation>
+      <input message="tns:CheckIDLRequestStatusRequest"/>
+      <output message="tns:CheckIDLRequestStatusResponse"/>
+    </operation>
+    <operation name="CreateIDLRequest">
+      <documentation>Create IDL request</documentation>
+      <input message="tns:CreateIDLRequestRequest"/>
+      <output message="tns:CreateIDLRequestResponse"/>
+    </operation>
+    <operation name="DeleteIDLRequest">
+      <documentation>Delete IDL request</documentation>
+      <input message="tns:DeleteIDLRequestRequest"/>
+      <output message="tns:DeleteIDLRequestResponse"/>
+    </operation>
+    <operation name="GetAllEmirates">
+      <documentation>Get all emirates</documentation>
+      <input message="tns:GetAllEmiratesRequest"/>
+      <output message="tns:GetAllEmiratesResponse"/>
+    </operation>
+    <operation name="GetAllLicenseTypes">
+      <documentation>Get all License types</documentation>
+      <input message="tns:GetAllLicenseTypesRequest"/>
+      <output message="tns:GetAllLicenseTypesResponse"/>
+    </operation>
+    <operation name="GetAllNationalities">
+      <documentation>Get all Nationalities</documentation>
+      <input message="tns:GetAllNationalitiesRequest"/>
+      <output message="tns:GetAllNationalitiesResponse"/>
+    </operation>
+    <operation name="GetIDLPaymentBreakup">
+      <documentation>Get IDL Payment breakup</documentation>
+      <input message="tns:GetIDLPaymentBreakupRequest"/>
+      <output message="tns:GetIDLPaymentBreakupResponse"/>
+    </operation>
+    <operation name="UpdateIDLRequestPaymentStatus">
+      <documentation>Update payment status</documentation>
+      <input message="tns:UpdateIDLRequestPaymentStatusRequest"/>
+      <output message="tns:UpdateIDLRequestPaymentStatusResponse"/>
+    </operation>
+    <operation name="CreateCPDRequest">
+      <documentation>Create CPD Request for RTA</documentation>
+      <input message="tns:CreateCPDRequestRequest"/>
+      <output message="tns:CreateCPDRequestResponse"/>
+    </operation>
+    <operation name="UpdateCPDRequestPaymentStatus">
+      <documentation>Update payment status of CPD Request</documentation>
+      <input message="tns:UpdateCPDRequestPaymentStatusRequest"/>
+      <output message="tns:UpdateCPDRequestPaymentStatusResponse"/>
+    </operation>
+    <operation name="GetCPDCountryList">
+      <documentation>Returns the country list CPD is allowed to be issued</documentation>
+      <input message="tns:GetCPDCountryListRequest"/>
+      <output message="tns:GetCPDCountryListResponse"/>
+    </operation>
+    <operation name="GetAllowedVehicleTypesForCPD">
+      <documentation>Returns allowed vehicle types for CPD request</documentation>
+      <input message="tns:GetAllowedVehicleTypesForCPDRequest"/>
+      <output message="tns:GetAllowedVehicleTypesForCPDResponse"/>
+    </operation>
+    <operation name="GetAllowedBodyTypesForCPD">
+      <documentation>Returns allowed body types for CPD request</documentation>
+      <input message="tns:GetAllowedBodyTypesForCPDRequest"/>
+      <output message="tns:GetAllowedBodyTypesForCPDResponse"/>
+    </operation>
+    <operation name="GetFeesForCPDRequest">
+      <documentation>Returns booking fee and guarantee amount. CountryList has to be a comma seperated string</documentation>
+      <input message="tns:GetFeesForCPDRequestRequest"/>
+      <output message="tns:GetFeesForCPDRequestResponse"/>
+    </operation>
+    <operation name="GetAvailableCitiesForCPD">
+      <documentation>Returns the City list CPD is allowed to be issued</documentation>
+      <input message="tns:GetAvailableCitiesForCPDRequest"/>
+      <output message="tns:GetAvailableCitiesForCPDResponse"/>
+    </operation>
+    <operation name="GenerateIDLPrint">
+      <documentation>Generates the IDL image and return a base64 encoded string</documentation>
+      <input message="tns:GenerateIDLPrintRequest"/>
+      <output message="tns:GenerateIDLPrintResponse"/>
+    </operation>
+  </portType>
+
+  <!-- ── Binding ────────────────────────────────────────────────────────────── -->
+  <binding name="RTAServiceBinding" type="tns:RTAServicePortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+
+    <operation name="CheckIDLRequestStatus">        <soap:operation soapAction="CheckIDLRequestStatus"/>        <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="CreateIDLRequest">             <soap:operation soapAction="CreateIDLRequest"/>             <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="DeleteIDLRequest">             <soap:operation soapAction="DeleteIDLRequest"/>             <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAllEmirates">               <soap:operation soapAction="GetAllEmirates"/>               <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAllLicenseTypes">           <soap:operation soapAction="GetAllLicenseTypes"/>           <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAllNationalities">          <soap:operation soapAction="GetAllNationalities"/>          <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetIDLPaymentBreakup">         <soap:operation soapAction="GetIDLPaymentBreakup"/>         <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="UpdateIDLRequestPaymentStatus"><soap:operation soapAction="UpdateIDLRequestPaymentStatus"/><input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="CreateCPDRequest">             <soap:operation soapAction="CreateCPDRequest"/>             <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="UpdateCPDRequestPaymentStatus"><soap:operation soapAction="UpdateCPDRequestPaymentStatus"/><input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetCPDCountryList">            <soap:operation soapAction="GetCPDCountryList"/>            <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAllowedVehicleTypesForCPD"> <soap:operation soapAction="GetAllowedVehicleTypesForCPD"/> <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAllowedBodyTypesForCPD">    <soap:operation soapAction="GetAllowedBodyTypesForCPD"/>    <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetFeesForCPDRequest">         <soap:operation soapAction="GetFeesForCPDRequest"/>         <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAvailableCitiesForCPD">     <soap:operation soapAction="GetAvailableCitiesForCPD"/>     <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GenerateIDLPrint">             <soap:operation soapAction="GenerateIDLPrint"/>             <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+  </binding>
+
+  <!-- ── Service ───────────────────────────────────────────────────────────── -->
+  <service name="RTAService">
+    <port name="RTAServicePort" binding="tns:RTAServiceBinding">
+      <soap:address location="http://localhost/atc_v2/services/rta/server.php"/>
+    </port>
+  </service>
+
+</definitions>

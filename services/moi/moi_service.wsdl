@@ -1,0 +1,565 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="MOIService"
+  targetNamespace="urn:MOIService"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:tns="urn:MOIService"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/">
+
+  <!-- ── Types ──────────────────────────────────────────────────────────────── -->
+  <types>
+    <xsd:schema targetNamespace="urn:MOIService">
+
+      <xsd:complexType name="ServiceStatus">
+        <xsd:all>
+          <xsd:element name="TransactionStatus"   type="xsd:string"/>
+          <xsd:element name="ErrorCode"            type="xsd:string"/>
+          <xsd:element name="ErrorMessage"         type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR"      type="xsd:string"/>
+          <xsd:element name="TransactionSequence"  type="xsd:string"/>
+          <xsd:element name="ApplicationID"        type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="MOIRequestStatusBindingView">
+        <xsd:all>
+          <xsd:element name="EmiratesID"          type="xsd:string"/>
+          <xsd:element name="Id"                  type="xsd:string"/>
+          <xsd:element name="IDPIssueDate"         type="xsd:string"/>
+          <xsd:element name="PaymentDone"          type="xsd:string"/>
+          <xsd:element name="Processed"            type="xsd:string"/>
+          <xsd:element name="TransactionSequence" type="xsd:string"/>
+          <xsd:element name="LicenseNumber"        type="xsd:string"/>
+          <xsd:element name="Mobile"               type="xsd:string"/>
+          <xsd:element name="BirthDate"            type="xsd:string"/>
+          <xsd:element name="BirthPlace"           type="xsd:string"/>
+          <xsd:element name="IssuePlace"           type="xsd:string"/>
+          <xsd:element name="ExpiryDate"           type="xsd:string"/>
+          <xsd:element name="LicenseTypeId"        type="xsd:string"/>
+          <xsd:element name="FirstIDL"             type="xsd:string"/>
+          <xsd:element name="FirstName"            type="xsd:string"/>
+          <xsd:element name="LastName"             type="xsd:string"/>
+          <xsd:element name="NationalityId"        type="xsd:string"/>
+          <xsd:element name="Emirate"              type="xsd:string"/>
+          <xsd:element name="UAEAddress"           type="xsd:string"/>
+          <xsd:element name="POBox"                type="xsd:string"/>
+          <xsd:element name="Email"                type="xsd:string"/>
+          <xsd:element name="HomeAddress"          type="xsd:string"/>
+          <xsd:element name="DeliveryLicense"      type="xsd:string"/>
+          <xsd:element name="PassportPhoto"        type="xsd:string"/>
+          <xsd:element name="TransactionStatus"   type="xsd:string"/>
+          <xsd:element name="Channel"              type="xsd:string"/>
+          <xsd:element name="LicenseTypes"         type="xsd:string"/>
+          <xsd:element name="TrackingURL"          type="xsd:string"/>
+          <xsd:element name="ErrorCode"            type="xsd:string"/>
+          <xsd:element name="ErrorMessage"         type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR"      type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfMOIRequestStatusBindingView">
+        <xsd:sequence>
+          <xsd:element name="MOIRequestStatusBindingView" type="tns:MOIRequestStatusBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="CPDRequestStatusBindingView">
+        <xsd:all>
+          <xsd:element name="EmiratesID"          type="xsd:string"/>
+          <xsd:element name="Name"                type="xsd:string"/>
+          <xsd:element name="Email"               type="xsd:string"/>
+          <xsd:element name="MobileNo"            type="xsd:string"/>
+          <xsd:element name="Nationality"         type="xsd:string"/>
+          <xsd:element name="City"                type="xsd:string"/>
+          <xsd:element name="DOB"                 type="xsd:string"/>
+          <xsd:element name="HomeCountryAddress"  type="xsd:string"/>
+          <xsd:element name="UAEAddress"          type="xsd:string"/>
+          <xsd:element name="CompanyName"         type="xsd:string"/>
+          <xsd:element name="POBox"               type="xsd:string"/>
+          <xsd:element name="PassportNo"          type="xsd:string"/>
+          <xsd:element name="RequestID"           type="xsd:string"/>
+          <xsd:element name="MulkiyaNo"           type="xsd:string"/>
+          <xsd:element name="RegistrationNo"      type="xsd:string"/>
+          <xsd:element name="RegistrationDate"    type="xsd:string"/>
+          <xsd:element name="VehicleMake"         type="xsd:string"/>
+          <xsd:element name="VehicleModel"        type="xsd:string"/>
+          <xsd:element name="VehicleValue"        type="xsd:string"/>
+          <xsd:element name="ExtraOwner1Name"     type="xsd:string"/>
+          <xsd:element name="ExtraOwner2Name"     type="xsd:string"/>
+          <xsd:element name="BodyType"            type="xsd:string"/>
+          <xsd:element name="ManufaturingYear"    type="xsd:string"/>
+          <xsd:element name="Color"               type="xsd:string"/>
+          <xsd:element name="NetWeight"           type="xsd:string"/>
+          <xsd:element name="ChassisNo"           type="xsd:string"/>
+          <xsd:element name="EngineNo"            type="xsd:string"/>
+          <xsd:element name="HorsePower"          type="xsd:string"/>
+          <xsd:element name="NoOfCylinders"       type="xsd:string"/>
+          <xsd:element name="Uphostry"            type="xsd:string"/>
+          <xsd:element name="NoOfSeats"           type="xsd:string"/>
+          <xsd:element name="Radio"               type="xsd:string"/>
+          <xsd:element name="SpareTyre"           type="xsd:string"/>
+          <xsd:element name="AdditionalRemarks"   type="xsd:string"/>
+          <xsd:element name="Others1"             type="xsd:string"/>
+          <xsd:element name="Others2"             type="xsd:string"/>
+          <xsd:element name="GuranteeAmount"      type="xsd:string"/>
+          <xsd:element name="TotalAmount"         type="xsd:string"/>
+          <xsd:element name="PaymentDone"         type="xsd:string"/>
+          <xsd:element name="RequestCategory"     type="xsd:string"/>
+          <xsd:element name="DLFront"             type="xsd:string"/>
+          <xsd:element name="DLBack"              type="xsd:string"/>
+          <xsd:element name="GuaranteeDepositSlip" type="xsd:string"/>
+          <xsd:element name="GuaranteePaid"       type="xsd:string"/>
+          <xsd:element name="RequestedDateTime"   type="xsd:string"/>
+          <xsd:element name="Countries"           type="xsd:string"/>
+          <xsd:element name="Channel"             type="xsd:string"/>
+          <xsd:element name="TrackingURL"         type="xsd:string"/>
+          <xsd:element name="RequestStatus"       type="xsd:string"/>
+          <xsd:element name="TransactionSequence" type="xsd:string"/>
+          <xsd:element name="TransactionStatus"   type="xsd:string"/>
+          <xsd:element name="ErrorCode"           type="xsd:string"/>
+          <xsd:element name="ErrorMessage"        type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR"     type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfCPDRequestStatusBindingView">
+        <xsd:sequence>
+          <xsd:element name="CPDRequestStatusBindingView" type="tns:CPDRequestStatusBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="BankingDetails">
+        <xsd:all>
+          <xsd:element name="AccountNumber"      type="xsd:string"/>
+          <xsd:element name="IBAN"               type="xsd:string"/>
+          <xsd:element name="BeneficiaryName"    type="xsd:string"/>
+          <xsd:element name="BeneficiaryAddress" type="xsd:string"/>
+          <xsd:element name="Bank"               type="xsd:string"/>
+          <xsd:element name="BankAddress"        type="xsd:string"/>
+          <xsd:element name="SwiftCode"          type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="IDL">
+        <xsd:all>
+          <xsd:element name="TransactionSequence" type="xsd:string"/>
+          <xsd:element name="PrintString"         type="xsd:string"/>
+          <xsd:element name="ErrorCode"           type="xsd:string"/>
+          <xsd:element name="ErrorMessage"        type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR"     type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="EmirateItemBindingView">
+        <xsd:all>
+          <xsd:element name="ArabicDescription"  type="xsd:string"/>
+          <xsd:element name="EnglishDescription" type="xsd:string"/>
+          <xsd:element name="Id"                 type="xsd:string"/>
+          <xsd:element name="ErrorCode"          type="xsd:string"/>
+          <xsd:element name="ErrorMessage"       type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR"    type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfEmirateItemBindingView">
+        <xsd:sequence>
+          <xsd:element name="EmirateItemBindingView" type="tns:EmirateItemBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="LicenseTypesItemBindingView">
+        <xsd:all>
+          <xsd:element name="ArabicDescription"  type="xsd:string"/>
+          <xsd:element name="EnglishDescription" type="xsd:string"/>
+          <xsd:element name="Id"                 type="xsd:string"/>
+          <xsd:element name="ErrorCode"          type="xsd:string"/>
+          <xsd:element name="ErrorMessage"       type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR"    type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfLicenseTypesItemBindingView">
+        <xsd:sequence>
+          <xsd:element name="LicenseTypesItemBindingView" type="tns:LicenseTypesItemBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="NationalitiesItemBindingView">
+        <xsd:all>
+          <xsd:element name="ArabicDescription"  type="xsd:string"/>
+          <xsd:element name="EnglishDescription" type="xsd:string"/>
+          <xsd:element name="Id"                 type="xsd:string"/>
+          <xsd:element name="ErrorCode"          type="xsd:string"/>
+          <xsd:element name="ErrorMessage"       type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR"    type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfNationalitiesItemBindingView">
+        <xsd:sequence>
+          <xsd:element name="NationalitiesItemBindingView" type="tns:NationalitiesItemBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="CPDCountryItemBindingView">
+        <xsd:all>
+          <xsd:element name="CountryID"       type="xsd:string"/>
+          <xsd:element name="CountryName"     type="xsd:string"/>
+          <xsd:element name="ErrorCode"       type="xsd:string"/>
+          <xsd:element name="ErrorMessage"    type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR" type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfCPDCountryItemBindingView">
+        <xsd:sequence>
+          <xsd:element name="CPDCountryItemBindingView" type="tns:CPDCountryItemBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="PaymentBreakup">
+        <xsd:all>
+          <xsd:element name="Currency"         type="xsd:string"/>
+          <xsd:element name="ForIDPValue"      type="xsd:string"/>
+          <xsd:element name="ForDeliveryValue" type="xsd:string"/>
+          <xsd:element name="ErrorCode"        type="xsd:string"/>
+          <xsd:element name="ErrorMessage"     type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR"  type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="CPDFees">
+        <xsd:all>
+          <xsd:element name="BookingFee"              type="xsd:string"/>
+          <xsd:element name="BookingFeeVAT"           type="xsd:string"/>
+          <xsd:element name="GuaranteeAmount"         type="xsd:string"/>
+          <xsd:element name="GuaranteeFeeBankCharges" type="xsd:string"/>
+          <xsd:element name="CourierCharges"          type="xsd:string"/>
+          <xsd:element name="ErrorCode"               type="xsd:string"/>
+          <xsd:element name="ErrorMessage"            type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR"         type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="CPDVehicleTypeItemBindingView">
+        <xsd:all>
+          <xsd:element name="VehicleType"     type="xsd:string"/>
+          <xsd:element name="ErrorCode"       type="xsd:string"/>
+          <xsd:element name="ErrorMessage"    type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR" type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfCPDVehicleTypeItemBindingView">
+        <xsd:sequence>
+          <xsd:element name="CPDVehicleTypeItemBindingView" type="tns:CPDVehicleTypeItemBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="CPDBodyTypeItemBindingView">
+        <xsd:all>
+          <xsd:element name="Type"            type="xsd:string"/>
+          <xsd:element name="ErrorCode"       type="xsd:string"/>
+          <xsd:element name="ErrorMessage"    type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR" type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfCPDBodyTypeItemBindingView">
+        <xsd:sequence>
+          <xsd:element name="CPDBodyTypeItemBindingView" type="tns:CPDBodyTypeItemBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="CPDCityItemBindingView">
+        <xsd:all>
+          <xsd:element name="City"            type="xsd:string"/>
+          <xsd:element name="City_AR"         type="xsd:string"/>
+          <xsd:element name="ErrorCode"       type="xsd:string"/>
+          <xsd:element name="ErrorMessage"    type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR" type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfCPDCityItemBindingView">
+        <xsd:sequence>
+          <xsd:element name="CPDCityItemBindingView" type="tns:CPDCityItemBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="IDLStatusBindingView">
+        <xsd:all>
+          <xsd:element name="ArabicDescription"  type="xsd:string"/>
+          <xsd:element name="EnglishDescription" type="xsd:string"/>
+          <xsd:element name="StatusID"           type="xsd:string"/>
+          <xsd:element name="ErrorCode"          type="xsd:string"/>
+          <xsd:element name="ErrorMessage"       type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR"    type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfIDLStatusBindingView">
+        <xsd:sequence>
+          <xsd:element name="IDLStatusBindingView" type="tns:IDLStatusBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:complexType name="CPDStatusBindingView">
+        <xsd:all>
+          <xsd:element name="ArabicDescription"  type="xsd:string"/>
+          <xsd:element name="EnglishDescription" type="xsd:string"/>
+          <xsd:element name="StatusID"           type="xsd:string"/>
+          <xsd:element name="ErrorCode"          type="xsd:string"/>
+          <xsd:element name="ErrorMessage"       type="xsd:string"/>
+          <xsd:element name="ErrorMessage_AR"    type="xsd:string"/>
+        </xsd:all>
+      </xsd:complexType>
+
+      <xsd:complexType name="ArrayOfCPDStatusBindingView">
+        <xsd:sequence>
+          <xsd:element name="CPDStatusBindingView" type="tns:CPDStatusBindingView" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+    </xsd:schema>
+  </types>
+
+  <!-- ── Messages ───────────────────────────────────────────────────────────── -->
+  <message name="GetAllMOIRequestsRequest">  <part name="ClientEmiratesId" type="xsd:string"/></message>
+  <message name="GetAllMOIRequestsResponse"> <part name="GetAllMOIRequestsResult" type="tns:ArrayOfMOIRequestStatusBindingView"/></message>
+
+  <message name="CheckMOIRequestStatusRequest">
+    <part name="ClientEmiratesId"    type="xsd:string"/>
+    <part name="TransactionSequence" type="xsd:string"/>
+  </message>
+  <message name="CheckMOIRequestStatusResponse"><part name="CheckMOIRequestStatusResult" type="tns:MOIRequestStatusBindingView"/></message>
+
+  <message name="CreateMOIRequestRequest">
+    <part name="LicenseNumber"       type="xsd:string"/>
+    <part name="Mobile"              type="xsd:string"/>
+    <part name="BirthDate"           type="xsd:string"/>
+    <part name="BirthPlace"          type="xsd:string"/>
+    <part name="IssuePlace"          type="xsd:string"/>
+    <part name="IssueDate"           type="xsd:string"/>
+    <part name="ExpiryDate"          type="xsd:string"/>
+    <part name="LicenseTypeId"       type="xsd:string"/>
+    <part name="FirstIDL"            type="xsd:string"/>
+    <part name="FirstName"           type="xsd:string"/>
+    <part name="LastName"            type="xsd:string"/>
+    <part name="NationalityId"       type="xsd:string"/>
+    <part name="Sex"                 type="xsd:string"/>
+    <part name="UAEAddress"          type="xsd:string"/>
+    <part name="POBox"               type="xsd:string"/>
+    <part name="Email"               type="xsd:string"/>
+    <part name="EmirateId"           type="xsd:string"/>
+    <part name="HomeAddress"         type="xsd:string"/>
+    <part name="DrivingLicenseFront" type="xsd:string"/>
+    <part name="DrivingLicenseBack"  type="xsd:string"/>
+    <part name="PassportPhoto"       type="xsd:string"/>
+    <part name="DeliveryLicense"     type="xsd:string"/>
+    <part name="AcceptEmail"         type="xsd:string"/>
+    <part name="EmiratesID"          type="xsd:string"/>
+    <part name="Channel"             type="xsd:string"/>
+  </message>
+  <message name="CreateMOIRequestResponse"><part name="CreateMOIRequestResult" type="tns:ServiceStatus"/></message>
+
+  <message name="DeleteMOIRequestRequest">
+    <part name="TransactionSequence" type="xsd:string"/>
+    <part name="EmiratesID"          type="xsd:string"/>
+  </message>
+  <message name="DeleteMOIRequestResponse"><part name="DeleteMOIRequestResult" type="tns:ServiceStatus"/></message>
+
+  <message name="UpdatePaymentStatusRequest">
+    <part name="TransactionSequence" type="xsd:string"/>
+    <part name="ApplicationID"       type="xsd:string"/>
+    <part name="PaymentReference"    type="xsd:string"/>
+  </message>
+  <message name="UpdatePaymentStatusResponse"><part name="UpdatePaymentStatusResult" type="tns:ServiceStatus"/></message>
+
+  <message name="GetIDLPrintPDFStringRequest">  <part name="TransactionSequence" type="xsd:string"/></message>
+  <message name="GetIDLPrintPDFStringResponse"> <part name="GetIDLPrintPDFStringResult" type="tns:IDL"/></message>
+
+  <message name="GetAllIDLStatusesRequest"/>
+  <message name="GetAllIDLStatusesResponse"><part name="GetAllIDLStatusesResult" type="tns:ArrayOfIDLStatusBindingView"/></message>
+
+  <message name="CreateCPDRequestRequest">
+    <part name="OwnerEmiratesID"    type="xsd:string"/>
+    <part name="OwnerFirstName"     type="xsd:string"/>
+    <part name="OwnerLastName"      type="xsd:string"/>
+    <part name="OwnerEmail"         type="xsd:string"/>
+    <part name="OwnerPhoneNo"       type="xsd:string"/>
+    <part name="OwnerNationality"   type="xsd:string"/>
+    <part name="OwnerCity"          type="xsd:string"/>
+    <part name="OwnerDOB"           type="xsd:string"/>
+    <part name="OwnerAddressInUAE"  type="xsd:string"/>
+    <part name="OwnerPOBox"         type="xsd:string"/>
+    <part name="OwnerLIcenseNo"     type="xsd:string"/>
+    <part name="LicenseIssueDate"   type="xsd:string"/>
+    <part name="MulkiyaNo"          type="xsd:string"/>
+    <part name="RegistrationNo"     type="xsd:string"/>
+    <part name="MulkiyaExpiryDate"  type="xsd:string"/>
+    <part name="VehicleMake"        type="xsd:string"/>
+    <part name="VehicleModel"       type="xsd:string"/>
+    <part name="ManufacturingYear"  type="xsd:string"/>
+    <part name="Weight"             type="xsd:string"/>
+    <part name="RegisteredDate"     type="xsd:string"/>
+    <part name="Color"              type="xsd:string"/>
+    <part name="ChassisNo"          type="xsd:string"/>
+    <part name="BodyType"           type="xsd:string"/>
+    <part name="EngineNo"           type="xsd:string"/>
+    <part name="NoOfCylinders"      type="xsd:string"/>
+    <part name="NoOfSeats"          type="xsd:string"/>
+    <part name="HorsePower"         type="xsd:string"/>
+    <part name="MulkiyaFrontImage"  type="xsd:string"/>
+    <part name="MulkiyaBackImage"   type="xsd:string"/>
+    <part name="DLFrontImage"       type="xsd:string"/>
+    <part name="DLBackImage"        type="xsd:string"/>
+    <part name="GuaranteeAmount"    type="xsd:string"/>
+    <part name="CountryList"        type="xsd:string"/>
+    <part name="ExtraOwner1"        type="xsd:string"/>
+    <part name="ExtraOwner2"        type="xsd:string"/>
+    <part name="Channel"            type="xsd:string"/>
+  </message>
+  <message name="CreateCPDRequestResponse"><part name="CreateCPDRequestResult" type="tns:ServiceStatus"/></message>
+
+  <message name="UpdateCPDRequestPaymentStatusRequest">
+    <part name="ApplicationID"    type="xsd:string"/>
+    <part name="BookingFee"       type="xsd:string"/>
+    <part name="PaymentReference" type="xsd:string"/>
+    <part name="GuaranteeAmount"  type="xsd:string"/>
+  </message>
+  <message name="UpdateCPDRequestPaymentStatusResponse"><part name="UpdateCPDRequestPaymentStatusResult" type="tns:ServiceStatus"/></message>
+
+  <message name="GetAllCPDRequestsRequest">  <part name="ClientEmiratesId" type="xsd:string"/></message>
+  <message name="GetAllCPDRequestsResponse"> <part name="GetAllCPDRequestsResult" type="tns:ArrayOfCPDRequestStatusBindingView"/></message>
+
+  <message name="GetSingleCPDRequestDetailsRequest">  <part name="RequestID" type="xsd:string"/></message>
+  <message name="GetSingleCPDRequestDetailsResponse"> <part name="GetSingleCPDRequestDetailsResult" type="tns:CPDRequestStatusBindingView"/></message>
+
+  <message name="GetCPDCountryListRequest"/>
+  <message name="GetCPDCountryListResponse"><part name="CPDCountryItemBindingView" type="tns:ArrayOfCPDCountryItemBindingView"/></message>
+
+  <message name="GetFeesForCPDRequestRequest">
+    <part name="CountryList"       type="xsd:string"/>
+    <part name="VehicleType"       type="xsd:string"/>
+    <part name="ManufacturingYear" type="xsd:string"/>
+    <part name="ExtraOwner1"       type="xsd:string"/>
+    <part name="ExtraOwner2"       type="xsd:string"/>
+  </message>
+  <message name="GetFeesForCPDRequestResponse"><part name="CPDFees" type="tns:CPDFees"/></message>
+
+  <message name="GetAllowedVehicleTypesForCPDRequest"/>
+  <message name="GetAllowedVehicleTypesForCPDResponse"><part name="CPDVehicleTypeItemBindingView" type="tns:ArrayOfCPDVehicleTypeItemBindingView"/></message>
+
+  <message name="GetAllowedBodyTypesForCPDRequest"/>
+  <message name="GetAllowedBodyTypesForCPDResponse"><part name="CPDBodyTypeItemBindingView" type="tns:ArrayOfCPDBodyTypeItemBindingView"/></message>
+
+  <message name="GetAvailableCitiesForCPDRequest"/>
+  <message name="GetAvailableCitiesForCPDResponse"><part name="CPDCityItemBindingView" type="tns:ArrayOfCPDCityItemBindingView"/></message>
+
+  <message name="GetAllCPDStatusesRequest"/>
+  <message name="GetAllCPDStatusesResponse"><part name="GetAllCPDStatusesResult" type="tns:ArrayOfCPDStatusBindingView"/></message>
+
+  <message name="CancelCPDRequestRequest">
+    <part name="TransactionSequence" type="xsd:string"/>
+    <part name="EmiratesID"          type="xsd:string"/>
+  </message>
+  <message name="CancelCPDRequestResponse"><part name="CancelCPDRequestResult" type="tns:ServiceStatus"/></message>
+
+  <message name="GetATCBankingDetailsRequest"/>
+  <message name="GetATCBankingDetailsResponse"><part name="GetATCBankingDetailsResult" type="tns:BankingDetails"/></message>
+
+  <message name="UpdateCPDGuaranteeDepositSlipRequest">
+    <part name="ApplicationID"          type="xsd:string"/>
+    <part name="GuaranteeDepositCheque" type="xsd:string"/>
+  </message>
+  <message name="UpdateCPDGuaranteeDepositSlipResponse"><part name="UpdateCPDGuaranteeDepositSlipResult" type="tns:ServiceStatus"/></message>
+
+  <message name="UpdateCPDGuaranteeRequest">
+    <part name="ApplicationID"        type="xsd:string"/>
+    <part name="PaymentReference"     type="xsd:string"/>
+    <part name="VerificationDocument" type="xsd:string"/>
+  </message>
+  <message name="UpdateCPDGuaranteeResponse"><part name="UpdateCPDGuaranteeResult" type="tns:ServiceStatus"/></message>
+
+  <message name="GetAllEmiratesRequest"/>
+  <message name="GetAllEmiratesResponse"><part name="GetAllEmiratesResult" type="tns:ArrayOfEmirateItemBindingView"/></message>
+
+  <message name="GetAllLicenseTypesRequest"/>
+  <message name="GetAllLicenseTypesResponse"><part name="LicenseTypesItemBindingView" type="tns:ArrayOfLicenseTypesItemBindingView"/></message>
+
+  <message name="GetAllNationalitiesRequest"/>
+  <message name="GetAllNationalitiesResponse"><part name="NationalitiesItemBindingView" type="tns:ArrayOfNationalitiesItemBindingView"/></message>
+
+  <message name="GetPaymentBreakupRequest"/>
+  <message name="GetPaymentBreakupResponse"><part name="PaymentBreakup" type="tns:PaymentBreakup"/></message>
+
+  <!-- ── PortType ────────────────────────────────────────────────────────────── -->
+  <portType name="MOIServicePortType">
+    <operation name="GetAllMOIRequests">           <input message="tns:GetAllMOIRequestsRequest"/>           <output message="tns:GetAllMOIRequestsResponse"/></operation>
+    <operation name="CheckMOIRequestStatus">       <input message="tns:CheckMOIRequestStatusRequest"/>       <output message="tns:CheckMOIRequestStatusResponse"/></operation>
+    <operation name="CreateMOIRequest">            <input message="tns:CreateMOIRequestRequest"/>            <output message="tns:CreateMOIRequestResponse"/></operation>
+    <operation name="DeleteMOIRequest">            <input message="tns:DeleteMOIRequestRequest"/>            <output message="tns:DeleteMOIRequestResponse"/></operation>
+    <operation name="UpdatePaymentStatus">         <input message="tns:UpdatePaymentStatusRequest"/>         <output message="tns:UpdatePaymentStatusResponse"/></operation>
+    <operation name="GetIDLPrintPDFString">        <input message="tns:GetIDLPrintPDFStringRequest"/>        <output message="tns:GetIDLPrintPDFStringResponse"/></operation>
+    <operation name="GetAllIDLStatuses">           <input message="tns:GetAllIDLStatusesRequest"/>           <output message="tns:GetAllIDLStatusesResponse"/></operation>
+    <operation name="CreateCPDRequest">            <input message="tns:CreateCPDRequestRequest"/>            <output message="tns:CreateCPDRequestResponse"/></operation>
+    <operation name="UpdateCPDRequestPaymentStatus"><input message="tns:UpdateCPDRequestPaymentStatusRequest"/><output message="tns:UpdateCPDRequestPaymentStatusResponse"/></operation>
+    <operation name="GetAllCPDRequests">           <input message="tns:GetAllCPDRequestsRequest"/>           <output message="tns:GetAllCPDRequestsResponse"/></operation>
+    <operation name="GetSingleCPDRequestDetails">  <input message="tns:GetSingleCPDRequestDetailsRequest"/>  <output message="tns:GetSingleCPDRequestDetailsResponse"/></operation>
+    <operation name="GetCPDCountryList">           <input message="tns:GetCPDCountryListRequest"/>           <output message="tns:GetCPDCountryListResponse"/></operation>
+    <operation name="GetFeesForCPDRequest">        <input message="tns:GetFeesForCPDRequestRequest"/>        <output message="tns:GetFeesForCPDRequestResponse"/></operation>
+    <operation name="GetAllowedVehicleTypesForCPD"><input message="tns:GetAllowedVehicleTypesForCPDRequest"/><output message="tns:GetAllowedVehicleTypesForCPDResponse"/></operation>
+    <operation name="GetAllowedBodyTypesForCPD">   <input message="tns:GetAllowedBodyTypesForCPDRequest"/>   <output message="tns:GetAllowedBodyTypesForCPDResponse"/></operation>
+    <operation name="GetAvailableCitiesForCPD">    <input message="tns:GetAvailableCitiesForCPDRequest"/>    <output message="tns:GetAvailableCitiesForCPDResponse"/></operation>
+    <operation name="GetAllCPDStatuses">           <input message="tns:GetAllCPDStatusesRequest"/>           <output message="tns:GetAllCPDStatusesResponse"/></operation>
+    <operation name="CancelCPDRequest">            <input message="tns:CancelCPDRequestRequest"/>            <output message="tns:CancelCPDRequestResponse"/></operation>
+    <operation name="GetATCBankingDetails">        <input message="tns:GetATCBankingDetailsRequest"/>        <output message="tns:GetATCBankingDetailsResponse"/></operation>
+    <operation name="UpdateCPDGuaranteeDepositSlip"><input message="tns:UpdateCPDGuaranteeDepositSlipRequest"/><output message="tns:UpdateCPDGuaranteeDepositSlipResponse"/></operation>
+    <operation name="UpdateCPDGuarantee">          <input message="tns:UpdateCPDGuaranteeRequest"/>          <output message="tns:UpdateCPDGuaranteeResponse"/></operation>
+    <operation name="GetAllEmirates">              <input message="tns:GetAllEmiratesRequest"/>              <output message="tns:GetAllEmiratesResponse"/></operation>
+    <operation name="GetAllLicenseTypes">          <input message="tns:GetAllLicenseTypesRequest"/>          <output message="tns:GetAllLicenseTypesResponse"/></operation>
+    <operation name="GetAllNationalities">         <input message="tns:GetAllNationalitiesRequest"/>         <output message="tns:GetAllNationalitiesResponse"/></operation>
+    <operation name="GetPaymentBreakup">           <input message="tns:GetPaymentBreakupRequest"/>           <output message="tns:GetPaymentBreakupResponse"/></operation>
+  </portType>
+
+  <!-- ── Binding ────────────────────────────────────────────────────────────── -->
+  <binding name="MOIServiceBinding" type="tns:MOIServicePortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+
+    <operation name="GetAllMOIRequests">            <soap:operation soapAction="GetAllMOIRequests"/>            <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="CheckMOIRequestStatus">        <soap:operation soapAction="CheckMOIRequestStatus"/>        <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="CreateMOIRequest">             <soap:operation soapAction="CreateMOIRequest"/>             <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="DeleteMOIRequest">             <soap:operation soapAction="DeleteMOIRequest"/>             <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="UpdatePaymentStatus">          <soap:operation soapAction="UpdatePaymentStatus"/>          <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetIDLPrintPDFString">         <soap:operation soapAction="GetIDLPrintPDFString"/>         <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAllIDLStatuses">            <soap:operation soapAction="GetAllIDLStatuses"/>            <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="CreateCPDRequest">             <soap:operation soapAction="CreateCPDRequest"/>             <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="UpdateCPDRequestPaymentStatus"><soap:operation soapAction="UpdateCPDRequestPaymentStatus"/><input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAllCPDRequests">            <soap:operation soapAction="GetAllCPDRequests"/>            <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetSingleCPDRequestDetails">   <soap:operation soapAction="GetSingleCPDRequestDetails"/>   <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetCPDCountryList">            <soap:operation soapAction="GetCPDCountryList"/>            <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetFeesForCPDRequest">         <soap:operation soapAction="GetFeesForCPDRequest"/>         <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAllowedVehicleTypesForCPD"> <soap:operation soapAction="GetAllowedVehicleTypesForCPD"/> <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAllowedBodyTypesForCPD">    <soap:operation soapAction="GetAllowedBodyTypesForCPD"/>    <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAvailableCitiesForCPD">     <soap:operation soapAction="GetAvailableCitiesForCPD"/>     <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAllCPDStatuses">            <soap:operation soapAction="GetAllCPDStatuses"/>            <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="CancelCPDRequest">             <soap:operation soapAction="CancelCPDRequest"/>             <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetATCBankingDetails">         <soap:operation soapAction="GetATCBankingDetails"/>         <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="UpdateCPDGuaranteeDepositSlip"><soap:operation soapAction="UpdateCPDGuaranteeDepositSlip"/><input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="UpdateCPDGuarantee">           <soap:operation soapAction="UpdateCPDGuarantee"/>           <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAllEmirates">               <soap:operation soapAction="GetAllEmirates"/>               <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAllLicenseTypes">           <soap:operation soapAction="GetAllLicenseTypes"/>           <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetAllNationalities">          <soap:operation soapAction="GetAllNationalities"/>          <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetPaymentBreakup">            <soap:operation soapAction="GetPaymentBreakup"/>            <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+  </binding>
+
+  <!-- ── Service ───────────────────────────────────────────────────────────── -->
+  <service name="MOIService">
+    <port name="MOIServicePort" binding="tns:MOIServiceBinding">
+      <soap:address location="http://localhost/atc_v2/services/moi/server.php"/>
+    </port>
+  </service>
+
+</definitions>

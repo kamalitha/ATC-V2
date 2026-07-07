@@ -1,0 +1,99 @@
+[2026-07-07 07:51:37] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:GetIDLPaymentBreakup/></SOAP-ENV:Body></SOAP-ENV:Envelope>
+
+[2026-07-07 07:51:37] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:GetAllEmirates/></SOAP-ENV:Body></SOAP-ENV:Envelope>
+
+[2026-07-07 07:51:37] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:GetAllNationalities/></SOAP-ENV:Body></SOAP-ENV:Envelope>
+
+[2026-07-07 07:51:37] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:GetAvailableCitiesForCPD/></SOAP-ENV:Body></SOAP-ENV:Envelope>
+
+[2026-07-07 07:51:37] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CheckIDLRequestStatus><ClientEmiratesId>999999999999999</ClientEmiratesId></SOAP-ENC:CheckIDLReques
+[2026-07-07 07:51:37] [ERROR] DB error: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'u.email' in 'field list'
+[2026-07-07 07:52:19] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CheckIDLRequestStatus><ClientEmiratesId>999999999999999</ClientEmiratesId></SOAP-ENC:CheckIDLReques
+[2026-07-07 07:52:19] [ERROR] DB error: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'u.email' in 'field list'
+[2026-07-07 03:54:44] [ERROR] DB error: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'u.email' in 'field list'
+[2026-07-07 07:56:21] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CheckIDLRequestStatus><ClientEmiratesId>999999999999999</ClientEmiratesId></SOAP-ENC:CheckIDLReques
+[2026-07-07 08:16:15] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CheckIDLRequestStatus><ClientEmiratesId>784199560732424</ClientEmiratesId></SOAP-ENC:CheckIDLReques
+[2026-07-07 08:16:15] [ERROR] Error: Cannot assign int to property RTARequestStatusBindingView::$IssuePlace of type string
+[2026-07-07 04:16:26] [ERROR] Error: Cannot assign int to property RTARequestStatusBindingView::$IssuePlace of type string
+[2026-07-07 08:25:49] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CheckIDLRequestStatus><ClientEmiratesId>784199560732424</ClientEmiratesId></SOAP-ENC:CheckIDLReques
+[2026-07-07 08:26:19] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CreateIDLRequest><LicenseNumber>Array</LicenseNumber><Mobile/><BirthDate/><BirthPlace/><IssuePlace/
+[2026-07-07 08:26:19] [ERROR] DB error: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'email' in 'field list'
+[2026-07-07 09:14:18] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CreateIDLRequest><LicenseNumber>Array</LicenseNumber><Mobile/><BirthDate/><BirthPlace/><IssuePlace/
+[2026-07-07 09:14:18] [ERROR] DB error: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'mobile_no' in 'field list'
+[2026-07-07 09:14:18] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CheckIDLRequestStatus><ClientEmiratesId>784199912345678</ClientEmiratesId></SOAP-ENC:CheckIDLReques
+[2026-07-07 09:14:27] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:UpdateIDLRequestPaymentStatus><TransactionSequence></TransactionSequence><ApplicationID></Applicati
+[2026-07-07 09:14:27] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CheckIDLRequestStatus><ClientEmiratesId>784199912345678</ClientEmiratesId></SOAP-ENC:CheckIDLReques
+[2026-07-07 09:15:09] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CreateIDLRequest><LicenseNumber>Array</LicenseNumber><Mobile/><BirthDate/><BirthPlace/><IssuePlace/
+[2026-07-07 09:15:09] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CheckIDLRequestStatus><ClientEmiratesId>784199912345678</ClientEmiratesId></SOAP-ENC:CheckIDLReques
+[2026-07-07 09:15:16] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:UpdateIDLRequestPaymentStatus><TransactionSequence>471885</TransactionSequence><ApplicationID>IDL-R
+[2026-07-07 09:15:16] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CheckIDLRequestStatus><ClientEmiratesId>784199912345678</ClientEmiratesId></SOAP-ENC:CheckIDLReques
+[2026-07-07 09:16:44] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CreateIDLRequest><LicenseNumber>Array</LicenseNumber><Mobile/><BirthDate/><BirthPlace/><IssuePlace/
+[2026-07-07 09:17:18] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CreateIDLRequest><LicenseNumber>TESTLIC004</LicenseNumber><Mobile>0501234567</Mobile><BirthDate>199
+[2026-07-07 09:17:18] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CheckIDLRequestStatus><ClientEmiratesId>784199900003333</ClientEmiratesId></SOAP-ENC:CheckIDLReques
+[2026-07-07 09:17:44] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CreateCPDRequest><OwnerEmiratesID>784199900004444</OwnerEmiratesID><OwnerFirstName>CPD</OwnerFirstN
+[2026-07-07 09:17:45] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:UpdateCPDRequestPaymentStatus><ApplicationID>CPD-RTA-20260707/12643</ApplicationID><BookingFee>150<
+[2026-07-07 09:17:45] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:GetFeesForCPDRequest><CountryList>1,2</CountryList><VehicleType>Saloon</VehicleType><ManufacturingY
+[2026-07-07 09:17:45] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:GenerateIDLPrint><ApplicationID>IDL-RTA-20260707/471888</ApplicationID><ClientEmiratesID>7841999000
+[2026-07-07 09:17:45] [ERROR] GenerateIDLPrint: no matching request for IDL-RTA-20260707/471888 / 784199900003333
+[2026-07-07 19:49:13] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CreateIDLRequest><LicenseNumber>TESTLIC005</LicenseNumber><Mobile>0501234567</Mobile><BirthDate>199
+[2026-07-07 19:49:15] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CheckIDLRequestStatus><ClientEmiratesId>784199900005555</ClientEmiratesId></SOAP-ENC:CheckIDLReques
+[2026-07-07 19:49:15] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:UpdateIDLRequestPaymentStatus><TransactionSequence>471889</TransactionSequence><ApplicationID>IDL-R
+[2026-07-07 19:49:15] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:GenerateIDLPrint><ApplicationID>IDL-RTA-20260707/471889</ApplicationID><ClientEmiratesID>7841999000
+[2026-07-07 19:49:15] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CreateCPDRequest><OwnerEmiratesID>784199900006666</OwnerEmiratesID><OwnerFirstName>CPD</OwnerFirstN
+[2026-07-07 19:49:15] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:UpdateCPDRequestPaymentStatus><ApplicationID>CPD-RTA-20260707/12644</ApplicationID><BookingFee>150<
+[2026-07-07 19:49:15] [ERROR] Error: RtaRepository::updateCPDPaymentStatus(): Argument #1 ($autoId) must be of type string, int given, called in D:\ATC Source\atc_portal_v2\source\services\rta\src\RtaService.php on line 177
+[2026-07-07 19:50:11] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CreateCPDRequest><OwnerEmiratesID>784199900007777</OwnerEmiratesID><OwnerFirstName>CPD</OwnerFirstN
+[2026-07-07 19:50:12] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:UpdateCPDRequestPaymentStatus><ApplicationID>CPD-RTA-20260707/12645</ApplicationID><BookingFee>150<
+[2026-07-07 19:50:12] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CreateIDLRequest><LicenseNumber>TESTLIC006</LicenseNumber><Mobile>0501234567</Mobile><BirthDate>199
+[2026-07-07 19:50:13] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:DeleteIDLRequest><TransactionSequence>471890</TransactionSequence><EmiratesID>784199900008888</Emir
+[2026-07-07 19:50:30] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:GetAllLicenseTypes/></SOAP-ENV:Body></SOAP-ENV:Envelope>
+
+[2026-07-07 19:50:30] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:GetCPDCountryList/></SOAP-ENV:Body></SOAP-ENV:Envelope>
+
+[2026-07-07 19:50:30] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:GetAllowedVehicleTypesForCPD/></SOAP-ENV:Body></SOAP-ENV:Envelope>
+
+[2026-07-07 19:50:30] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:GetAllowedBodyTypesForCPD/></SOAP-ENV:Body></SOAP-ENV:Envelope>
+
+[2026-07-07 19:50:30] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CreateIDLRequest><LicenseNumber>DUPLIC</LicenseNumber><Mobile>0501234567</Mobile><BirthDate>1990-01
+[2026-07-07 19:50:46] [REQUEST] Incoming SOAP: <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><SOAP-ENC:CreateIDLRequest><LicenseNumber>DUPLIC2</LicenseNumber><Mobile>0501234567</Mobile><BirthDate>1990-0

@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EMSO e-Services Portal</title>
+  <link rel="icon" type="image/png" href="css/atc-logo.png" />
+  <link rel="stylesheet" href="css/app.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" />
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<!-- ── Login ─────────────────────────────────────────────────────────────── -->
+<div id="login-screen" class="login-screen hidden">
+  <div class="login-overlay"></div>
+  <section class="login-wrapper">
+    <div class="login-box">
+      <header class="login-box-header">
+        <h1>e-Services Portal</h1>
+        <p>EMSO UAE</p>
+      </header>
+      <form id="login-form" novalidate>
+        <div class="login-input-group">
+          <label for="login-username">Username</label>
+          <input id="login-username" type="text" autocomplete="username" required placeholder="Enter your username" />
+        </div>
+        <div class="login-input-group">
+          <label for="login-password">Password</label>
+          <div class="login-password-wrap">
+            <input id="login-password" type="password" autocomplete="current-password" required placeholder="••••••••" />
+            <button type="button" class="toggle-pwd" aria-label="Toggle password visibility">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        <div id="login-error" class="login-error hidden"></div>
+        <button type="submit" class="login-btn" id="login-btn">
+          <span class="btn-text">Login</span>
+          <span class="btn-spinner hidden"><i class="fa-solid fa-spinner fa-spin"></i></span>
+        </button>
+
+        <div class="login-divider"><span>or</span></div>
+
+        <button type="button" id="btn-uae-pass" class="btn-uae-pass">
+          <span>Sign in with UAE Pass</span>
+        </button>
+      </form>
+    </div>
+  </section>
+</div>
+
+<!-- ── App Shell ─────────────────────────────────────────────────────────── -->
+<div id="app-shell" class="app-shell hidden">
+
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">
+        <img src="css/atc-logo.png" alt="EMSO Logo" class="sidebar-logo-img" />
+      </div>
+      <span class="sidebar-title">e-Services</span>
+      <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle sidebar">
+        <i class="fa-solid fa-chevron-left"></i>
+      </button>
+    </div>
+
+    <nav class="sidebar-nav" id="sidebar-nav">
+
+      <div class="nav-section" id="nav-public" style="display:none">
+        <span class="nav-label">My Services</span>
+        <a class="nav-item" data-route="profile">
+          <span class="nav-icon"><i class="fa-solid fa-user-circle"></i></span>
+          <span class="nav-text">User Profile</span>
+        </a>
+        <a class="nav-item" data-route="public-apply-idl">
+          <span class="nav-icon"><i class="fa-solid fa-id-card"></i></span>
+          <span class="nav-text">Apply for IDL</span>
+        </a>
+        <a class="nav-item" data-route="public-apply-cpd">
+          <span class="nav-icon"><i class="fa-solid fa-car"></i></span>
+          <span class="nav-text">Apply for CPD</span>
+        </a>
+        <a class="nav-item" data-route="public-history">
+          <span class="nav-icon"><i class="fa-solid fa-clock-rotate-left"></i></span>
+          <span class="nav-text">History</span>
+        </a>
+        <a class="nav-item" data-route="public-support">
+          <span class="nav-icon"><i class="fa-solid fa-headset"></i></span>
+          <span class="nav-text">Support Tickets</span>
+        </a>
+
+        <div class="nav-info-section">
+          <div class="nav-info-title">
+            <span class="pub-dot pub-dot-green"></span> Service Overview
+          </div>
+          <div class="nav-info-row" id="nav-fee-row" style="display:none">
+            <span class="nav-info-label">Fee</span>
+            <span class="nav-info-fee">AED 170 + VAT</span>
+          </div>
+          <div class="nav-info-row">
+            <span class="nav-info-label">Online</span>
+            <span>3–5 working days</span>
+          </div>
+          <div class="nav-info-row">
+            <span class="nav-info-label">Branch</span>
+            <span>Same day</span>
+          </div>
+        </div>
+
+        <div class="nav-info-section">
+          <div class="nav-info-title">
+            <i class="fa-regular fa-clock"></i> Working Hours
+          </div>
+          <div class="nav-info-row">
+            <span class="nav-info-label">Support</span>
+            <span>8:00 AM – 7:00 PM</span>
+          </div>
+          <div class="nav-info-label nav-branch-label">Dubai Branch</div>
+          <div class="nav-info-row"><span>Mon–Thu</span><span>8 AM–7:30 PM</span></div>
+          <div class="nav-info-row"><span>Friday</span><span>8–11:30 AM, 1:30–7:30 PM</span></div>
+          <div class="nav-info-row"><span>Saturday</span><span>9 AM–4:30 PM</span></div>
+          <div class="nav-info-row"><span>Sunday</span><span class="pub-closed">Closed</span></div>
+          <div class="nav-info-label nav-branch-label" style="margin-top:8px">Abu Dhabi Branch</div>
+          <div class="nav-info-row"><span>Mon–Sat</span><span>9 AM–5:00 PM</span></div>
+          <div class="nav-info-row"><span>Sunday</span><span class="pub-closed">Closed</span></div>
+        </div>
+
+        <div class="nav-info-section">
+          <div class="nav-info-title">
+            <i class="fa-solid fa-phone"></i> Contact Details
+          </div>
+          <div class="nav-info-row">
+            <span class="nav-info-label">Call</span>
+            <a href="tel:+97142961122" class="pub-contact-link">+971 4 296 1122</a>
+          </div>
+          <div class="nav-info-row">
+            <span class="nav-info-label">IDP/CPD</span>
+            <a href="mailto:idl@atcuae.ae" class="pub-contact-link">idl@atcuae.ae</a>
+          </div>
+          <div class="nav-info-row">
+            <span class="nav-info-label">General</span>
+            <a href="mailto:info@emso.ae" class="pub-contact-link">info@emso.ae</a>
+          </div>
+        </div>
+
+        <div class="nav-contact-us-wrap">
+          <a href="tel:+97142961122" class="nav-contact-us-btn">
+            <i class="fa-solid fa-headset"></i>
+            <span>Contact Us</span>
+          </a>
+        </div>
+
+      </div>
+
+      <div class="nav-section" id="nav-dashboard">
+        <span class="nav-label">Overview</span>
+        <a class="nav-item" data-route="dashboard">
+          <span class="nav-icon"><i class="fa-solid fa-grip"></i></span>
+          <span class="nav-text">Dashboard</span>
+        </a>
+      </div>
+
+      <!-- IDL_CPD_Online: restricted IDL nav (Online/Website + New Request only) -->
+      <div class="nav-section" id="nav-idl-online" style="display:none">
+        <span class="nav-label">International Driving Licenses</span>
+        <a class="nav-item nav-subitem" data-route="idl-requests" data-filter-type="ONLINE_WEBSITE">
+          <span class="nav-icon"><i class="fa-solid fa-wifi"></i></span>
+          <span class="nav-text">Online Applications</span>
+          <span class="nav-badge" id="badge-idl-online-restricted" style="display:none"></span>
+        </a>
+        <a class="nav-item" data-route="idl-new">
+          <span class="nav-icon"><i class="fa-solid fa-plus"></i></span>
+          <span class="nav-text">New Request</span>
+        </a>
+      </div>
+
+      <!-- IDL_CPD_Online: restricted CPD nav (Online Applications + New Request only) -->
+      <div class="nav-section" id="nav-cpd-online" style="display:none">
+        <span class="nav-label">Trip Ticket</span>
+        <a class="nav-item nav-subitem" data-route="cpd-requests" data-filter-type="ONLINE">
+          <span class="nav-icon"><i class="fa-solid fa-wifi"></i></span>
+          <span class="nav-text">Online Applications</span>
+          <span class="nav-badge" id="badge-cpd-online-restricted" style="display:none"></span>
+        </a>
+        <a class="nav-item" data-route="cpd-new">
+          <span class="nav-icon"><i class="fa-solid fa-plus"></i></span>
+          <span class="nav-text">New Request</span>
+        </a>
+      </div>
+
+      <!-- IDL_CPD_Walkin: restricted IDL nav (Walk-In + New Request only) -->
+      <div class="nav-section" id="nav-idl-walkin" style="display:none">
+        <span class="nav-label">International Driving Licenses</span>
+        <a class="nav-item nav-subitem" data-route="idl-requests" data-filter-type="WALKIN">
+          <span class="nav-icon"><i class="fa-solid fa-person-walking"></i></span>
+          <span class="nav-text">Walk-In Applications</span>
+          <span class="nav-badge" id="badge-idl-walkin-restricted" style="display:none"></span>
+        </a>
+        <a class="nav-item" data-route="idl-new">
+          <span class="nav-icon"><i class="fa-solid fa-plus"></i></span>
+          <span class="nav-text">New Request</span>
+        </a>
+      </div>
+
+      <!-- IDL_CPD_Walkin: restricted CPD nav (Walk-In + New Request only) -->
+      <div class="nav-section" id="nav-cpd-walkin" style="display:none">
+        <span class="nav-label">Trip Ticket</span>
+        <a class="nav-item nav-subitem" data-route="cpd-requests" data-filter-type="WALKIN">
+          <span class="nav-icon"><i class="fa-solid fa-person-walking"></i></span>
+          <span class="nav-text">Walk-In Applications</span>
+          <span class="nav-badge" id="badge-cpd-walkin-restricted" style="display:none"></span>
+        </a>
+        <a class="nav-item" data-route="cpd-new">
+          <span class="nav-icon"><i class="fa-solid fa-plus"></i></span>
+          <span class="nav-text">New Request</span>
+        </a>
+      </div>
+
+      <div class="nav-section" id="nav-idl" style="display:none">
+        <button class="nav-label nav-label-toggle" id="nav-idl-toggle" type="button">
+          <span>International Driving Licenses</span>
+          <i class="fa-solid fa-chevron-up nav-label-chevron"></i>
+        </button>
+
+        <a class="nav-item" data-route="idl-requests" id="nav-idl-all">
+          <span class="nav-icon"><i class="fa-solid fa-list"></i></span>
+          <span class="nav-text">All Requests</span>
+          <span class="nav-badge" id="badge-idl-pending" style="display:none"></span>
+        </a>
+
+        <a class="nav-item nav-subitem" data-route="idl-requests" data-filter-type="ONLINE_WEBSITE">
+          <span class="nav-icon"><i class="fa-solid fa-wifi"></i></span>
+          <span class="nav-text">Online Applications</span>
+          <span class="nav-badge" id="badge-idl-ONLINE" style="display:none"></span>
+        </a>
+        <a class="nav-item nav-subitem" data-route="idl-requests" data-filter-type="WALKIN">
+          <span class="nav-icon"><i class="fa-solid fa-person-walking"></i></span>
+          <span class="nav-text">Walk-In Applications</span>
+          <span class="nav-badge" id="badge-idl-WALKIN" style="display:none"></span>
+        </a>
+        <a class="nav-item nav-subitem" data-route="idl-requests" data-filter-type="RTA">
+          <span class="nav-icon"><i class="fa-solid fa-road"></i></span>
+          <span class="nav-text">RTA Applications</span>
+          <span class="nav-badge" id="badge-idl-RTA" style="display:none"></span>
+        </a>
+        <a class="nav-item nav-subitem" data-route="idl-requests" data-filter-type="MOI">
+          <span class="nav-icon"><i class="fa-solid fa-building-columns"></i></span>
+          <span class="nav-text">MOI Applications</span>
+          <span class="nav-badge" id="badge-idl-MOI" style="display:none"></span>
+        </a>
+        <a class="nav-item nav-subitem" data-route="idl-requests" data-filter-type="DISTRIBUTOR">
+          <span class="nav-icon"><i class="fa-solid fa-truck"></i></span>
+          <span class="nav-text">Distributor Applications</span>
+          <span class="nav-badge" id="badge-idl-DISTRIBUTOR" style="display:none"></span>
+        </a>
+        <a class="nav-item nav-subitem" data-route="idl-requests" data-filter-type="ADCONNECT">
+          <span class="nav-icon"><i class="fa-solid fa-plug"></i></span>
+          <span class="nav-text">ADConnect Applications</span>
+          <span class="nav-badge" id="badge-idl-ADCONNECT" style="display:none"></span>
+        </a>
+
+        <a class="nav-item" data-route="idl-new">
+          <span class="nav-icon"><i class="fa-solid fa-plus"></i></span>
+          <span class="nav-text">New Request</span>
+        </a>
+
+        <a class="nav-item" data-route="support-tickets" id="nav-support-tickets" style="display:none">
+          <span class="nav-icon"><i class="fa-solid fa-headset"></i></span>
+          <span class="nav-text">Support Tickets</span>
+        </a>
+
+        <a class="nav-item" data-route="idl-sales-report">
+          <span class="nav-icon"><i class="fa-solid fa-file-invoice-dollar"></i></span>
+          <span class="nav-text">IDL Sales Report</span>
+        </a>
+
+        <a class="nav-item" data-route="idl-aramex-report">
+          <span class="nav-icon"><i class="fa-solid fa-truck-fast"></i></span>
+          <span class="nav-text">Sales Report for Aramex</span>
+        </a>
+
+        <a class="nav-item" data-route="idl-moe-report">
+          <span class="nav-icon"><i class="fa-solid fa-file-lines"></i></span>
+          <span class="nav-text">MOE Report</span>
+        </a>
+
+        <a class="nav-item" data-route="idl-empost-report">
+          <span class="nav-icon"><i class="fa-solid fa-box"></i></span>
+          <span class="nav-text">Sales Report for Empost</span>
+        </a>
+      </div>
+
+      <div class="nav-section" id="nav-cpd" style="display:none">
+        <button class="nav-label nav-label-toggle" id="nav-cpd-toggle" type="button">
+          <span>Trip Ticket</span>
+          <i class="fa-solid fa-chevron-up nav-label-chevron"></i>
+        </button>
+        <a class="nav-item" data-route="cpd-requests">
+          <span class="nav-icon"><i class="fa-solid fa-car"></i></span>
+          <span class="nav-text">Requests</span>
+          <span class="nav-badge" id="badge-cpd-pending" style="display:none"></span>
+        </a>
+        <a class="nav-item nav-subitem" data-route="cpd-requests" data-filter-type="ONLINE">
+          <span class="nav-icon"><i class="fa-solid fa-globe"></i></span>
+          <span class="nav-text">Online Applications</span>
+        </a>
+        <a class="nav-item nav-subitem" data-route="cpd-requests" data-filter-type="CALL_CENTER">
+          <span class="nav-icon"><i class="fa-solid fa-person-walking-luggage"></i></span>
+          <span class="nav-text">Walkin Applications</span>
+        </a>
+        <a class="nav-item nav-subitem" data-route="cpd-requests" data-filter-type="MOI">
+          <span class="nav-icon"><i class="fa-solid fa-landmark"></i></span>
+          <span class="nav-text">MOI Applications</span>
+        </a>
+        <a class="nav-item nav-subitem" data-route="cpd-requests" data-filter-type="RTA">
+          <span class="nav-icon"><i class="fa-solid fa-road"></i></span>
+          <span class="nav-text">RTA Applications</span>
+        </a>
+        <a class="nav-item nav-subitem" data-route="cpd-requests" data-filter-type="ADCONNECT">
+          <span class="nav-icon"><i class="fa-solid fa-plug"></i></span>
+          <span class="nav-text">AdConnect Applications</span>
+        </a>
+        <a class="nav-item" data-route="cpd-return-requests">
+          <span class="nav-icon"><i class="fa-solid fa-rotate-left"></i></span>
+          <span class="nav-text">Return Requests</span>
+          <span class="nav-badge" id="badge-cpd-returns" style="display:none"></span>
+        </a>
+        <a class="nav-item" data-route="cpd-new">
+          <span class="nav-icon"><i class="fa-solid fa-plus"></i></span>
+          <span class="nav-text">New Request</span>
+        </a>
+        <a class="nav-item" data-route="cpd-renew">
+          <span class="nav-icon"><i class="fa-solid fa-copy"></i></span>
+          <span class="nav-text">Copy/Renew Request</span>
+        </a>
+        <a class="nav-item" data-route="cpd-stock-request">
+          <span class="nav-icon"><i class="fa-solid fa-boxes-stacked"></i></span>
+          <span class="nav-text">Stock Request</span>
+        </a>
+        <a class="nav-item" data-route="cpd-carnets">
+          <span class="nav-icon"><i class="fa-solid fa-clipboard-list"></i></span>
+          <span class="nav-text">Carnet Stock</span>
+        </a>
+      </div>
+
+      <div class="nav-section" id="nav-cpd-claims" style="display:none">
+        <a class="nav-item" data-route="cpd-claims">
+          <span class="nav-icon"><i class="fa-solid fa-file-circle-exclamation"></i></span>
+          <span class="nav-text">Claims</span>
+        </a>
+        <a class="nav-item" data-route="cpd-holds">
+          <span class="nav-icon"><i class="fa-solid fa-user-lock"></i></span>
+          <span class="nav-text">Customer Holds</span>
+        </a>
+      </div>
+
+      <!-- idl_cpd_cashier: CPD Requests only (queue filtered) -->
+      <div class="nav-section" id="nav-cpd-cashier" style="display:none">
+        <span class="nav-label">Trip Ticket</span>
+        <a class="nav-item" data-route="cpd-requests">
+          <span class="nav-icon"><i class="fa-solid fa-car"></i></span>
+          <span class="nav-text">Requests</span>
+          <span class="nav-badge" id="badge-cpd-cashier-pending" style="display:none"></span>
+        </a>
+      </div>
+
+      <!-- idl_cpd_cashier: IDL section -->
+      <div class="nav-section" id="nav-idl-cashier" style="display:none">
+        <span class="nav-label">International Driving Licenses</span>
+        <a class="nav-item" data-route="idl-requests">
+          <span class="nav-icon"><i class="fa-solid fa-id-card"></i></span>
+          <span class="nav-text">Requests</span>
+          <span class="nav-badge" id="badge-idl-cashier-pending" style="display:none"></span>
+        </a>
+      </div>
+
+      <!-- cpd_finance -->
+      <div class="nav-section" id="nav-cpd-finance" style="display:none">
+        <span class="nav-label">Trip Ticket</span>
+        <a class="nav-item" data-route="cpd-requests">
+          <span class="nav-icon"><i class="fa-solid fa-car"></i></span>
+          <span class="nav-text">Requests</span>
+          <span class="nav-badge" id="badge-cpd-finance-pending" style="display:none"></span>
+        </a>
+        <a class="nav-item" data-route="cpd-cancellations">
+          <span class="nav-icon"><i class="fa-solid fa-ban"></i></span>
+          <span class="nav-text">Cancellation Requests</span>
+          <span class="nav-badge" id="badge-cpd-cancellations" style="display:none"></span>
+        </a>
+      </div>
+
+      <!-- cpd_branch: Branch Manager menu -->
+      <div class="nav-section" id="nav-cpd-branch" style="display:none">
+        <a class="nav-item" data-route="cpd-stock-request">
+          <span class="nav-icon"><i class="fa-solid fa-boxes-stacked"></i></span>
+          <span class="nav-text">Branch Stock Requests</span>
+          <span class="nav-badge" id="badge-cpd-branch-stock" style="display:none"></span>
+        </a>
+        <a class="nav-item" data-route="cpd-requests">
+          <span class="nav-icon"><i class="fa-solid fa-car"></i></span>
+          <span class="nav-text">Carnet Requests</span>
+          <span class="nav-badge" id="badge-cpd-branch-pending" style="display:none"></span>
+        </a>
+      </div>
+
+      <!-- cpd_cheque_officer: Requests only — no New Request, no Carnet Stock -->
+      <div class="nav-section" id="nav-cpd-cheque" style="display:none">
+        <span class="nav-label">Trip Ticket</span>
+        <a class="nav-item" data-route="cpd-requests">
+          <span class="nav-icon"><i class="fa-solid fa-car"></i></span>
+          <span class="nav-text">Requests</span>
+          <span class="nav-badge" id="badge-cpd-cheque-pending" style="display:none"></span>
+        </a>
+      </div>
+
+      <div class="nav-section" id="nav-reports" style="display:none">
+        <span class="nav-label">Analytics</span>
+        <a class="nav-item" data-route="reports">
+          <span class="nav-icon"><i class="fa-solid fa-chart-bar"></i></span>
+          <span class="nav-text">Reports</span>
+        </a>
+      </div>
+
+      <div class="nav-section" id="nav-admin" style="display:none">
+        <span class="nav-label">Administration</span>
+        <a class="nav-item" data-route="users">
+          <span class="nav-icon"><i class="fa-solid fa-users"></i></span>
+          <span class="nav-text">Users</span>
+        </a>
+      </div>
+
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-pill" id="user-pill" title="Edit profile" style="cursor:pointer">
+        <div class="user-avatar" id="user-avatar">--</div>
+        <div class="user-info">
+          <span class="user-name" id="user-name">Loading…</span>
+          <span class="user-role" id="user-role">--</span>
+        </div>
+      </div>
+      <button class="btn-logout" id="logout-btn" title="Sign out">
+        <i class="fa-solid fa-power-off"></i>
+      </button>
+    </div>
+  </aside>
+
+  <div class="main-wrapper">
+
+    <main class="page-content" id="page-content">
+      <div class="page-loading" id="page-loading">
+        <div class="spinner"></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ── Modal ──────────────────────────────────────────────────────────────── -->
+<div id="modal-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true">
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-title"></h2>
+      <button class="modal-close" id="modal-close" aria-label="Close dialog">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+
+<!-- ── Toasts ─────────────────────────────────────────────────────────────── -->
+<div id="toast-container" aria-live="polite" aria-atomic="false"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
