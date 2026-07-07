@@ -1,0 +1,3 @@
+# Deny direct access to all uploaded files
+Order deny,allow
+Deny from all
