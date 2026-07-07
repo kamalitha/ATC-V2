@@ -1,0 +1,52 @@
+# ── MySQL Performance Settings for ATC Portal ────────────────────────────
+# Add these to your my.ini (Windows) or /etc/mysql/my.cnf (Linux)
+# Restart MySQL after applying
+#
+# These settings are calibrated for a local dev machine with 8GB+ RAM
+# For production server, increase innodb_buffer_pool_size to 70% of available RAM
+
+[mysqld]
+
+# ── InnoDB Buffer Pool ────────────────────────────────────────────────────
+# Most important setting — keeps table data in memory
+# Current cold-start slowness is because this is too small
+# Set to 50-70% of available RAM; minimum 512M for this database
+innodb_buffer_pool_size         = 512M
+
+# Warm the buffer pool automatically on restart (MySQL 5.6+)
+innodb_buffer_pool_dump_at_shutdown = ON
+innodb_buffer_pool_load_at_startup  = ON
+
+# Save buffer pool state every 60 seconds so restart warming is faster
+innodb_buffer_pool_dump_pct     = 25
+
+# ── Query Cache (MySQL 5.7 only — removed in MySQL 8) ─────────────────────
+# query_cache_type                = 1
+# query_cache_size                = 64M
+# query_cache_limit               = 2M
+
+# ── InnoDB I/O ────────────────────────────────────────────────────────────
+innodb_io_capacity              = 200
+innodb_io_capacity_max          = 400
+
+# ── Temp tables & sorting ─────────────────────────────────────────────────
+tmp_table_size                  = 64M
+max_heap_table_size             = 64M
+sort_buffer_size                = 4M
+join_buffer_size                = 4M
+read_buffer_size                = 2M
+read_rnd_buffer_size            = 4M
+
+# ── Connection ────────────────────────────────────────────────────────────
+max_connections                 = 100
+wait_timeout                    = 600
+interactive_timeout             = 600
+
+# ── MyISAM key cache (for mn_idl_requests / mn_idl_request_user) ─────────
+key_buffer_size                 = 128M
+myisam_sort_buffer_size         = 64M
+
+# ── Slow query log (helps identify other slow queries) ───────────────────
+slow_query_log                  = ON
+slow_query_log_file             = slow_queries.log
+long_query_time                 = 2
