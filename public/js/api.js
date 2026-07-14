@@ -22,7 +22,16 @@ async function request(method, path, { body, params } = {}) {
   const res = await fetch(url, opts);
 
   let json;
-  try { json = await res.json(); } catch { json = { success: false, message: 'Invalid server response' }; }
+  try {
+    json = await res.json();
+  } catch {
+    // Non-JSON body (e.g. a server misconfiguration page) is always an error,
+    // regardless of HTTP status — silently accepting it hides real failures
+    // behind a blank/"undefined" UI instead of surfacing them.
+    const err = new Error('Invalid server response');
+    err.status = res.status;
+    throw err;
+  }
 
   if (res.status === 401) {
     clearToken();
@@ -47,7 +56,13 @@ async function requestUpload(path, formData) {
   const res = await fetch(url, { method: 'POST', body: formData, credentials: 'include' });
 
   let json;
-  try { json = await res.json(); } catch { json = { success: false, message: 'Invalid server response' }; }
+  try {
+    json = await res.json();
+  } catch {
+    const err = new Error('Invalid server response');
+    err.status = res.status;
+    throw err;
+  }
 
   if (res.status === 401) { clearToken(); window.dispatchEvent(new CustomEvent('auth:expired')); }
 

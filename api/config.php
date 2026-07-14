@@ -12,7 +12,7 @@ final class Config
     public const DB_PREFIX   = 'mn_';
 
     public const IS_LIVE      = false;
-    public const FRONTEND_URL = 'http://localhost/atc_v2/public'; // update to your domain in production
+    public const FRONTEND_URL = 'http://v2.eservices.local'; // update to your domain in production
     public const TIMEZONE     = 'Asia/Dubai';
 
     public const IDL_AMOUNT             = 178.50;

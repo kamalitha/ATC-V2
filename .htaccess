@@ -1,0 +1,20 @@
+Options -Indexes
+RewriteEngine On
+RewriteBase /
+
+# ── Leave /api/* and /services/* alone — each has its own routing ────────────
+RewriteCond %{REQUEST_URI} ^/api/ [OR]
+RewriteCond %{REQUEST_URI} ^/services/
+RewriteRule ^ - [L]
+
+# ── Serve existing public/ assets (css, js, images, fonts, etc.) transparently
+RewriteCond %{DOCUMENT_ROOT}/public%{REQUEST_URI} -f
+RewriteRule ^(.*)$ public/$1 [L]
+
+# ── Everything else (root "/" and SPA routes) → public/index.html ───────────
+RewriteRule ^ public/index.html [L]
+
+Header always set X-Content-Type-Options nosniff
+Header always set X-Frame-Options SAMEORIGIN
+Header always set X-XSS-Protection "1; mode=block"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
