@@ -1723,7 +1723,7 @@ class IDLController
         $autoId = (int)$params['id'];
 
         $req = $this->db->queryOne(
-            'SELECT auto_id, belonging_user_id, request_status FROM mn_idl_requests WHERE auto_id=?',
+            'SELECT auto_id, belonging_user_id, paid_status FROM mn_idl_requests WHERE auto_id=?',
             [$autoId],
         );
         if ($req === null) Response::notFound('IDL request not found');
@@ -1731,7 +1731,7 @@ class IDLController
         if ((int)$req['belonging_user_id'] !== Auth::id()) {
             Response::forbidden('Access denied');
         }
-        if ((int)$req['request_status'] !== 1) {
+        if ((int)$req['paid_status'] === 1) {
             Response::error('Only an unpaid request can be cancelled directly', 409);
         }
 

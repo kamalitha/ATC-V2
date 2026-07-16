@@ -298,3 +298,20 @@ CREATE TABLE IF NOT EXISTS `mn_customer_holds` (
   KEY `idx_eid`    (`emirates_id`),
   KEY `idx_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ── mn_idl_requests — widen delivery_option (20 → 30 chars) ─────────────────
+-- 'pick_from_dubai_office' (22 chars) and 'pick_from_abudhabi_office' (25 chars)
+-- — the public wizard's office-picker values — both exceed the original
+-- varchar(20) and would otherwise be silently truncated.
+ALTER TABLE mn_idl_requests
+  MODIFY COLUMN delivery_option VARCHAR(30) DEFAULT NULL;
+
+-- ── mn_idl_request_user — additional contact fields ─────────────────────────
+-- "Additional Phone Number" / "Additional Email" collected in the public IDL
+-- wizard's Additional Information step.
+-- Note: this server's MySQL build rejected `ADD COLUMN IF NOT EXISTS` (syntax
+-- error) despite reporting version 8.0.31 — these are plain ALTER TABLE;
+-- check the columns don't already exist before re-running.
+ALTER TABLE mn_idl_request_user
+  ADD COLUMN additional_mobile_no VARCHAR(50)  DEFAULT NULL,
+  ADD COLUMN additional_email     VARCHAR(255) DEFAULT NULL;

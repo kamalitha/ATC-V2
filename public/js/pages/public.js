@@ -2316,7 +2316,7 @@ export async function renderPublicHistory(defaultTab = 'idl') {
                   <button class="btn btn-primary btn-sm repay-idl-btn" data-id="${r.auto_id}">
                     <i class="fa-solid fa-credit-card"></i> Repay
                   </button>` : ''}
-                  ${r.request_status == 1 ? `
+                  ${r.paid_status != 1 ? `
                   <button class="btn btn-danger btn-sm cancel-idl-btn" data-id="${r.auto_id}">
                     <i class="fa-solid fa-ban"></i> Cancel
                   </button>` : ''}
