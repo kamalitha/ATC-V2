@@ -79,20 +79,22 @@ class Auth
         if (!$matched) return null;
 
         $csrf = bin2hex(random_bytes(32));
-        $_SESSION['user_id']    = (int) $user['user_id'];
-        $_SESSION['role']       = (int) $user['user_type'];
-        $_SESSION['csrf_token'] = $csrf;
+        $_SESSION['user_id']      = (int) $user['user_id'];
+        $_SESSION['role']         = (int) $user['user_type'];
+        $_SESSION['csrf_token']   = $csrf;
+        $_SESSION['via_uae_pass'] = false; // only login path today is username/password
         session_regenerate_id(true);
 
         return [
-            'user_id'    => (int) $user['user_id'],
-            'first_name' => $user['first_name'],
-            'last_name'  => $user['last_name'],
-            'email'      => $user['email'],
-            'role_id'    => (int) $user['user_type'],
-            'role_name'  => static::roleNameFor((int) $user['user_type']),
-            'csrf_token' => $csrf,
-            'modules'    => static::accessibleModules((int) $user['user_type']),
+            'user_id'      => (int) $user['user_id'],
+            'first_name'   => $user['first_name'],
+            'last_name'    => $user['last_name'],
+            'email'        => $user['email'],
+            'role_id'      => (int) $user['user_type'],
+            'role_name'    => static::roleNameFor((int) $user['user_type']),
+            'csrf_token'   => $csrf,
+            'modules'      => static::accessibleModules((int) $user['user_type']),
+            'via_uae_pass' => false,
         ];
     }
 
@@ -111,8 +113,9 @@ class Auth
             [static::id()],
         );
         if ($u === null) return null;
-        $u['role_name'] = static::roleName();
-        $u['modules']   = static::accessibleModules((int) $u['user_type']);
+        $u['role_name']    = static::roleName();
+        $u['modules']      = static::accessibleModules((int) $u['user_type']);
+        $u['via_uae_pass'] = $_SESSION['via_uae_pass'] ?? false;
         unset($u['password']);
         return $u;
     }
