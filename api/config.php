@@ -12,7 +12,10 @@ final class Config
     public const DB_PREFIX   = 'mn_';
 
     public const IS_LIVE      = false;
-    public const FRONTEND_URL = 'http://v2.eservices.local'; // update to your domain in production
+    // Fallback only — used when no request context is available (e.g. CLI). Real
+    // requests resolve the frontend origin dynamically via Config::frontendUrl(),
+    // so this never needs per-environment editing (local/staging/production).
+    public const FRONTEND_URL = 'http://v2.eservices.local';
     public const TIMEZONE     = 'Asia/Dubai';
 
     public const IDL_AMOUNT             = 178.50;
@@ -35,16 +38,26 @@ final class Config
     public const TELR_STORE_ID  = '15870';
     public const TELR_AUTH_KEY  = 'SjKmt-Wz8D@Z5nkR';
     public const TELR_CURRENCY  = 'aed';
-    public const TELR_RETURN_URL  = self::FRONTEND_URL . '/payment-success';
-    public const TELR_DECLINE_URL = self::FRONTEND_URL . '/payment-declined';
-    public const TELR_CANCEL_URL  = self::FRONTEND_URL . '/payment-cancelled';
-
     /** Resolve a config value from ENV first, then fall back to constant */
     public static function env(string $key, mixed $default = null): mixed
     {
         $val = getenv($key);
         return $val !== false ? $val : $default;
     }
+
+    /** The scheme+host the current request actually arrived on, falling back to FRONTEND_URL outside a request (e.g. CLI). */
+    public static function frontendUrl(): string
+    {
+        if (!empty($_SERVER['HTTP_HOST'])) {
+            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            return $scheme . '://' . $_SERVER['HTTP_HOST'];
+        }
+        return self::FRONTEND_URL;
+    }
+
+    public static function telrReturnUrl(): string  { return self::frontendUrl() . '/payment-success'; }
+    public static function telrDeclineUrl(): string { return self::frontendUrl() . '/payment-declined'; }
+    public static function telrCancelUrl(): string  { return self::frontendUrl() . '/payment-cancelled'; }
 }
 
 // ── Aramex Shipment API ───────────────────────────────────────────────────────

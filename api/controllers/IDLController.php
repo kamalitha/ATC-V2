@@ -1003,7 +1003,7 @@ class IDLController
 
         // Fetch request + applicant details
         $req = $this->db->queryOne(
-            "SELECT r.auto_id, r.request_id, r.total_amount,
+            "SELECT r.auto_id, r.request_id, r.total_amount, r.belonging_user_id, r.paid_status,
                     iru.first_name, iru.last_name,
                     u.email, iru.address_in_uae AS address
              FROM mn_idl_requests r
@@ -1014,6 +1014,18 @@ class IDLController
         );
 
         if (!$req) Response::notFound('IDL request not found');
+
+        // Only the request owner or IDL-module staff may (re)initiate payment
+        $user    = Auth::user();
+        $isOwner = (int)$req['belonging_user_id'] === Auth::id();
+        $isStaff = in_array((int)$user['user_type'], Auth::MODULE_ACCESS['idl'], true);
+        if (!$isOwner && !$isStaff) {
+            Response::forbidden('Access denied');
+        }
+
+        if ((int)$req['paid_status'] === 1) {
+            Response::error('This IDL request has already been paid for', 409);
+        }
 
         $cartId = (string)time();
 
@@ -1030,9 +1042,9 @@ class IDLController
             'ivp_test'     => Config::TELR_TEST,
             'ivp_cart'     => $cartId,
             'ivp_desc'     => 'IDP - International Driving Permit',
-            'return_auth'  => Config::TELR_RETURN_URL,
-            'return_decl'  => Config::TELR_DECLINE_URL,
-            'return_can'   => Config::TELR_CANCEL_URL,
+            'return_auth'  => Config::telrReturnUrl(),
+            'return_decl'  => Config::telrDeclineUrl(),
+            'return_can'   => Config::telrCancelUrl(),
             'bill_fname'   => $req['first_name'] ?? '',
             'bill_sname'   => $req['last_name']  ?? '',
             'bill_email'   => $req['email']      ?? '',
@@ -1170,7 +1182,7 @@ class IDLController
 
         $result = $this->db->paginate(
             "SELECT r.auto_id, r.request_id, r.request_type, r.requested_datetime,
-                    r.total_amount, r.paid_status, r.idl_no,
+                    r.total_amount, r.paid_status, r.idl_no, r.request_status,
                     s.status AS status_label
              FROM mn_idl_requests r
              LEFT JOIN mn_idl_status s ON s.status_id = r.request_status
@@ -1361,7 +1373,8 @@ class IDLController
                     r.issued_date          AS idl_issued_date,
                     s.status               AS status_label,
                     dt.dl_type             AS dl_type_name,
-                    em.emirate             AS emirate_name
+                    em.emirate             AS emirate_name,
+                    poi.emirate            AS place_of_issue_name
              FROM mn_idl_requests r
              JOIN  mn_idl_request_user iru ON r.auto_id             = iru.request_auto_id
              JOIN  mn_users u              ON r.belonging_user_id   = u.user_id
@@ -1369,6 +1382,7 @@ class IDLController
              LEFT JOIN mn_idl_status s     ON r.request_status      = s.status_id
              LEFT JOIN mn_idl_dl_types dt  ON iru.type_of_dl        = dt.type_id
              LEFT JOIN mn_emirates em      ON iru.emirate           = em.emirate_id
+             LEFT JOIN mn_emirates poi     ON iru.place_of_issue    = poi.emirate_id
              WHERE r.auto_id = ?",
             [$params['id']],
         );
@@ -1392,7 +1406,10 @@ class IDLController
     {
         Validator::make($body)
             ->required('delivery_option', 'payment_method')
-            ->in('delivery_option', ['pick_from_office', 'send_to_address'])
+            ->in('delivery_option', [
+                'pick_from_office', 'send_to_address', 'home_delivery',
+                'pick_from_dubai_office', 'pick_from_abudhabi_office',
+            ])
             ->in('payment_method', ['CASH', 'CARD', 'ONLINE', 'CHEQUE', 'CREDIT_CARD'])
             ->validate();
 
@@ -1408,30 +1425,36 @@ class IDLController
         }
 
         // ── Resolve applicant user_id ─────────────────────────────────────────
-        $existingUser = $this->db->queryOne(
-            "SELECT user_id FROM mn_idl_request_user
-             WHERE emirates_id = ? AND user_id IS NOT NULL
-             ORDER BY registered_date DESC LIMIT 1",
-            [$emiratesId],
-        );
-
         $newUserId = null; // track any user we create so we can roll it back on failure
 
-        if ($existingUser && $existingUser['user_id']) {
-            $userId = (int)$existingUser['user_id'];
+        if (Auth::roleId() === 2) {
+            // Public customer applying for their own IDL — they're already logged
+            // in as an existing mn_users account, so never create another one.
+            $userId = Auth::id();
         } else {
-            $userId = $this->db->insert(
-                "INSERT INTO mn_users
-                 (first_name, last_name, email, mobile_no, user_type, date_created, is_active)
-                 VALUES (?,?,?,?,3,CURDATE(),1)",
-                [
-                    $body['first_name'] ?? '',
-                    $body['last_name']  ?? '',
-                    $body['email']      ?? '',
-                    $body['mobile_no']  ?? '',
-                ],
-            );
-            $newUserId = $userId; // remember for compensating delete
+            // Staff-created request (e.g. IDL_Officer walk-in) — reuse an existing
+            // account by email if one exists, otherwise create a new one.
+            $email        = trim($body['email'] ?? '');
+            $existingUser = $email !== ''
+                ? $this->db->queryOne('SELECT user_id FROM mn_users WHERE email = ? LIMIT 1', [$email])
+                : null;
+
+            if ($existingUser && $existingUser['user_id']) {
+                $userId = (int)$existingUser['user_id'];
+            } else {
+                $userId = $this->db->insert(
+                    "INSERT INTO mn_users
+                     (first_name, last_name, email, mobile_no, user_type, date_created, is_active)
+                     VALUES (?,?,?,?,3,CURDATE(),1)",
+                    [
+                        $body['first_name'] ?? '',
+                        $body['last_name']  ?? '',
+                        $email,
+                        $body['mobile_no']  ?? '',
+                    ],
+                );
+                $newUserId = $userId; // remember for compensating delete
+            }
         }
 
         // Queue position for walk-in roles
@@ -1501,8 +1524,9 @@ class IDLController
                  (request_auto_id, user_id, first_name, last_name, nationality, sex, dob,
                   emirates_id, address_in_uae, po_box, city, home_country_address,
                   license_no, place_of_birth, place_of_issue, issued_date, expiry_date,
-                  type_of_dl, emirate, first_idl, registered_date)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())",
+                  type_of_dl, emirate, first_idl, additional_mobile_no, additional_email,
+                  registered_date)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())",
                 [
                     $id,
                     $userId,
@@ -1524,6 +1548,8 @@ class IDLController
                     $typeOfDl,
                     $body['emirate']              ?: null,
                     $body['first_idl']            ?? 1,
+                    $body['additional_mobile_no'] ?? '',
+                    $body['additional_email']     ?? '',
                 ],
             );
 
@@ -1685,6 +1711,233 @@ class IDLController
         );
         $this->logEvent('CANCEL', $params['id']);
         Response::success(null, 'Request cancelled');
+    }
+
+    /**
+     * POST /api/idl/requests/{id}/cancel-own
+     * Customer self-service cancel — no staff workflow. Only the request's own
+     * owner may call this, and only while it's still unpaid (status 1).
+     */
+    public function cancelOwn(array $params, array $body, array $query): void
+    {
+        $autoId = (int)$params['id'];
+
+        $req = $this->db->queryOne(
+            'SELECT auto_id, belonging_user_id, request_status FROM mn_idl_requests WHERE auto_id=?',
+            [$autoId],
+        );
+        if ($req === null) Response::notFound('IDL request not found');
+
+        if ((int)$req['belonging_user_id'] !== Auth::id()) {
+            Response::forbidden('Access denied');
+        }
+        if ((int)$req['request_status'] !== 1) {
+            Response::error('Only an unpaid request can be cancelled directly', 409);
+        }
+
+        $this->db->execute('UPDATE mn_idl_requests SET request_status=7 WHERE auto_id=?', [$autoId]);
+        $this->logEvent('CANCEL', $autoId, 'Self-service (unpaid)');
+
+        Response::success(null, 'Request cancelled');
+    }
+
+    /**
+     * POST /api/idl/requests/{id}/void
+     * Voids an issued/dispatched IDL (e.g. printed in error, damaged booklet).
+     * Restricted to idl_officer, and only for status 4 (Approved) or 5 (Dispatched).
+     */
+    public function voidRequest(array $params, array $body, array $query): void
+    {
+        Validator::make($body)->required('comment')->validate();
+
+        $autoId = (int)$params['id'];
+        $user   = Auth::user();
+
+        if (($user['role_name'] ?? '') !== 'idl_officer') {
+            Response::forbidden('Access denied');
+        }
+
+        $status = $this->db->scalar('SELECT request_status FROM mn_idl_requests WHERE auto_id=?', [$autoId]);
+        if ($status === null) Response::notFound('IDL request not found');
+        if (!in_array((int)$status, [4, 5], true)) {
+            Response::error('Only an issued or dispatched IDL can be voided', 409);
+        }
+
+        $this->db->execute(
+            "UPDATE mn_idl_requests SET request_status=3, processed_by=?, idl_no='' WHERE auto_id=?",
+            [Auth::id(), $autoId],
+        );
+        $this->db->execute(
+            "INSERT INTO mn_idl_voided_requests (request_auto_id, comment, voided_by, voided_datetime)
+             VALUES (?, ?, ?, NOW())",
+            [$autoId, $body['comment'], Auth::id()],
+        );
+        $this->logEvent('VOID', $autoId, $body['comment']);
+
+        Response::success(null, 'Request voided');
+    }
+
+    /**
+     * GET /api/idl/requests/{id}/print
+     * Streams a print-ready PDF of the issued IDL (physical booklet overlay).
+     * Ported from the legacy application/views/idl/print-idl.phtml — restricted
+     * to idl_officer, and only once the request has been issued (status 4).
+     */
+    public function printIdl(array $params, array $body, array $query): void
+    {
+        $autoId = (int)$params['id'];
+        $user   = Auth::user();
+
+        if (($user['role_name'] ?? '') !== 'idl_officer') {
+            Response::forbidden('Access denied');
+        }
+
+        $r = $this->db->queryOne(
+            "SELECT r.*, iru.*,
+                    n.nationality,
+                    r.issued_date AS idl_issued_date
+             FROM mn_idl_requests r
+             JOIN mn_idl_request_user iru ON r.auto_id = iru.request_auto_id
+             LEFT JOIN mn_nationalities n ON iru.nationality = n.nationality_id
+             WHERE r.auto_id = ?",
+            [$autoId],
+        );
+        if ($r === null) Response::notFound('IDL request not found');
+        if ((int)$r['request_status'] !== 4) {
+            Response::error('IDL can only be printed once it has been issued', 409);
+        }
+
+        require_once API_ROOT . '/library/phpqrcode/qrlib.php';
+        require_once API_ROOT . '/vendor/autoload.php';
+
+        $imagesDir = dirname(API_ROOT) . '/public/images';
+        $reqDir    = API_ROOT . '/' . Config::UPLOADS_DIR . '/' . $autoId;
+        if (!is_dir($reqDir)) mkdir($reqDir, 0755, true);
+
+        // ── Per-officer print calibration (falls back to the shared default template) ──
+        $margins = $this->db->queryOne('SELECT * FROM mn_idl_user_margins WHERE user_id=?', [$user['user_id']]);
+        $defaultCoordinates = '{"top_atc_string":{"x":"90","y":"34"},"issued_date":{"x":"74","y":"42"},"qr_code":{"x":"88","y":"46"},"last_name":{"x":"47","y":"86"},"first_name":{"x":"47","y":"93"},"place_of_birth":{"x":"47","y":"100"},"dob":{"x":"47","y":"107"},"city":{"x":"47","y":"113"},"sex":{"x":"47","y":"121"},"nationality":{"x":"62","y":"121"},"idl_no":{"x":"47","y":"127"},"license_no":{"x":"47","y":"136"},"center_image":{"x":"84","y":"103"},"class_A_tick":{"x":"130","y":"86"},"class_B_tick":{"x":"130","y":"91"},"class_C_tick":{"x":"130","y":"97"},"class_D_tick":{"x":"130","y":"103"},"class_E_tick_1":{"x":"130","y":"91"},"class_E_tick_2":{"x":"130","y":"108"}}';
+        $coordinates = json_decode($margins['component_coordinates'] ?? $defaultCoordinates);
+        $x_px = (float)($margins['left_margin'] ?? 0) * 1.333333;
+        $y_px = (float)($margins['top_margin'] ?? 0) * 1.333333;
+
+        // ── Passport photo — corrected orientation + resized to the fixed 97×135 print size ──
+        $passportSrc = null;
+        foreach (['jpg', 'png'] as $ext) {
+            if (file_exists("$reqDir/passport.$ext")) { $passportSrc = "$reqDir/passport.$ext"; break; }
+        }
+        $passportPrint = $passportSrc
+            ? $this->makePrintPassport($passportSrc, "$reqDir/passport_print")
+            : $this->makePrintPassport("$imagesDir/user.png", "$reqDir/passport_print");
+
+        // ── QR code — encodes the verification link for this issued IDL ──
+        $printHash = $r['print_hash'];
+        if (empty($printHash)) {
+            $printHash = md5(time() . $autoId);
+            $this->db->execute('UPDATE mn_idl_requests SET print_hash=? WHERE auto_id=?', [$printHash, $autoId]);
+        }
+        $qrPath = "$reqDir/qrcode.png";
+        QRcode::png(Config::frontendUrl() . '/display/' . $printHash, $qrPath, '', '1.5', '5');
+
+        // ── Build the absolute-positioned overlay segments (mirrors print-idl.phtml) ──
+        $dlTypes = array_map('trim', explode(',', (string)$r['type_of_dl']));
+        $tickImg = "$imagesDir/tick_black.png";
+
+        $segments   = [];
+        $segments[] = ['html' => '<img src="'.$passportPrint.'" />', 'x' => $coordinates->center_image->x + $x_px, 'y' => $coordinates->center_image->y + $y_px];
+
+        // Legacy numeric dl_type codes (1–5) map directly to the booklet's class A–E tick positions
+        $tickMap = [
+            '1' => 'class_A_tick', '2' => 'class_B_tick', '3' => 'class_C_tick',
+            '4' => 'class_D_tick', '5' => 'class_E_tick_2',
+        ];
+        foreach ($tickMap as $code => $coordKey) {
+            if (in_array((string)$code, $dlTypes, true)) {
+                $coord      = $coordinates->$coordKey;
+                $segments[] = ['html' => '<img style="width:20px;height:20px;" src="'.$tickImg.'" />', 'x' => $coord->x + $x_px, 'y' => $coord->y + $y_px];
+            }
+        }
+
+        $segments[] = ['html' => '<img src="'.$qrPath.'" />', 'x' => $coordinates->qr_code->x + $x_px, 'y' => $coordinates->qr_code->y];
+
+        $fromName   = $r['request_type'] === 'RTA' ? 'RTA' : 'ATCUAE ONLINE';
+        $segments[] = ['html' => $fromName, 'x' => $coordinates->top_atc_string->x + $x_px, 'y' => $coordinates->top_atc_string->y + $y_px];
+
+        $issuedBasis = $r['request_type'] === 'RTA' ? $r['requested_datetime'] : $r['idl_issued_date'];
+        $dateText    = 'FROM ' . date('Y-m-d', strtotime($issuedBasis)) . ' To ' . date('Y-m-d', strtotime($issuedBasis . ' + 365 day'));
+        $segments[]  = ['html' => $dateText, 'x' => $coordinates->issued_date->x + $x_px, 'y' => $coordinates->issued_date->y + $y_px];
+
+        $segments[] = ['html' => strtoupper((string)($r['last_name'] ?? '')),       'x' => $coordinates->last_name->x + $x_px,       'y' => $coordinates->last_name->y + $y_px];
+        $segments[] = ['html' => strtoupper((string)($r['first_name'] ?? '')),      'x' => $coordinates->first_name->x + $x_px,      'y' => $coordinates->first_name->y + $y_px];
+        $segments[] = ['html' => strtoupper((string)($r['place_of_birth'] ?? '')),  'x' => $coordinates->place_of_birth->x + $x_px,  'y' => $coordinates->place_of_birth->y + $y_px];
+        $segments[] = ['html' => strtoupper((string)($r['dob'] ?? '')),             'x' => $coordinates->dob->x + $x_px,             'y' => $coordinates->dob->y + $y_px];
+        $segments[] = ['html' => strtoupper((string)($r['city'] ?? '')),            'x' => $coordinates->city->x + $x_px,            'y' => $coordinates->city->y + $y_px];
+        $segments[] = ['html' => strtoupper((string)($r['sex'] ?? '')),             'x' => $coordinates->sex->x + $x_px,             'y' => $coordinates->sex->y + $y_px];
+        $segments[] = ['html' => strtoupper((string)($r['nationality'] ?? '')),     'x' => $coordinates->nationality->x + $x_px,     'y' => $coordinates->nationality->y + $y_px];
+
+        $idText     = $r['request_type'] === 'RTA' ? $r['request_id'] : $r['idl_no'];
+        $segments[] = ['html' => strtoupper((string)$idText),                      'x' => $coordinates->idl_no->x + $x_px,          'y' => $coordinates->idl_no->y + $y_px];
+        $segments[] = ['html' => strtoupper((string)($r['license_no'] ?? '')),      'x' => $coordinates->license_no->x + $x_px,      'y' => $coordinates->license_no->y + $y_px];
+
+        $this->logEvent('PRINT', $autoId);
+
+        $pdf = new \TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
+        $pdf->SetCreator(PDF_CREATOR);
+        $pdf->SetAuthor('');
+        $pdf->SetTitle('');
+        $pdf->SetSubject('');
+        $pdf->SetKeywords('');
+        $pdf->setPrintHeader(false);
+        $pdf->setPrintFooter(false);
+        $pdf->SetDefaultMonospacedFont(PDF_FONT_MONOSPACED);
+        $pdf->SetMargins(PDF_MARGIN_LEFT, 10, PDF_MARGIN_RIGHT);
+        $pdf->SetAutoPageBreak(true, PDF_MARGIN_BOTTOM);
+        $pdf->setImageScale(PDF_IMAGE_SCALE_RATIO);
+        $pdf->setFontSubsetting(true);
+        $pdf->SetFont('dejavusans', '', 9, '', true);
+        $pdf->AddPage();
+
+        foreach ($segments as $segment) {
+            $pdf->SetFontSize($segment['font_size'] ?? 8);
+            $pdf->writeHTMLCell(0, 0, $segment['x'], $segment['y'], $segment['html'], 0, 1, 0, true, '', false);
+        }
+
+        $pdf->Output(($r['idl_no'] ?: $r['request_id']) . '.pdf', 'I');
+        exit;
+    }
+
+    /**
+     * Corrects EXIF orientation and resizes to the fixed 97×135 print size used on the IDL overlay,
+     * writing a *_print.<ext> copy alongside the source — never mutates the original upload.
+     */
+    private function makePrintPassport(string $sourcePath, string $targetBase): string
+    {
+        $info = getimagesize($sourcePath);
+        $mime = $info['mime'] ?? 'image/png';
+        [$createFn, $saveFn, $ext] = match ($mime) {
+            'image/jpeg' => ['imagecreatefromjpeg', 'imagejpeg', 'jpg'],
+            'image/png'  => ['imagecreatefrompng',  'imagepng',  'png'],
+            default      => throw new RuntimeException('Unsupported passport image type'),
+        };
+
+        $img = $createFn($sourcePath);
+
+        if ($ext === 'jpg' && function_exists('exif_read_data')) {
+            $exif   = @exif_read_data($sourcePath);
+            $rotate = ['3' => 180, '6' => -90, '8' => 90][(string)($exif['Orientation'] ?? '')] ?? null;
+            if ($rotate !== null) {
+                $img = imagerotate($img, $rotate, 0);
+            }
+        }
+
+        $resized = imagecreatetruecolor(97, 135);
+        imagecopyresampled($resized, $img, 0, 0, 0, 0, 97, 135, imagesx($img), imagesy($img));
+
+        $targetPath = "$targetBase.$ext";
+        if (file_exists($targetPath)) unlink($targetPath);
+        $saveFn($resized, $targetPath);
+
+        return $targetPath;
     }
 
     // ── Lookups ───────────────────────────────────────────────────────────────

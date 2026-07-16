@@ -29,7 +29,7 @@ require_once API_ROOT . '/controllers/ReportController.php';
 require_once API_ROOT . '/controllers/SupportController.php';
 
 header('Content-Type: application/json; charset=UTF-8');
-header('Access-Control-Allow-Origin: ' . Config::FRONTEND_URL);
+header('Access-Control-Allow-Origin: ' . Config::frontendUrl());
 header('Access-Control-Allow-Credentials: true');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, X-CSRF-Token');
@@ -117,6 +117,9 @@ $r->post('/api/idl/requests/{id}/reject',   [IDLController::class,'reject'],    
 $r->post('/api/idl/requests/{id}/issue',    [IDLController::class,'issue'],         auth:true);
 $r->post('/api/idl/requests/{id}/dispatch', [IDLController::class,'markDispatched'],auth:true);
 $r->post('/api/idl/requests/{id}/cancel',   [IDLController::class,'cancel'],        auth:true);
+$r->post('/api/idl/requests/{id}/cancel-own',[IDLController::class,'cancelOwn'],    auth:true);
+$r->post('/api/idl/requests/{id}/void',     [IDLController::class,'voidRequest'],   auth:true);
+$r->get('/api/idl/requests/{id}/print',     [IDLController::class,'printIdl'],      auth:true);
 $r->get('/api/idl/nationalities',           [IDLController::class,'nationalities'], auth:true);
 $r->get('/api/idl/dl-types',                [IDLController::class,'dlTypes'],       auth:true);
 $r->get('/api/idl/emirates',                [IDLController::class,'emiratesLookup'],auth:true);
