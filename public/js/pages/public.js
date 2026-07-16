@@ -1,6 +1,6 @@
 // pages/public.js — Public user (role 2) pages
 import api, { API_BASE, PUBLIC_BASE } from '../api.js';
-import { navigate, toast, openModal, closeModal, currentUser } from '../app.js';
+import { navigate, toast, openModal, closeModal, currentUser, confirm } from '../app.js';
 import { statusBadge, formatDate, formatDateTime } from '../components/table.js';
 
 // ── Wizard step definitions ────────────────────────────────────────────────────
@@ -14,15 +14,15 @@ const STEPS = [
 // ── Per-step required fields for validation ────────────────────────────────────
 const STEP_REQUIRED = {
   identity: [
-    { name: 'emirates_id',          label: 'Emirates ID' },
     { name: 'first_name',           label: 'First Name' },
     { name: 'last_name',            label: 'Last Name' },
+    { name: 'emirates_id',          label: 'Emirates ID' },
     { name: 'nationality',          label: 'Nationality' },
     { name: 'sex',                  label: 'Gender' },
-    { name: 'place_of_birth',       label: 'Place of Birth' },
-    { name: 'emirate',              label: 'UAE Permanent Place of Residence' },
     { name: 'mobile_no',            label: 'Mobile No' },
     { name: 'email',                label: 'Email' },
+    { name: 'place_of_birth',       label: 'Place of Birth' },
+    { name: 'emirate',              label: 'UAE Permanent Place of Residence' },
   ],
   licence: [
     { name: 'license_no',     label: 'Driving Licence Number' },
@@ -86,44 +86,22 @@ export async function renderPublicApplyIDL() {
   function stepIdentity() {
     const u = currentUser ?? {};
     const r = lastRequest ?? {};
+    const viaUaePass = !!u.via_uae_pass;
     const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ') || '—';
 
+    const firstName       = u.first_name ?? r.first_name ?? '';
+    const lastName        = u.last_name ?? r.last_name ?? '';
     const emiratesId      = u.emirates_id ?? r.emirates_id ?? '';
     const dobRaw          = u.dob ?? r.dob ?? '';
     const dobValue        = dobRaw ? String(dobRaw).split('T')[0].split(' ')[0] : '';
     const dobDisplay      = dobValue ? new Date(dobValue).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
-    const nationalityId   = String(u.nationality ?? r.nationality ?? '');
+    const nationalityId   = String(u.nationality ?? r.nationality_id ?? r.nationality ?? '');
     const nationalityName = nationalities.find(n => String(n.nationality_id) === nationalityId)?.nationality || '—';
     const sex             = u.sex ?? r.sex ?? '';
     const mobileNo        = u.mobile_no ?? r.mobile_no ?? '';
     const email           = u.email ?? r.email ?? '';
 
-    return `
-      <!-- UAE PASS verified identity header -->
-      <div class="pub-step-header">
-        <div class="pub-step-icon-wrap"><i class="fa-solid fa-user"></i></div>
-        <div>
-          <div class="pub-step-title">Verify Your Identity</div>
-          <div class="pub-step-sub">We use UAE PASS to verify your identity and pre-fill your details.</div>
-        </div>
-      </div>
-
-      <!-- Verified banner -->
-      <div class="pub-verified-banner">
-        <i class="fa-solid fa-circle-check pub-verified-icon"></i>
-        <div>
-          <div class="pub-verified-title">UAE PASS Profile Verified</div>
-          <div class="pub-verified-sub">Your identity has been successfully verified.</div>
-        </div>
-      </div>
-
-      <!-- Read-only identity card -->
-      <div class="pub-identity-card">
-        <div class="pub-identity-card-header">
-          <span>Your Identity Information</span>
-          <span class="pub-verified-badge"><i class="fa-solid fa-shield-halved"></i> Verified by UAE PASS</span>
-        </div>
-        <div class="pub-identity-rows">
+    const identityRowsHtml = viaUaePass ? `
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
             <span class="pub-id-label">Full Name</span>
@@ -164,14 +142,97 @@ export async function renderPublicApplyIDL() {
             <span class="pub-id-label">Email Address</span>
             <span class="pub-id-value">${email || '—'}</span>
             <input type="hidden" name="email" value="${email}" />
+          </div>` : `
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
+            <span class="pub-id-label">First Name</span>
+            <input name="first_name" class="pub-id-inline-input" placeholder="First name" value="${firstName}" />
+            <div class="field-error" id="err-first_name" style="margin:0"></div>
           </div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
+            <span class="pub-id-label">Last Name</span>
+            <input name="last_name" class="pub-id-inline-input" placeholder="Last name" value="${lastName}" />
+            <div class="field-error" id="err-last_name" style="margin:0"></div>
+          </div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
+            <span class="pub-id-label">Emirates ID</span>
+            <input name="emirates_id" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" value="${emiratesId}" />
+            <div class="field-error" id="err-emirates_id" style="margin:0"></div>
+          </div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-calendar"></i></span>
+            <span class="pub-id-label">Date of Birth</span>
+            <input name="dob" type="date" class="pub-id-inline-input" value="${dobValue}" />
+          </div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-flag"></i></span>
+            <span class="pub-id-label">Nationality</span>
+            <select name="nationality" class="pub-id-inline-select">
+              <option value="">Select nationality</option>
+              ${nationalities.map(n => `<option value="${n.nationality_id}" ${String(n.nationality_id) === nationalityId ? 'selected' : ''}>${n.nationality}</option>`).join('')}
+            </select>
+            <div class="field-error" id="err-nationality" style="margin:0"></div>
+          </div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-venus-mars"></i></span>
+            <span class="pub-id-label">Gender</span>
+            <select name="sex" class="pub-id-inline-select">
+              <option value="">Select</option>
+              <option value="Male" ${sex === 'Male' ? 'selected' : ''}>Male</option>
+              <option value="Female" ${sex === 'Female' ? 'selected' : ''}>Female</option>
+            </select>
+            <div class="field-error" id="err-sex" style="margin:0"></div>
+          </div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+            <span class="pub-id-label">Mobile Number</span>
+            <input name="mobile_no" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" value="${mobileNo}" />
+            <div class="field-error" id="err-mobile_no" style="margin:0"></div>
+          </div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-envelope"></i></span>
+            <span class="pub-id-label">Email Address</span>
+            <input name="email" type="email" class="pub-id-inline-input" placeholder="your@email.com" value="${email}" />
+            <div class="field-error" id="err-email" style="margin:0"></div>
+          </div>`;
+
+    return `
+      <!-- Identity verification header -->
+      <div class="pub-step-header">
+        <div class="pub-step-icon-wrap"><i class="fa-solid fa-user"></i></div>
+        <div>
+          <div class="pub-step-title">Verify Your Identity</div>
+          <div class="pub-step-sub">${viaUaePass ? 'We use UAE PASS to verify your identity and pre-fill your details.' : 'Please enter your identity details below.'}</div>
+        </div>
+      </div>
+
+      ${viaUaePass ? `
+      <!-- Verified banner -->
+      <div class="pub-verified-banner">
+        <i class="fa-solid fa-circle-check pub-verified-icon"></i>
+        <div>
+          <div class="pub-verified-title">UAE PASS Profile Verified</div>
+          <div class="pub-verified-sub">Your identity has been successfully verified.</div>
+        </div>
+      </div>` : ''}
+
+      <!-- Identity card -->
+      <div class="pub-identity-card">
+        <div class="pub-identity-card-header">
+          <span>Your Identity Information</span>
+          ${viaUaePass ? '<span class="pub-verified-badge"><i class="fa-solid fa-shield-halved"></i> Verified by UAE PASS</span>' : ''}
+        </div>
+        <div class="pub-identity-rows">
+          ${identityRowsHtml}
         </div>
       </div>
 
       <!-- Additional information (editable) -->
       <div class="pub-additional-card">
         <div class="pub-additional-title">Additional Information</div>
-        <div class="form-grid" style="margin-top:16px">
+        <div class="form-grid pub-additional-grid" style="margin-top:16px">
 
           <div class="field"><label>Place of Birth *</label>
             <div class="pub-input-icon-wrap">
@@ -258,18 +319,6 @@ export async function renderPublicApplyIDL() {
           <div class="field"><label>Date of Expiry *</label>
             <input name="expiry_date" type="date" required />
             <div class="field-error" id="err-expiry_date"></div>
-          </div>
-
-          <div class="field">
-            <label>Issued IDL in Past?</label>
-            <div style="display:flex;gap:24px;align-items:center;padding-top:8px">
-              <label style="display:flex;gap:8px;align-items:center;font-weight:400;cursor:pointer">
-                <input type="radio" name="first_idl" value="0" /> Yes
-              </label>
-              <label style="display:flex;gap:8px;align-items:center;font-weight:400;cursor:pointer">
-                <input type="radio" name="first_idl" value="1" checked /> No
-              </label>
-            </div>
           </div>
 
         </div>
@@ -363,8 +412,35 @@ export async function renderPublicApplyIDL() {
       </div>`;
   }
 
+  const OFFICES = [
+    {
+      id: 'dubai',
+      deliveryValue: 'pick_from_dubai_office',
+      name: 'Dubai Office',
+      addr: 'Emirates Transport Driving Institute, Al Garhoud, Next to GGICO Metro Station, Dubai, UAE',
+      hours: [
+        ['Mon–Thu', '8:00 AM – 7:30 PM'],
+        ['Friday', '8:00 – 11:30 AM, 1:30 – 7:30 PM'],
+        ['Saturday', '9:00 AM – 4:30 PM'],
+        ['Sunday', 'Closed'],
+      ],
+    },
+    {
+      id: 'abu_dhabi',
+      deliveryValue: 'pick_from_abudhabi_office',
+      name: 'Abu Dhabi Office',
+      addr: 'Emirates Transport Driving Institute, Mussafah 9, Abu Dhabi, UAE',
+      hours: [
+        ['Mon–Sat', '8:00 AM – 5:00 PM'],
+        ['Sunday', 'Closed'],
+      ],
+    },
+  ];
+
   function stepDelivery() {
     const isHome = (formData.delivery_option ?? 'home_delivery') === 'home_delivery';
+    const currentOffice   = OFFICES.find(o => o.deliveryValue === formData.delivery_option) ?? OFFICES[0];
+    const selectedOffice  = currentOffice.id;
     return `
       <!-- Header -->
       <div class="pub-step-header">
@@ -394,7 +470,7 @@ export async function renderPublicApplyIDL() {
           </label>
 
           <label class="del-method-card ${!isHome ? 'del-method-card-active' : ''}" id="del-card-collection">
-            <input type="radio" name="delivery_option" value="pick_from_office" ${!isHome ? 'checked' : ''} style="display:none" />
+            <input type="radio" name="delivery_option" id="del-radio-collection-input" value="${currentOffice.deliveryValue}" ${!isHome ? 'checked' : ''} style="display:none" />
             <div class="del-method-radio" id="del-radio-collection">
               ${!isHome ? '<i class="fa-solid fa-circle-dot" style="color:var(--accent)"></i>' : '<i class="fa-regular fa-circle"></i>'}
             </div>
@@ -436,24 +512,6 @@ export async function renderPublicApplyIDL() {
                 <i class="fa-solid fa-chevron-down pub-input-icon-right"></i>
               </div>
               <div class="field-error" id="err-del_emirate"></div>
-            </div>
-
-            <div class="field del-addr-third">
-              <label>City *</label>
-              <div class="pub-input-icon-wrap">
-                <select name="del_city" id="del-city">
-                  <option value="">Select city</option>
-                  <option value="Abu Dhabi">Abu Dhabi</option>
-                  <option value="Dubai">Dubai</option>
-                  <option value="Sharjah">Sharjah</option>
-                  <option value="Ajman">Ajman</option>
-                  <option value="Ras Al-Khaimah">Ras Al-Khaimah</option>
-                  <option value="Fujairah">Fujairah</option>
-                  <option value="Umm Al Quwain">Umm Al Quwain</option>
-                </select>
-                <i class="fa-solid fa-chevron-down pub-input-icon-right"></i>
-              </div>
-              <div class="field-error" id="err-del_city"></div>
             </div>
 
             <div class="field del-addr-third">
@@ -499,30 +557,20 @@ export async function renderPublicApplyIDL() {
           <div class="del-section-label">Collection Locations</div>
           <img src="${PUBLIC_BASE}/css/office_map.png" alt="Office Locations Map" class="del-map-img" />
           <div class="del-offices-grid">
-            <div class="del-office-card">
+            ${OFFICES.map(o => `
+            <div class="del-office-card ${selectedOffice === o.id ? 'del-office-card-active' : ''}" data-office="${o.id}">
               <div class="del-office-header">
                 <i class="fa-solid fa-building" style="color:var(--accent)"></i>
-                <span class="del-office-name">Dubai Office</span>
+                <span class="del-office-name">${o.name}</span>
+                <span class="del-office-radio">${selectedOffice === o.id
+                  ? '<i class="fa-solid fa-circle-dot" style="color:var(--accent)"></i>'
+                  : '<i class="fa-regular fa-circle"></i>'}</span>
               </div>
-              <div class="del-office-addr">Emirates Transport Driving Institute, Al Garhoud, Next to GGICO Metro Station, Dubai, UAE</div>
+              <div class="del-office-addr">${o.addr}</div>
               <div class="del-office-hours">
-                <div class="del-hours-row"><span>Mon–Thu</span><span>8:00 AM – 7:30 PM</span></div>
-                <div class="del-hours-row"><span>Friday</span><span>8:00 – 11:30 AM, 1:30 – 7:30 PM</span></div>
-                <div class="del-hours-row"><span>Saturday</span><span>9:00 AM – 4:30 PM</span></div>
-                <div class="del-hours-row"><span>Sunday</span><span class="pub-closed">Closed</span></div>
+                ${o.hours.map(([day, time]) => `<div class="del-hours-row"><span>${day}</span><span${time === 'Closed' ? ' class="pub-closed"' : ''}>${time}</span></div>`).join('')}
               </div>
-            </div>
-            <div class="del-office-card">
-              <div class="del-office-header">
-                <i class="fa-solid fa-building" style="color:var(--accent)"></i>
-                <span class="del-office-name">Abu Dhabi Office</span>
-              </div>
-              <div class="del-office-addr">Emirates Transport Driving Institute, Mussafah 9, Abu Dhabi, UAE</div>
-              <div class="del-office-hours">
-                <div class="del-hours-row"><span>Mon–Sat</span><span>8:00 AM – 5:00 PM</span></div>
-                <div class="del-hours-row"><span>Sunday</span><span class="pub-closed">Closed</span></div>
-              </div>
-            </div>
+            </div>`).join('')}
           </div>
         </div>
 
@@ -597,6 +645,8 @@ export async function renderPublicApplyIDL() {
         <div class="rv-extra-rows">
           <div class="rv-extra-row"><span class="rv-extra-label">Place of Birth</span><span class="rv-extra-value">${formData.place_of_birth || '—'}</span></div>
           <div class="rv-extra-row"><span class="rv-extra-label">UAE Permanent Place of Residence</span><span class="rv-extra-value">${emirLabel}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Additional Phone Number</span><span class="rv-extra-value">${formData.additional_mobile_no || '—'}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Additional Email</span><span class="rv-extra-value">${formData.additional_email || '—'}</span></div>
         </div>
       </div>
 
@@ -608,7 +658,6 @@ export async function renderPublicApplyIDL() {
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-calendar-check"></i></span><span class="rv-id-label">Date of Issue</span><span class="rv-id-value">${formData.issued_date ? new Date(formData.issued_date).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}) : '—'}</span></div>
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-location-dot"></i></span><span class="rv-id-label">Issuing Emirate</span><span class="rv-id-value">${issuePlaceLabel}</span></div>
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-calendar-xmark"></i></span><span class="rv-id-label">Date of Expiry</span><span class="rv-id-value">${formData.expiry_date ? new Date(formData.expiry_date).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}) : '—'}</span></div>
-          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-star"></i></span><span class="rv-id-label">First IDL</span><span class="rv-id-value">${formData.first_idl === '0' ? 'No' : 'Yes'}</span></div>
         </div>
         ${selectedCats.length ? `
         <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--bg-base)">
@@ -651,7 +700,6 @@ export async function renderPublicApplyIDL() {
           <div class="rv-delivery-rows">
             <div class="rv-delivery-row"><span class="rv-delivery-label">Address</span><span>${formData.del_address_uae || '—'}</span></div>
             <div class="rv-delivery-row"><span class="rv-delivery-label">Emirate</span><span>${emirates.find(e => String(e.emirate_id) === String(formData.del_emirate))?.emirate ?? formData.del_emirate ?? '—'}</span></div>
-            <div class="rv-delivery-row"><span class="rv-delivery-label">City</span><span>${formData.del_city || '—'}</span></div>
             ${formData.del_area ? `<div class="rv-delivery-row"><span class="rv-delivery-label">Area</span><span>${formData.del_area}</span></div>` : ''}
           </div>` : ''}
         </div>
@@ -661,19 +709,20 @@ export async function renderPublicApplyIDL() {
             <i class="fa-solid fa-building" style="color:var(--accent)"></i>
             <span>Collection Location</span>
           </div>
-          <div class="rv-delivery-method">Dubai Office</div>
+          ${(() => {
+            const office = OFFICES.find(o => o.deliveryValue === formData.delivery_option) ?? OFFICES[0];
+            return `
+          <div class="rv-delivery-method">${office.name}</div>
           <div class="rv-delivery-desc">You will collect from our office</div>
           <div class="rv-delivery-rows">
-            <div class="rv-delivery-row"><span class="rv-delivery-label">Address</span><span>Emirates Transport Driving Institute, Al Garhoud, Next to GGICO Metro Station, Dubai, UAE</span></div>
+            <div class="rv-delivery-row"><span class="rv-delivery-label">Address</span><span>${office.addr}</span></div>
             <div class="rv-delivery-row" style="align-items:flex-start"><span class="rv-delivery-label">Working Hours</span>
               <span>
-                Mon–Thu &nbsp; 8:00 AM – 7:30 PM<br>
-                Friday &nbsp;&nbsp;&nbsp;&nbsp; 8:00 – 11:30 AM, 1:30 – 7:30 PM<br>
-                Saturday &nbsp; 9:00 AM – 4:30 PM<br>
-                Sunday &nbsp;&nbsp;&nbsp; Closed
+                ${office.hours.map(([day, time]) => `${day} &nbsp; ${time}`).join('<br>\n                ')}
               </span>
             </div>
-          </div>
+          </div>`;
+          })()}
         </div>
 
       </div>
@@ -780,7 +829,7 @@ export async function renderPublicApplyIDL() {
 
   // ── Bind step-specific JS ──────────────────────────────────────────────────
   // Persistent form data store across steps — pre-seeded from last request
-  const formData  = {};
+  const formData  = { first_idl: '0' };
   const savedFiles    = {}; // preserves File objects across step navigation
   const savedFileUrls = {}; // preserves server-side doc URLs for the review thumbnail fallback
   if (lastRequest) {
@@ -810,7 +859,6 @@ export async function renderPublicApplyIDL() {
     formData.expiry_date          = toDate(r.expiry_date);
     formData.type_of_dl           = r.type_of_dl           ?? '';
     formData.emirate              = String(r.emirate        ?? '');
-    formData.first_idl            = String(r.first_idl     ?? '1');
     // Delivery & Payment — pre-fill from last request
     formData.delivery_option      = r.delivery_option      ?? 'home_delivery';
     formData.payment_method       = 'CREDIT_CARD'; // always card for public users
@@ -829,9 +877,8 @@ export async function renderPublicApplyIDL() {
     const dBldg  = (formData.del_building    ?? '').trim();
     const dSt    = (formData.del_street      ?? '').trim();
     const dExtra = (formData.del_extra       ?? '').trim();
-    const dCity  = (formData.del_city        ?? '').trim();
-    if (dAddr || dBldg || dSt || dCity) {
-      formData.delivery_address = [dAddr, dBldg, dSt, dExtra, dCity].filter(Boolean).join(', ');
+    if (dAddr || dBldg || dSt) {
+      formData.delivery_address = [dAddr, dBldg, dSt, dExtra].filter(Boolean).join(', ');
     }
     // Save DL type hidden value
     const dlHidden = document.getElementById('type_of_dl_hidden');
@@ -881,13 +928,11 @@ export async function renderPublicApplyIDL() {
     // Restore delivery address fields
     const delAddrUae  = document.getElementById('del-address-uae');
     const delEmirate  = document.getElementById('del-emirate');
-    const delCity     = document.getElementById('del-city');
     const delBuilding = document.getElementById('del-building');
     const delStreet   = document.getElementById('del-street');
     const delExtra    = document.getElementById('del-extra');
     if (delAddrUae  && formData.del_address_uae)  delAddrUae.value  = formData.del_address_uae;
     if (delEmirate  && formData.del_emirate)       delEmirate.value  = formData.del_emirate;
-    if (delCity     && formData.del_city)          delCity.value     = formData.del_city;
     if (delBuilding && formData.del_building)      delBuilding.value = formData.del_building;
     if (delStreet   && formData.del_street)        delStreet.value   = formData.del_street;
     if (delExtra    && formData.del_extra)         delExtra.value    = formData.del_extra;
@@ -1154,14 +1199,46 @@ export async function renderPublicApplyIDL() {
       });
     }
 
+    // Collection office card selection (step 3) — writes the office-specific
+    // value directly into the delivery_option radio (e.g. pick_from_dubai_office),
+    // since the office choice IS the delivery option for collection.
+    const officeCards = document.querySelectorAll('.del-office-card');
+    if (officeCards.length) {
+      const collectionRadio = document.getElementById('del-radio-collection-input');
+      officeCards.forEach(card => {
+        card.addEventListener('click', () => {
+          officeCards.forEach(c => {
+            const isSelected = c === card;
+            c.classList.toggle('del-office-card-active', isSelected);
+            const radioIcon = c.querySelector('.del-office-radio');
+            if (radioIcon) radioIcon.innerHTML = isSelected
+              ? '<i class="fa-solid fa-circle-dot" style="color:var(--accent)"></i>'
+              : '<i class="fa-regular fa-circle"></i>';
+          });
+          const office = OFFICES.find(o => o.id === card.dataset.office);
+          if (collectionRadio) { collectionRadio.value = office.deliveryValue; collectionRadio.checked = true; }
+          formData.delivery_option = office.deliveryValue;
+        });
+      });
+    }
+
     // Load review step document thumbnails — user upload first, server URL fallback
     if (STEPS[currentStep].id === 'review') {
       document.querySelectorAll('.rv-doc-thumb[data-slot]').forEach(thumbEl => {
-        const slot = thumbEl.dataset.slot;
-        const file = savedFiles[slot];
+        const slot  = thumbEl.dataset.slot;
+        const label = thumbEl.closest('.rv-doc-item')?.querySelector('.rv-doc-label')?.textContent ?? slot;
+        const file  = savedFiles[slot];
         const setThumb = src => {
           thumbEl.classList.remove('rv-doc-thumb-empty');
           thumbEl.innerHTML = `<img src="${src}" alt="${slot}" /><span class="rv-doc-check"><i class="fa-solid fa-circle-check"></i></span>`;
+          thumbEl.classList.add('rv-doc-thumb-clickable');
+          thumbEl.addEventListener('click', () => {
+            openModal({
+              title: label,
+              body: `<img src="${src}" alt="${label}" style="display:block;max-width:100%;max-height:75vh;margin:0 auto;border-radius:var(--radius)" />`,
+              size: 'lg',
+            });
+          });
         };
         if (file) {
           const reader = new FileReader();
@@ -1233,7 +1310,9 @@ export async function renderPublicApplyIDL() {
     (STEP_REQUIRED[key] ?? []).forEach(({ name, label }) => {
       if (name === 'type_of_dl') return; // handled below
       const el = document.querySelector(`[name="${name}"]`);
-      if (!el) return;
+      // Hidden fields are UAE PASS-verified read-only data the user can't edit —
+      // don't block navigation on them being non-empty.
+      if (!el || el.type === 'hidden') return;
       if (!el.value?.trim()) { setErr(name, `${label} is required`); ok = false; }
     });
 
@@ -1280,10 +1359,8 @@ export async function renderPublicApplyIDL() {
       if (isHome) {
         const addrUae = document.getElementById('del-address-uae')?.value?.trim();
         const emirate = document.getElementById('del-emirate')?.value;
-        const city    = document.getElementById('del-city')?.value;
         if (!addrUae) { setErr('del_address_uae', 'Address in UAE is required'); ok = false; }
         if (!emirate) { setErr('del_emirate', 'Emirate is required'); ok = false; }
-        if (!city)    { setErr('del_city', 'City is required'); ok = false; }
       }
     }
 
@@ -2235,6 +2312,14 @@ export async function renderPublicHistory(defaultTab = 'idl') {
                   <button class="btn btn-ghost btn-sm view-idl-btn" data-id="${r.auto_id}">
                     <i class="fa-solid fa-eye"></i> View
                   </button>
+                  ${r.paid_status != 1 ? `
+                  <button class="btn btn-primary btn-sm repay-idl-btn" data-id="${r.auto_id}">
+                    <i class="fa-solid fa-credit-card"></i> Repay
+                  </button>` : ''}
+                  ${r.request_status == 1 ? `
+                  <button class="btn btn-danger btn-sm cancel-idl-btn" data-id="${r.auto_id}">
+                    <i class="fa-solid fa-ban"></i> Cancel
+                  </button>` : ''}
                 </td>
               </tr>`).join('')}
             </tbody>
@@ -2245,6 +2330,37 @@ export async function renderPublicHistory(defaultTab = 'idl') {
     // Bind View buttons
     idlEl.querySelectorAll('.view-idl-btn').forEach(btn => {
       btn.addEventListener('click', () => renderPublicIDLView(Number(btn.dataset.id)));
+    });
+
+    // Bind Repay buttons
+    idlEl.querySelectorAll('.repay-idl-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Connecting…';
+        try {
+          const payment = await api.idl.telrInit(Number(btn.dataset.id));
+          window.location.href = payment.redirect_url;
+        } catch (err) {
+          toast(err.message || 'Could not start payment', 'error');
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-credit-card"></i> Repay';
+        }
+      });
+    });
+
+    // Bind Cancel buttons
+    idlEl.querySelectorAll('.cancel-idl-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        confirm('Cancel this IDL application? This cannot be undone.', async () => {
+          try {
+            await api.idl.cancelOwn(Number(btn.dataset.id));
+            toast('Application cancelled', 'info');
+            renderPublicHistory();
+          } catch (err) {
+            toast(err.message || 'Could not cancel application', 'error');
+          }
+        });
+      });
     });
   } else {
     idlEl.innerHTML = emptyState('fa-id-card', 'No IDL applications yet', 'Your IDL application history will appear here.');
@@ -2982,15 +3098,38 @@ async function renderPublicIDLView(autoId) {
     return;
   }
 
-  const d  = (label, value) => `
-    <div class="detail-item">
-      <span class="detail-label">${label}</span>
-      <span class="detail-value">${value || '—'}</span>
-    </div>`;
+  const idRow = (icon, label, value) => `
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="${icon}"></i></span><span class="rv-id-label">${label}</span><span class="rv-id-value">${value || '—'}</span></div>`;
 
   const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-  const DL_OPTION_LABELS = { pick_from_office: 'Pick up at ATCUAE Office', send_to_address: 'Send to Address' };
+  const CAT_LABELS   = { A:'Motorcycle', B:'Car', C:'Heavy Vehicle', D:'Bus', E:'Heavy Combination' };
+  const CAT_ICONS    = { A:'fa-motorcycle', B:'fa-car', C:'fa-truck', D:'fa-bus', E:'fa-trailer' };
+  // Older requests store legacy numeric dl_type ids (mn_idl_dl_types) instead of the new A–E letter codes
+  const LEGACY_CAT_MAP = { 1:'A', 2:'B', 3:'C', 4:'D', 5:'E', 6:'E' };
+  const selectedCats = (r.type_of_dl || '').split(',').map(s => s.trim()).filter(Boolean)
+    .map(code => LEGACY_CAT_MAP[code] ?? code);
+
+  const docLabels = { eid_front:'Emirates ID Front', eid_back:'Emirates ID Back', dl_front:'Driving License Front', dl_back:'Driving License Back', passport_photo:'Passport Photo', signature:'Signature' };
+  const docUrl = slot => docs[slot] ? `${window.location.origin}${API_BASE}/idl/requests/${autoId}/documents/${docs[slot].split('/').pop()}` : null;
+  const docThumb = (slot, label) => {
+    const url = docUrl(slot);
+    return `
+      <div class="rv-doc-item">
+        <div class="rv-doc-thumb ${url ? 'rv-doc-thumb-clickable' : 'rv-doc-thumb-empty'}" ${url ? `data-url="${url}" data-label="${label}"` : ''}>
+          ${url ? `<img src="${url}" alt="${label}" /><span class="rv-doc-check"><i class="fa-solid fa-circle-check"></i></span>` : '<i class="fa-solid fa-file-image"></i>'}
+        </div>
+        <div class="rv-doc-label">${label}</div>
+      </div>`;
+  };
+
+  const DL_OPTION_LABELS = {
+    pick_from_office: 'Pick up at ATCUAE Office',
+    send_to_address: 'Send to Address',
+    home_delivery: 'Home Delivery',
+    pick_from_dubai_office: 'Pick up at Dubai Office',
+    pick_from_abudhabi_office: 'Pick up at Abu Dhabi Office',
+  };
 
   content.innerHTML = `
     <div class="page-header">
@@ -3010,81 +3149,98 @@ async function renderPublicIDLView(autoId) {
     </div>
 
     <!-- Personal Information -->
-    <div class="section-card">
-      <div class="section-card-header">Personal Information</div>
-      <div class="section-card-body">
-        <div class="detail-grid">
-          ${d('Emirates ID',           esc(r.emirates_id))}
-          ${d('First Name',            esc(r.first_name))}
-          ${d('Last Name',             esc(r.last_name))}
-          ${d('Nationality',           esc(r.nationality))}
-          ${d('Sex',                   esc(r.sex))}
-          ${d('Date of Birth',         r.dob         ? formatDate(r.dob)  : '—')}
-          ${d('Address in UAE',        esc(r.address_in_uae))}
-          ${d('PO Box',                esc(r.po_box))}
-          ${d('Mobile No',             esc(r.mobile_no))}
-          ${d('Email',                 esc(r.email))}
-          ${d('City',                  esc(r.city))}
-          ${d('Home Country Address',  esc(r.home_country_address))}
-        </div>
+    <div class="rv-section">
+      <div class="rv-section-header">
+        <span class="rv-section-title">Personal Information</span>
+      </div>
+      <div class="rv-identity-rows">
+        ${idRow('fa-regular fa-user',         'Full Name',           [r.first_name, r.last_name].filter(Boolean).map(esc).join(' '))}
+        ${idRow('fa-regular fa-id-card',      'Emirates ID',         esc(r.emirates_id))}
+        ${idRow('fa-regular fa-calendar',     'Date of Birth',       r.dob ? formatDate(r.dob) : '—')}
+        ${idRow('fa-solid fa-flag',           'Nationality',         esc(r.nationality))}
+        ${idRow('fa-solid fa-venus-mars',     'Gender',              esc(r.sex))}
+        ${idRow('fa-solid fa-mobile-screen',  'Mobile Number',       esc(r.mobile_no))}
+        ${idRow('fa-regular fa-envelope',     'Email Address',       esc(r.email))}
+        ${idRow('fa-solid fa-location-dot',   'Address in UAE',      esc(r.address_in_uae))}
+        ${idRow('fa-solid fa-inbox',          'PO Box',              esc(r.po_box))}
+        ${idRow('fa-solid fa-city',           'City',                esc(r.city))}
+        ${idRow('fa-solid fa-globe',          'Home Country Address',esc(r.home_country_address))}
       </div>
     </div>
 
-    <!-- License Information -->
-    <div class="section-card">
-      <div class="section-card-header">License Information</div>
-      <div class="section-card-body">
-        <div class="detail-grid">
-          ${d('License No',            esc(r.license_no))}
-          ${d('Place of Birth',        esc(r.place_of_birth))}
-          ${d('DL Place of Issue',     esc(r.emirate_name  ?? r.place_of_issue))}
-          ${d('Issued Date',           r.issued_date ? formatDate(r.issued_date) : '—')}
-          ${d('Expiry Date',           r.expiry_date ? formatDate(r.expiry_date) : '—')}
-          ${d('Type of DL',            esc(r.dl_type_name  ?? r.type_of_dl))}
-          ${d('Emirate of Residence',  esc(r.emirate_name  ?? r.emirate))}
-          ${d('Issued IDL Before?',    r.first_idl == 0 ? 'Yes' : 'No')}
-        </div>
+    <!-- Additional Information -->
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:12px">Additional Information</div>
+      <div class="rv-extra-rows">
+        <div class="rv-extra-row"><span class="rv-extra-label">Place of Birth</span><span class="rv-extra-value">${esc(r.place_of_birth) || '—'}</span></div>
+        <div class="rv-extra-row"><span class="rv-extra-label">UAE Permanent Place of Residence</span><span class="rv-extra-value">${esc(r.emirate_name ?? r.emirate) || '—'}</span></div>
+        <div class="rv-extra-row"><span class="rv-extra-label">Additional Phone Number</span><span class="rv-extra-value">${esc(r.additional_mobile_no) || '—'}</span></div>
+        <div class="rv-extra-row"><span class="rv-extra-label">Additional Email</span><span class="rv-extra-value">${esc(r.additional_email) || '—'}</span></div>
       </div>
     </div>
 
-    <!-- Documents -->
-    <div class="section-card">
-      <div class="section-card-header">Documents</div>
-      <div class="section-card-body">
-        <div class="doc-upload-grid" id="pub-docs-grid">
-          ${['dl_front','dl_back','eid_front','eid_back','passport_photo','signature'].map(slot => {
-            const labels = { dl_front:'DL Front', dl_back:'DL Back', eid_front:'Emirates ID Front', eid_back:'Emirates ID Back', passport_photo:'Passport Photo', signature:'Signature' };
-            const url = docs[slot];
-            return `<div class="doc-upload-item">
-              <div class="doc-upload-label">${labels[slot]}</div>
-              <div class="doc-view-thumb" style="width:100%;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--bg-elevated);min-height:80px;display:flex;align-items:center;justify-content:center">
-                ${url
-                  ? `<img src="${window.location.origin}${API_BASE}/idl/requests/${autoId}/documents/${url.split('/').pop()}" style="width:100%;max-height:180px;object-fit:contain;display:block" alt="${labels[slot]}" />`
-                  : `<span style="color:var(--text-muted);font-size:.8rem;padding:16px"><i class="fa-solid fa-file-slash"></i> Not uploaded</span>`}
-              </div>
-            </div>`;
-          }).join('')}
+    <!-- Driving Licence Details -->
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:14px">Driving Licence Details</div>
+      <div class="rv-identity-rows">
+        <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-id-card"></i></span><span class="rv-id-label">Licence Number</span><span class="rv-id-value">${esc(r.license_no) || '—'}</span></div>
+        <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-calendar-check"></i></span><span class="rv-id-label">Date of Issue</span><span class="rv-id-value">${r.issued_date ? new Date(r.issued_date).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}) : '—'}</span></div>
+        <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-location-dot"></i></span><span class="rv-id-label">Issuing Emirate</span><span class="rv-id-value">${esc(r.place_of_issue_name ?? r.place_of_issue) || '—'}</span></div>
+        <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-calendar-xmark"></i></span><span class="rv-id-label">Date of Expiry</span><span class="rv-id-value">${r.expiry_date ? new Date(r.expiry_date).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}) : '—'}</span></div>
+      </div>
+      ${selectedCats.length ? `
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--bg-base)">
+        <div style="font-size:.82rem;color:var(--text-muted);font-weight:500;margin-bottom:8px">Vehicle Categories</div>
+        <div class="rv-cats-row">
+          ${selectedCats.map(code => `
+            <div class="rv-cat-badge">
+              <i class="fa-solid ${CAT_ICONS[code] || 'fa-car'}"></i>
+              <span>${code} — ${CAT_LABELS[code] || code}</span>
+            </div>`).join('')}
         </div>
+      </div>` : ''}
+    </div>
+
+    <!-- Documents Attached -->
+    <div class="rv-section">
+      <div class="rv-section-title">Documents Attached</div>
+      <div class="rv-section-sub">These are the documents uploaded for this application.</div>
+      <div class="rv-docs-grid">
+        ${docThumb('eid_front',     docLabels.eid_front)}
+        ${docThumb('eid_back',      docLabels.eid_back)}
+        ${docThumb('dl_front',      docLabels.dl_front)}
+        ${docThumb('dl_back',       docLabels.dl_back)}
+        ${docThumb('passport_photo',docLabels.passport_photo)}
+        ${docThumb('signature',     docLabels.signature)}
       </div>
     </div>
 
     <!-- Delivery & Payment -->
-    <div class="section-card">
-      <div class="section-card-header">Delivery &amp; Payment</div>
-      <div class="section-card-body">
-        <div class="detail-grid">
-          ${d('Delivery Option',   DL_OPTION_LABELS[r.delivery_option] ?? esc(r.delivery_option))}
-          ${r.delivery_option === 'send_to_address' ? d('Delivery Address', esc(r.delivery_address)) : ''}
-          ${d('Payment Method', (() => { const m = (r.payment_method ?? '').toUpperCase(); const map = { CREDIT_CARD:'Credit Card', CASH:'Cash', CARD:'Card', ONLINE:'Online', CHEQUE:'Cheque' }; return map[m] || r.payment_method || '—'; })())}
-          ${d('Total Amount',      r.total_amount != null ? 'AED ' + Number(r.total_amount).toFixed(2) : '—')}
-          ${d('Paid Date',         r.paid_date ? formatDateTime(r.paid_date) : '—')}
-          ${r.order_ref_no  ? d('Payment Reference', esc(r.order_ref_no))  : ''}
-          ${r.idl_no        ? d('IDL No',       esc(r.idl_no))        : ''}
-          ${r.idl_booklet_no? d('Booklet No',   esc(r.idl_booklet_no)): ''}
-          ${r.air_bill_no   ? d('Air Waybill',  esc(r.air_bill_no))   : ''}
-        </div>
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:12px">Delivery &amp; Payment</div>
+      <div class="rv-extra-rows">
+        <div class="rv-extra-row"><span class="rv-extra-label">Delivery Option</span><span class="rv-extra-value">${(DL_OPTION_LABELS[r.delivery_option] ?? esc(r.delivery_option)) || '—'}</span></div>
+        ${['send_to_address', 'home_delivery'].includes(r.delivery_option) ? `<div class="rv-extra-row"><span class="rv-extra-label">Delivery Address</span><span class="rv-extra-value">${esc(r.delivery_address) || '—'}</span></div>` : ''}
+        <div class="rv-extra-row"><span class="rv-extra-label">Payment Method</span><span class="rv-extra-value">${(() => { const m = (r.payment_method ?? '').toUpperCase(); const map = { CREDIT_CARD:'Credit Card', CASH:'Cash', CARD:'Card', ONLINE:'Online', CHEQUE:'Cheque' }; return map[m] || r.payment_method || '—'; })()}</span></div>
+        <div class="rv-extra-row"><span class="rv-extra-label">Total Amount</span><span class="rv-extra-value">${r.total_amount != null ? 'AED ' + Number(r.total_amount).toFixed(2) : '—'}</span></div>
+        <div class="rv-extra-row"><span class="rv-extra-label">Paid Date</span><span class="rv-extra-value">${r.paid_date ? formatDateTime(r.paid_date) : '—'}</span></div>
+        ${r.order_ref_no   ? `<div class="rv-extra-row"><span class="rv-extra-label">Payment Reference</span><span class="rv-extra-value">${esc(r.order_ref_no)}</span></div>` : ''}
+        ${r.idl_no         ? `<div class="rv-extra-row"><span class="rv-extra-label">IDL No</span><span class="rv-extra-value">${esc(r.idl_no)}</span></div>` : ''}
+        ${r.idl_booklet_no ? `<div class="rv-extra-row"><span class="rv-extra-label">Booklet No</span><span class="rv-extra-value">${esc(r.idl_booklet_no)}</span></div>` : ''}
+        ${r.air_bill_no    ? `<div class="rv-extra-row"><span class="rv-extra-label">Air Waybill</span><span class="rv-extra-value">${esc(r.air_bill_no)}</span></div>` : ''}
       </div>
     </div>`;
 
   document.getElementById('btn-back-history').addEventListener('click', () => renderPublicHistory());
+
+  document.querySelectorAll('.rv-doc-thumb-clickable').forEach(thumbEl => {
+    thumbEl.addEventListener('click', () => {
+      const { url, label } = thumbEl.dataset;
+      openModal({
+        title: label,
+        body: `<img src="${url}" alt="${label}" style="display:block;max-width:100%;max-height:75vh;margin:0 auto;border-radius:var(--radius)" />`,
+        size: 'lg',
+      });
+    });
+  });
 }

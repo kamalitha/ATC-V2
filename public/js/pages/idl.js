@@ -800,7 +800,12 @@ export async function renderIDLDetail(param) {
   const status   = parseInt(r.request_status);
   const canEdit  = status === 1 || status === 2; // Not Paid / Processing
 
-  const pastIdl  = r.issued_idl_before == 1 ? 'Yes' : (r.issued_idl_before == 0 ? 'No' : '—');
+  const CAT_LABELS   = { A:'Motorcycle', B:'Car', C:'Heavy Vehicle', D:'Bus', E:'Heavy Combination' };
+  const CAT_ICONS    = { A:'fa-motorcycle', B:'fa-car', C:'fa-truck', D:'fa-bus', E:'fa-trailer' };
+  // Older requests store legacy numeric dl_type ids (mn_idl_dl_types) instead of the new A–E letter codes
+  const LEGACY_CAT_MAP = { 1:'A', 2:'B', 3:'C', 4:'D', 5:'E', 6:'E' };
+  const selectedCats = (r.type_of_dl || '').split(',').map(s => s.trim()).filter(Boolean)
+    .map(code => LEGACY_CAT_MAP[code] ?? code);
 
   const backBtn    = `<button class="btn btn-ghost btn-sm" data-action="back">
     <i class="fa-solid fa-arrow-left"></i> Back</button>`;
@@ -822,98 +827,105 @@ export async function renderIDLDetail(param) {
     </div>
 
     <!-- ── 1. Personal Information ──────────────────────────────────────── -->
-    <div class="section-card">
-      <div class="section-card-header">Personal Information</div>
-      <div class="section-card-body">
-        <div class="detail-grid">
-          ${detail('Request Type',          r.request_type)}
-          ${detail('First Name',            r.first_name)}
-          ${detail('Last Name',             r.last_name)}
-          ${detail('Nationality',           r.nationality)}
-          ${detail('Date of Birth',         formatDate(r.dob))}
-          ${detail('Sex',                   r.sex)}
-          ${detail('Address in UAE',        r.address_in_uae)}
-          ${detail('PO Box',                r.po_box)}
-          ${detail('Mobile No',             r.mobile_no)}
-          ${detail('Email',                 r.email)}
-          ${detail('City',                  r.city)}
-          ${detail('Home Country Address',  r.home_country_address)}
-          ${detail('Emirates ID',           r.emirates_id)}
-        </div>
+    <div class="rv-section">
+      <div class="rv-section-header">
+        <span class="rv-section-title">Personal Information</span>
+      </div>
+      <div class="rv-identity-rows">
+        ${identityRow('fa-solid fa-tag',           'Request Type',         r.request_type)}
+        ${identityRow('fa-regular fa-user',        'Full Name',           [r.first_name, r.last_name].filter(Boolean).join(' '))}
+        ${identityRow('fa-regular fa-id-card',     'Emirates ID',         r.emirates_id)}
+        ${identityRow('fa-regular fa-calendar',    'Date of Birth',       formatDate(r.dob))}
+        ${identityRow('fa-solid fa-flag',          'Nationality',         r.nationality)}
+        ${identityRow('fa-solid fa-venus-mars',    'Gender',              r.sex)}
+        ${identityRow('fa-solid fa-mobile-screen', 'Mobile Number',       r.mobile_no)}
+        ${identityRow('fa-regular fa-envelope',    'Email Address',       r.email)}
+        ${identityRow('fa-solid fa-location-dot',  'Address in UAE',      r.address_in_uae)}
+        ${identityRow('fa-solid fa-inbox',         'PO Box',              r.po_box)}
+        ${identityRow('fa-solid fa-city',          'City',                r.city)}
+        ${identityRow('fa-solid fa-globe',         'Home Country Address',r.home_country_address)}
       </div>
     </div>
 
-    <!-- ── 2. License Information ───────────────────────────────────────── -->
-    <div class="section-card">
-      <div class="section-card-header">License Information</div>
-      <div class="section-card-body">
-        <div class="detail-grid">
-          ${detail('License No',                r.license_no)}
-          ${detail('Place of Birth',            r.place_of_birth)}
-          ${detail('DL Place of Issue',         r.place_of_issue)}
-          ${detail('Issued Date',               formatDate(r.issued_date))}
-          ${detail('Expiry Date',               formatDate(r.expiry_date))}
-          ${detail('Type of Driving License',   r.dl_type_name || r.type_of_dl || '—')}
-          ${detail('Emirate of Residence',      r.emirate_name)}
-          ${detail('Issued IDL in Past?',       pastIdl)}
-        </div>
+    <!-- ── Additional Information ───────────────────────────────────────── -->
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:12px">Additional Information</div>
+      <div class="rv-extra-rows">
+        <div class="rv-extra-row"><span class="rv-extra-label">Place of Birth</span><span class="rv-extra-value">${r.place_of_birth || '—'}</span></div>
+        <div class="rv-extra-row"><span class="rv-extra-label">UAE Permanent Place of Residence</span><span class="rv-extra-value">${r.emirate_name ?? r.emirate ?? '—'}</span></div>
+        <div class="rv-extra-row"><span class="rv-extra-label">Additional Phone Number</span><span class="rv-extra-value">${r.additional_mobile_no || '—'}</span></div>
+        <div class="rv-extra-row"><span class="rv-extra-label">Additional Email</span><span class="rv-extra-value">${r.additional_email || '—'}</span></div>
       </div>
     </div>
 
-    <!-- ── 3. Documents Required ───────────────────────────────────────── -->
-    <div class="section-card">
-      <div class="section-card-header">Documents Required</div>
-      <div class="section-card-body">
-        <div class="doc-upload-grid">
-          ${docUpload('dl_front',    'Drivers License Front Image')}
-          ${docUpload('dl_back',     'Drivers License Back Image')}
-          ${docUpload('eid_front',   'Emirates ID Front Image')}
-          ${docUpload('eid_back',    'Emirates ID Back Image')}
-          ${docUpload('passport_photo', 'Passport Size Photo')}
-        </div>
-        <div id="doc-upload-error" class="form-error hidden" style="margin-top:8px"></div>
+    <!-- ── Driving Licence Details ──────────────────────────────────────── -->
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:14px">Driving Licence Details</div>
+      <div class="rv-identity-rows">
+        <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-id-card"></i></span><span class="rv-id-label">Licence Number</span><span class="rv-id-value">${r.license_no || '—'}</span></div>
+        <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-calendar-check"></i></span><span class="rv-id-label">Date of Issue</span><span class="rv-id-value">${r.issued_date ? new Date(r.issued_date).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}) : '—'}</span></div>
+        <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-location-dot"></i></span><span class="rv-id-label">Issuing Emirate</span><span class="rv-id-value">${r.place_of_issue_name ?? r.place_of_issue ?? '—'}</span></div>
+        <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-calendar-xmark"></i></span><span class="rv-id-label">Date of Expiry</span><span class="rv-id-value">${r.expiry_date ? new Date(r.expiry_date).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}) : '—'}</span></div>
       </div>
+      ${selectedCats.length ? `
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--bg-base)">
+        <div style="font-size:.82rem;color:var(--text-muted);font-weight:500;margin-bottom:8px">Vehicle Categories</div>
+        <div class="rv-cats-row">
+          ${selectedCats.map(code => `
+            <div class="rv-cat-badge">
+              <i class="fa-solid ${CAT_ICONS[code] || 'fa-car'}"></i>
+              <span>${code} — ${CAT_LABELS[code] || code}</span>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
+    </div>
+
+    <!-- ── Documents Attached ───────────────────────────────────────────── -->
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:12px">Documents Attached</div>
+      <div class="doc-upload-grid">
+        ${docUpload('dl_front',    'Drivers License Front Image')}
+        ${docUpload('dl_back',     'Drivers License Back Image')}
+        ${docUpload('eid_front',   'Emirates ID Front Image')}
+        ${docUpload('eid_back',    'Emirates ID Back Image')}
+        ${docUpload('passport_photo', 'Passport Size Photo')}
+      </div>
+      <div id="doc-upload-error" class="form-error hidden" style="margin-top:8px"></div>
     </div>
 
     <!-- ── 4. Delivery Options ──────────────────────────────────────────── -->
-    <div class="section-card">
-      <div class="section-card-header">Delivery &amp; Payment</div>
-      <div class="section-card-body">
-        <div class="detail-grid">
-          ${detail('Delivery Option', r.delivery_option === 'pick_from_office'
-            ? 'Pick up at ATCUAE Office (Dubai Only)'
-            : 'Send to Address')}
-          ${r.delivery_option !== 'pick_from_office' ? `
-          ${detail('Delivery Address', r.delivery_address || '—')}` : ''}
-          ${detail('Payment Method', (() => {
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:12px">Delivery &amp; Payment</div>
+      <div class="rv-extra-rows">
+        <div class="rv-extra-row"><span class="rv-extra-label">Delivery Option</span><span class="rv-extra-value">${(() => {
+            const map = {
+              pick_from_office:          'Pick up at ATCUAE Office (Dubai Only)',
+              pick_from_dubai_office:    'Pick up at Dubai Office',
+              pick_from_abudhabi_office: 'Pick up at Abu Dhabi Office',
+              send_to_address:          'Send to Address',
+              home_delivery:            'Home Delivery',
+            };
+            return map[r.delivery_option] ?? 'Send to Address';
+          })()}</span></div>
+        ${['send_to_address', 'home_delivery'].includes(r.delivery_option) ? `
+        <div class="rv-extra-row"><span class="rv-extra-label">Delivery Address</span><span class="rv-extra-value">${r.delivery_address || '—'}</span></div>` : ''}
+        <div class="rv-extra-row"><span class="rv-extra-label">Payment Method</span><span class="rv-extra-value">${(() => {
             const m = (r.payment_method ?? '').toUpperCase();
             const map = { CREDIT_CARD: 'Credit Card', CASH: 'Cash', CARD: 'Card', ONLINE: 'Online', CHEQUE: 'Cheque' };
             return map[m] || r.payment_method || '—';
-          })())}
-          ${['idl_officer','idl_cpd_cashier'].includes(currentUser?.role_name)
-            ? detail('Total Amount (AED)', r.total_amount != null ? Number(r.total_amount).toFixed(2) : '—')
-            : detail('Air Waybill No', r.air_bill_no || '—')}
-        </div>
+          })()}</span></div>
+        ${['idl_officer','idl_cpd_cashier'].includes(currentUser?.role_name)
+          ? `<div class="rv-extra-row"><span class="rv-extra-label">Total Amount (AED)</span><span class="rv-extra-value">${r.total_amount != null ? Number(r.total_amount).toFixed(2) : '—'}</span></div>`
+          : `<div class="rv-extra-row"><span class="rv-extra-label">Air Waybill No</span><span class="rv-extra-value">${r.air_bill_no || '—'}</span></div>`}
         ${['idl_officer','idl_cpd_cashier'].includes(currentUser?.role_name) ? `
-        <div class="form-grid" style="margin-top:16px">
-          <div class="field">
-            <label>Paid Date &amp; Time</label>
-            <input type="text" value="${r.paid_date ? formatDateTime(r.paid_date) : '—'}" readonly
-              style="background:var(--bg-elevated);cursor:default" />
-          </div>
-          <div class="field">
-            <label>Order / Ref No</label>
-            <input type="text" value="${esc(r.order_ref_no ?? '')}" readonly
-              style="background:var(--bg-elevated);cursor:default" />
-          </div>
-        </div>` : ''}
+        <div class="rv-extra-row"><span class="rv-extra-label">Paid Date &amp; Time</span><span class="rv-extra-value">${r.paid_date ? formatDateTime(r.paid_date) : '—'}</span></div>
+        <div class="rv-extra-row"><span class="rv-extra-label">Order / Ref No</span><span class="rv-extra-value">${esc(r.order_ref_no ?? '') || '—'}</span></div>` : ''}
       </div>
     </div>
 
     <!-- ── 4. Process Application ───────────────────────────────────────── -->
-    <div class="section-card">
-      <div class="section-card-header">Process Application</div>
-      <div class="section-card-body">
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:12px">Process Application</div>
         ${(currentUser?.role_name !== 'idl_cpd_cashier') ||
            (status === 4 || status === 5) ? `
         <div class="form-grid">
@@ -960,18 +972,23 @@ export async function renderIDLDetail(param) {
           ${status === 4 || status === 5 ? `
           <button class="btn btn-info btn-sm" data-action="dispatch">
             <i class="fa-solid fa-truck"></i> Mark Dispatched</button>` : ''}
+          ${status === 4 && currentUser?.role_name === 'idl_officer' ? `
+          <button class="btn btn-ghost btn-sm" data-action="print">
+            <i class="fa-solid fa-print"></i> Print</button>` : ''}
+          ${(status === 4 || status === 5) && currentUser?.role_name === 'idl_officer' ? `
+          <button class="btn btn-danger btn-sm" data-action="void">
+            <i class="fa-solid fa-ban"></i> Void</button>` : ''}
           ${canEdit && ['idl_officer','idl_cpd_walkin'].includes(currentUser?.role_name) ? `
           <button class="btn btn-ghost btn-sm" data-action="save-proc">
             <i class="fa-solid fa-floppy-disk"></i> Save Changes</button>` : ''}
           <button class="btn btn-ghost btn-sm" data-action="back">
             <i class="fa-solid fa-arrow-left"></i> Go Back</button>
         </div>
-      </div>
     </div>`;
 
   // Bind listeners to the page-actions bar only (Process Application has inline buttons)
   content.querySelector('.page-actions').addEventListener('click', handleIDLAction);
-  content.querySelector('.section-card:last-child').addEventListener('click', handleIDLAction);
+  content.querySelector('.rv-section:last-child').addEventListener('click', handleIDLAction);
   initDocUploads();
   loadExistingDocs(id);
 
@@ -986,7 +1003,32 @@ export async function renderIDLDetail(param) {
     if (action === 'dispatch')      handleDispatch(id, param);
     if (action === 'save-proc')     handleSaveProc(id).catch(() => {});
     if (action === 'print-receipt') handlePrintReceipt(id, r);
+    if (action === 'print')         window.open(api.idl.printUrl(id), '_blank');
+    if (action === 'void')          handleVoid(id, param);
   }
+}
+
+function handleVoid(id, param) {
+  openModal({
+    title: 'Void IDL',
+    body: `<div class="field"><label>Comments *</label>
+      <textarea id="void-comment" rows="3" style="width:100%;resize:vertical"
+        placeholder="Explain why this IDL is being voided…"></textarea></div>`,
+    footer: `<button class="btn btn-ghost" onclick="closeModalGlobal()">
+               <i class="fa-solid fa-xmark"></i> Cancel
+             </button>
+             <button class="btn btn-danger" id="confirm-void">
+               <i class="fa-solid fa-ban"></i> Void
+             </button>`,
+  });
+  document.getElementById('confirm-void').onclick = async () => {
+    const comment = document.getElementById('void-comment').value.trim();
+    if (!comment) return toast('Please enter a comment', 'error');
+    await api.idl.voidRequest(id, { comment });
+    closeModal();
+    toast('IDL voided', 'info');
+    renderIDLDetail(param);
+  };
 }
 
 async function handleSaveProc(id) {
@@ -1237,6 +1279,10 @@ function detail(label, value) {
   return `<div class="detail-item"><label>${label}</label><div class="detail-val">${value ?? '—'}</div></div>`;
 }
 
+function identityRow(icon, label, value) {
+  return `<div class="rv-identity-row"><span class="rv-id-icon"><i class="${icon}"></i></span><span class="rv-id-label">${label}</span><span class="rv-id-value">${value || '—'}</span></div>`;
+}
+
 function docUpload(key, label) {
   return `
     <div class="doc-upload-item">
@@ -1288,7 +1334,7 @@ async function loadExistingDocs(id) {
     if (!zone || !preview || !img) return;
 
     // Serve the image through the API (auth cookie included automatically)
-    img.src = `${window.location.origin}${API_BASE}${url}`;
+    img.src = `${window.location.origin}${API_BASE}/idl/requests/${id}/documents/${url.split('/').pop()}`;
     name.textContent = url.split('/').pop();
     if (holder)  holder.style.display  = 'none';
     preview.style.display = 'flex';

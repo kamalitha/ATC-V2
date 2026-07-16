@@ -673,6 +673,7 @@ tbody td { padding: 12px 16px; font-size: 1rem; }
 
 /* ── Form grid ───────────────────────────────────────────────────────────── */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.pub-additional-grid { row-gap: 0px; }
 .form-grid .field-full { grid-column: 1 / -1; }
 @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
 
@@ -1821,6 +1822,38 @@ table.dataTable .badge {
 .pub-id-label { color: var(--text-muted); font-size: .8rem; }
 .pub-id-value { color: var(--text-primary); font-weight: 600; }
 
+.pub-id-inline-input {
+  width: 100%;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: .84rem;
+  color: var(--text-primary);
+  transition: border-color .15s;
+}
+.pub-id-inline-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-10, rgba(59,130,246,.12));
+}
+.pub-id-inline-select {
+  width: 100%;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: .84rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.pub-id-inline-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-10, rgba(59,130,246,.12));
+}
+
 /* ── Additional Info Card ────────────────────────────────────────────────── */
 .pub-additional-card {
   background: var(--bg-elevated);
@@ -2138,12 +2171,19 @@ table.dataTable .badge {
 }
 .del-office-card {
   background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
   border-radius: var(--radius);
   padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+.del-office-card:hover { border-color: var(--accent); }
+.del-office-card-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
 }
 .del-office-header {
   display: flex;
@@ -2151,6 +2191,7 @@ table.dataTable .badge {
   gap: 8px;
 }
 .del-office-name { font-size: .88rem; font-weight: 700; color: var(--text-primary); }
+.del-office-radio { margin-left: auto; font-size: 1rem; color: var(--text-muted); flex-shrink: 0; }
 .del-office-addr { font-size: .78rem; color: var(--text-muted); line-height: 1.45; }
 .del-office-hours { display: flex; flex-direction: column; gap: 3px; }
 .del-hours-row {
@@ -2300,6 +2341,7 @@ table.dataTable .badge {
 .rv-extra-value {
   font-size: .9rem;
   color: var(--text-primary);
+  font-weight: 700;
 }
 /* Document thumbnails */
 .rv-docs-grid {
@@ -2323,6 +2365,8 @@ table.dataTable .badge {
 }
 .rv-doc-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .rv-doc-thumb-empty { border-style: dashed; color: var(--text-muted); font-size: 1.5rem; }
+.rv-doc-thumb-clickable { cursor: pointer; transition: border-color .15s; }
+.rv-doc-thumb-clickable:hover { border-color: var(--accent); }
 .rv-doc-check {
   position: absolute;
   top: 5px;
