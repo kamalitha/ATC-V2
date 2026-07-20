@@ -1037,7 +1037,7 @@ class IDLController
             'ivp_method'   => 'create',
             'ivp_store'    => Config::TELR_STORE_ID,
             'ivp_authkey'  => Config::TELR_AUTH_KEY,
-            'ivp_amount'   => Config::IDL_AMOUNT,
+            'ivp_amount'   => $req['total_amount'],
             'ivp_currency' => Config::TELR_CURRENCY,
             'ivp_test'     => Config::TELR_TEST,
             'ivp_cart'     => $cartId,
@@ -1171,8 +1171,22 @@ class IDLController
     {
         Response::success([
             'idl_amount'    => Config::IDL_AMOUNT,
+            'admin_fee'     => Config::IDL_ADMIN_FEE,
             'delivery_fee'  => Config::DELIVERY_FEE,
         ]);
+    }
+
+    /**
+     * IDL Fee + Administration Fee + (Delivery Fee when delivered) + VAT 5% on
+     * (IDL Fee + Delivery Fee) — the Administration Fee is VAT-exempt.
+     */
+    private function calcIdlTotal(string $deliveryOption): float
+    {
+        $isDelivery  = in_array($deliveryOption, ['send_to_address', 'home_delivery'], true);
+        $deliveryFee = $isDelivery ? Config::DELIVERY_FEE : 0.0;
+        $vat         = round((Config::IDL_AMOUNT + $deliveryFee) * 0.05, 2);
+
+        return Config::IDL_AMOUNT + Config::IDL_ADMIN_FEE + $deliveryFee + $vat;
     }
 
     public function myRequests(array $params, array $body, array $query): void
@@ -1474,6 +1488,7 @@ class IDLController
         $walkinRoles = in_array(Auth::roleId(), [8, 23], true);
         $paidStatus  = ($publicRole || $walkinRoles) ? 0 : 1;
         $typeOfDl   = $body['type_of_dl'] ?? null;
+        $totalAmount = $this->calcIdlTotal($body['delivery_option']);
 
         $id        = null;
         $requestId = null;
@@ -1495,7 +1510,7 @@ class IDLController
                     $body['travel_insurance'] ?? 0,
                     $body['delivery_option'],
                     $body['delivery_address'] ?? '',
-                    Config::IDL_AMOUNT,
+                    $totalAmount,
                     $paidStatus,
                     $body['payment_method'],
                     'OFFICER',

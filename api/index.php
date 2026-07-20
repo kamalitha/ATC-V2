@@ -85,6 +85,7 @@ $r->get('/api/idl/moe-report',                      [IDLController::class,'moeRe
 $r->get('/api/idl/search-by-eid',           [IDLController::class,'searchByEid'],   auth:true);
 $r->get('/api/cpd/search-by-eid',           [CPDController::class,'searchByEid'],   auth:true);
 $r->get('/api/cpd/search-by-ref',           [CPDController::class,'searchByRef'],   auth:true);
+$r->get('/api/cpd/search-own-by-carnet',    [CPDController::class,'searchOwnByCarnet'], auth:true);
 $r->get('/api/cpd/claims/search',           [CPDController::class,'searchClaims'],  auth:true);
 $r->post('/api/cpd/claims',                 [CPDController::class,'addClaim'],       auth:true);
 $r->get('/api/cpd/requests/{id}/claims',                    [CPDController::class,'getClaims'],           auth:true);

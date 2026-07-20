@@ -316,12 +316,8 @@ export async function renderCPDNew() {
               </select>
             </div>
             <div class="field">
-              <label>First Name *</label>
-              <input name="first_name" required placeholder="First name" />
-            </div>
-            <div class="field">
-              <label>Last Name *</label>
-              <input name="last_name" required placeholder="Last name" />
+              <label>Full Name *</label>
+              <input name="full_name" required placeholder="Full name" />
             </div>
             <div class="field">
               <label>Mobile No *</label>
@@ -369,68 +365,179 @@ export async function renderCPDNew() {
       <div class="section-card">
         <div class="section-card-header">Vehicle Information</div>
         <div class="section-card-body">
-          <div class="form-grid">
-            <div class="field"><label>Traffic File No</label><input name="mulkiya_no" placeholder="Traffic file / Mulkiya number" /></div>
-            <div class="field"><label>Registration No *</label><input name="registration_no" required placeholder="e.g. Dubai A 12345" /></div>
-            <div class="field">
-              <label>Vehicle Make *</label>
-              <select name="vehicle_make" required>
-                <option value="">Select make</option>
-                ${vehicleTypes.map(v => `<option value="${v.vehicle_type}">${v.vehicle_type}</option>`).join('')}
-              </select>
+          <div class="pub-identity-card">
+            <div class="pub-identity-rows">
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-regular fa-file-lines"></i></span>
+                <span class="pub-id-label">Traffic File No</span>
+                <input name="mulkiya_no" class="pub-id-inline-input" placeholder="Traffic file / Mulkiya number" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-hashtag"></i></span>
+                <span class="pub-id-label">Registration No</span>
+                <input name="registration_no" required class="pub-id-inline-input" placeholder="e.g. Dubai A 12345" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-car"></i></span>
+                <span class="pub-id-label">Vehicle Make</span>
+                <select name="vehicle_make" required class="pub-id-inline-select">
+                  <option value="">Select make</option>
+                  ${vehicleTypes.map(v => `<option value="${v.vehicle_type}">${v.vehicle_type}</option>`).join('')}
+                </select>
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-car-side"></i></span>
+                <span class="pub-id-label">Vehicle Model</span>
+                <input name="vehicle_model" required class="pub-id-inline-input" placeholder="e.g. Land Cruiser" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-sack-dollar"></i></span>
+                <span class="pub-id-label">Vehicle Value (AED)</span>
+                <input name="vehicle_value" type="number" class="pub-id-inline-input" placeholder="80000" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-location-dot"></i></span>
+                <span class="pub-id-label">Vehicle Registered In</span>
+                <select name="vehicle_registered_in" class="pub-id-inline-select">
+                  <option value="">Select emirate</option>
+                  ${UAE_STATES.map(s => `<option value="${s}">${s}</option>`).join('')}
+                </select>
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-shapes"></i></span>
+                <span class="pub-id-label">Body Type</span>
+                <select name="body_type" class="pub-id-inline-select">
+                  <option value="">Select type</option>
+                  ${BODY_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+                </select>
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-regular fa-calendar"></i></span>
+                <span class="pub-id-label">Year of Manufacture</span>
+                <select name="manuf_year" required class="pub-id-inline-select">
+                  <option value="">Select year</option>
+                  ${yearOpts}
+                </select>
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-palette"></i></span>
+                <span class="pub-id-label">Color as per Mulkiya</span>
+                <select name="color" class="pub-id-inline-select">
+                  <option value="">Select color</option>
+                  ${COLORS.map(c => `<option value="${c}">${c}</option>`).join('')}
+                </select>
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-weight-hanging"></i></span>
+                <span class="pub-id-label">Net Weight (Empty Load)</span>
+                <input name="net_weight" class="pub-id-inline-input" placeholder="kg" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-barcode"></i></span>
+                <span class="pub-id-label">Chassis No</span>
+                <input name="chassis_no" required class="pub-id-inline-input" placeholder="VIN / Chassis number" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-gears"></i></span>
+                <span class="pub-id-label">Engine No</span>
+                <input name="engine_no" class="pub-id-inline-input" placeholder="Engine number" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-gauge-high"></i></span>
+                <span class="pub-id-label">Horse Power</span>
+                <input name="horse_power" class="pub-id-inline-input" placeholder="e.g. 200" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-layer-group"></i></span>
+                <span class="pub-id-label">No of Cylinders</span>
+                <input name="no_of_cylinders" class="pub-id-inline-input" placeholder="e.g. 4" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-chair"></i></span>
+                <span class="pub-id-label">Upholstery</span>
+                <input name="upholstery" class="pub-id-inline-input" placeholder="e.g. Leather" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-users"></i></span>
+                <span class="pub-id-label">No of Seats</span>
+                <input name="no_of_seats" type="number" class="pub-id-inline-input" placeholder="5" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-radio"></i></span>
+                <span class="pub-id-label">Radio</span>
+                <select name="radio" class="pub-id-inline-select">
+                  <option value="">Select</option><option value="Yes">Yes</option><option value="No">No</option>
+                </select>
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-ring"></i></span>
+                <span class="pub-id-label">Spare Tyre</span>
+                <select name="spare_tyre" class="pub-id-inline-select">
+                  <option value="">Select</option><option value="Yes">Yes</option><option value="No">No</option>
+                </select>
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-regular fa-comment"></i></span>
+                <span class="pub-id-label">Additional Remarks</span>
+                <textarea name="additional_remarks" rows="1" class="pub-id-inline-input" style="resize:vertical" placeholder="Any additional remarks…"></textarea>
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-list"></i></span>
+                <span class="pub-id-label">Other Particulars (1)</span>
+                <input name="others1" class="pub-id-inline-input" placeholder="e.g. Roof rack…" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-list"></i></span>
+                <span class="pub-id-label">Other Particulars (2)</span>
+                <input name="others2" class="pub-id-inline-input" placeholder="e.g. Winch, spare parts…" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
+                <span class="pub-id-label">Reference 1 (UAE)</span>
+                <input name="uae_refree1" class="pub-id-inline-input" placeholder="Full name and phone number" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
+                <span class="pub-id-label">Reference 2 (UAE)</span>
+                <input name="uae_refree2" class="pub-id-inline-input" placeholder="Full name and phone number" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
+                <span class="pub-id-label">Reference 1 (Destination)</span>
+                <input name="destination_refree1" class="pub-id-inline-input" placeholder="Full name and phone number" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
+                <span class="pub-id-label">Reference 2 (Destination)</span>
+                <input name="destination_refree2" class="pub-id-inline-input" placeholder="Full name and phone number" />
+              </div>
+
             </div>
-            <div class="field"><label>Vehicle Model *</label><input name="vehicle_model" required placeholder="e.g. Land Cruiser" /></div>
-            <div class="field"><label>Vehicle Value (AED)</label><input name="vehicle_value" type="number" placeholder="80000" /></div>
-            <div class="field">
-              <label>Vehicle Registered In</label>
-              <select name="vehicle_registered_in">
-                <option value="">Select emirate</option>
-                ${UAE_STATES.map(s => `<option value="${s}">${s}</option>`).join('')}
-              </select>
-            </div>
-            <div class="field">
-              <label>Body Type</label>
-              <select name="body_type">
-                <option value="">Select type</option>
-                ${BODY_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
-              </select>
-            </div>
-            <div class="field">
-              <label>Year of Manufacture *</label>
-              <select name="manuf_year" required>
-                <option value="">Select year</option>
-                ${yearOpts}
-              </select>
-            </div>
-            <div class="field">
-              <label>Color as per Mulkiya</label>
-              <select name="color">
-                <option value="">Select color</option>
-                ${COLORS.map(c => `<option value="${c}">${c}</option>`).join('')}
-              </select>
-            </div>
-            <div class="field"><label>Net Weight (Empty Load)</label><input name="net_weight" placeholder="kg" /></div>
-            <div class="field"><label>Chassis No *</label><input name="chassis_no" required placeholder="VIN / Chassis number" /></div>
-            <div class="field"><label>Engine No</label><input name="engine_no" placeholder="Engine number" /></div>
-            <div class="field"><label>Horse Power</label><input name="horse_power" placeholder="e.g. 200" /></div>
-            <div class="field"><label>No of Cylinders</label><input name="no_of_cylinders" placeholder="e.g. 4" /></div>
-            <div class="field"><label>Upholstery</label><input name="upholstery" placeholder="e.g. Leather" /></div>
-            <div class="field"><label>No of Seats</label><input name="no_of_seats" type="number" placeholder="5" /></div>
-            <div class="field">
-              <label>Radio</label>
-              <select name="radio"><option value="">Select</option><option value="Yes">Yes</option><option value="No">No</option></select>
-            </div>
-            <div class="field">
-              <label>Spare Tyre</label>
-              <select name="spare_tyre"><option value="">Select</option><option value="Yes">Yes</option><option value="No">No</option></select>
-            </div>
-            <div class="field field-full"><label>Additional Remarks</label><textarea name="additional_remarks" rows="2" style="width:100%;resize:vertical" placeholder="Any additional remarks…"></textarea></div>
-            <div class="field field-full"><label>Other Particulars / Extra Items (1)</label><input name="others1" placeholder="e.g. Roof rack…" /></div>
-            <div class="field field-full"><label>Other Particulars / Extra Items (2)</label><input name="others2" placeholder="e.g. Winch, spare parts…" /></div>
-            <div class="field"><label>Reference 1 (UAE) Name / Contact</label><input name="uae_refree1" placeholder="Full name and phone number" /></div>
-            <div class="field"><label>Reference 2 (UAE) Name / Contact</label><input name="uae_refree2" placeholder="Full name and phone number" /></div>
-            <div class="field"><label>Reference 1 (Destination) Name / Contact</label><input name="destination_refree1" placeholder="Full name and phone number" /></div>
-            <div class="field"><label>Reference 2 (Destination) Name / Contact</label><input name="destination_refree2" placeholder="Full name and phone number" /></div>
           </div>
         </div>
       </div>
@@ -726,8 +833,7 @@ export async function renderCPDNew() {
       };
 
       // Personal details
-      set('first_name',  d.first_name);
-      set('last_name',   d.last_name);
+      set('full_name',   [d.first_name, d.last_name].filter(Boolean).join(' '));
       set('nationality', d.nationality_id ?? d.nationality);
       set('city',        d.city);
       set('address',     d.uae_address);
@@ -796,6 +902,13 @@ export async function renderCPDNew() {
     const fd   = new FormData(e.target);
     const body = Object.fromEntries(fd.entries());
     body.countries = fd.getAll('countries').map(Number);
+
+    // Explode Full Name into first_name (first two words) and last_name (remaining words)
+    if (body.full_name) {
+      const nameParts = body.full_name.trim().split(/\s+/).filter(Boolean);
+      body.first_name = nameParts.slice(0, 2).join(' ');
+      body.last_name  = nameParts.slice(2).join(' ');
+    }
 
     // Validate all documents are selected
     const REQUIRED_DOCS = ['traffic_front','traffic_back','eid_front','eid_back',
@@ -888,7 +1001,7 @@ export async function renderCPDDetail(param) {
       <div class="section-card-header">Applicant</div>
       <div class="section-card-body">
         <div class="detail-grid">
-          ${detail('Name',              `${r.first_name} ${r.last_name}`)}
+          ${detail('Full Name',         `${r.first_name} ${r.last_name}`)}
           ${detail('Email',             r.email)}
           ${detail('Mobile',            r.mobile_no)}
           ${detail('Emirates ID',       r.emirates_id)}

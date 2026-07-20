@@ -570,6 +570,24 @@ class CPDController
             if ($hold) Response::error('Your account has been placed on hold. Please contact ATC for assistance.', 403);
         }
 
+        // ── Renewal — verify ownership of the parent Carnet and that it hasn't
+        // already been renewed before allowing the new request to be linked to it
+        $parentAutoId = (int)($body['parent_request_id'] ?? 0);
+        if ($parentAutoId) {
+            $parent = $this->db->queryOne(
+                'SELECT auto_id, belonging_user_id FROM mn_cpd_requests WHERE auto_id = ?',
+                [$parentAutoId],
+            );
+            if (!$parent) Response::notFound('Carnet to renew was not found');
+            if ((int)$parent['belonging_user_id'] !== $userId) Response::forbidden('Access denied');
+
+            $existingChild = $this->db->queryOne(
+                'SELECT auto_id FROM mn_cpd_requests WHERE parent_request_id = ? LIMIT 1',
+                [$parentAutoId],
+            );
+            if ($existingChild) Response::error('This Carnet has already been renewed', 409);
+        }
+
         // Update mn_users with latest contact details
         $this->db->execute(
             "UPDATE mn_users SET first_name=?, last_name=?, mobile_no=?, email=? WHERE user_id=?",
@@ -596,10 +614,10 @@ class CPDController
                   additional_remarks, others1, others2,
                   uae_refree1, uae_refree2, destination_refree1, destination_refree2,
                   guarantee_amount, booking_fee, extra_fees, vat_amount, total_amount,
-                  method_of_payment, booking_channel, request_status, requested_datetime)
-                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ONLINE',1,NOW())",
+                  method_of_payment, booking_channel, request_status, parent_request_id, requested_datetime)
+                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ONLINE',1,?,NOW())",
                 [
-                    'NORMAL',
+                    $parentAutoId ? 'RENEW' : 'NORMAL',
                     $userId,
                     $body['vehicle_make'],
                     $body['vehicle_model'],
@@ -634,6 +652,7 @@ class CPDController
                     $body['vat_amount']           ?? 0,
                     $body['total_amount']         ?? 0,
                     $body['payment_method']       ?? 'CASH',
+                    $parentAutoId ?: null,
                 ],
             );
             // Update request_id using the auto_id
@@ -1154,6 +1173,55 @@ class CPDController
     }
 
     // ── Public User: Return Carnet ────────────────────────────────────────────
+
+    /**
+     * GET /api/cpd/search-own-by-carnet
+     * Customer self-service lookup — scoped to the caller's own requests only
+     * (unlike the staff-facing searchByRef, which can look up any carnet).
+     */
+    public function searchOwnByCarnet(array $params, array $body, array $query): void
+    {
+        $carnetNo = trim($query['carnet_no'] ?? '');
+        if ($carnetNo === '') Response::error('Carnet number is required', 422);
+
+        $row = $this->db->queryOne(
+            "SELECT r.auto_id, r.request_id, r.request_status, r.requested_datetime,
+                    r.vehicle_make, r.vehicle_model, r.registration_no, r.chassis_no, r.engine_no,
+                    r.manuf_year, r.color, r.body_type, r.no_of_cylinders, r.horse_power,
+                    r.net_weight, r.vehicle_value, r.mulkiya_no, r.vehicle_registered_in,
+                    r.upholstery, r.no_of_seats, r.radio, r.spare_tyre,
+                    r.extra_owner1_name, r.extra_owner2_name,
+                    ru.title, ru.first_name, ru.last_name, ru.nationality_id, ru.city,
+                    ru.uae_address, ru.po_box, ru.emirates_id, ru.passport_no,
+                    u.mobile_no, u.email,
+                    c.carnet_no, c.is_damaged
+             FROM mn_cpd_requests r
+             JOIN mn_cpd_issued_carnets ic ON ic.request_id = r.auto_id
+             JOIN mn_cpd_carnets c         ON c.carnet_id   = ic.carnet_id
+             JOIN mn_cpd_request_user ru   ON ru.request_auto_id = r.auto_id
+             JOIN mn_users u               ON u.user_id = r.belonging_user_id
+             WHERE c.carnet_no = ? AND r.belonging_user_id = ?
+             ORDER BY ic.carnet_issue_id DESC LIMIT 1",
+            [$carnetNo, Auth::id()],
+        );
+
+        if (!$row) Response::notFound('No carnet found with that number on your account');
+
+        $row['existing_return'] = $this->db->queryOne(
+            'SELECT return_id, added_datetime, confirmed_by FROM mn_cpd_carnet_returns WHERE request_id = ? LIMIT 1',
+            [$row['auto_id']],
+        );
+        $row['existing_renewal'] = $this->db->queryOne(
+            'SELECT auto_id, request_id FROM mn_cpd_requests WHERE parent_request_id = ? LIMIT 1',
+            [$row['auto_id']],
+        );
+        $row['countries'] = $this->db->query(
+            'SELECT country_id FROM mn_cpd_request_country_list WHERE request_id = ?',
+            [$row['auto_id']],
+        );
+
+        Response::success($row);
+    }
 
     public function returnCarnet(array $params, array $body, array $query): void
     {

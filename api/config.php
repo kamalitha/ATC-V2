@@ -18,9 +18,10 @@ final class Config
     public const FRONTEND_URL = 'http://v2.eservices.local';
     public const TIMEZONE     = 'Asia/Dubai';
 
-    public const IDL_AMOUNT             = 178.50;
+    public const IDL_AMOUNT             = 160.00;
+    public const IDL_ADMIN_FEE           = 10.00;  // administration fee added on top of the IDL fee
     public const CPD_EXTRA_DRIVER_FEE   = 50.00;
-    public const DELIVERY_FEE  = 15.75;   // delivery surcharge when send_to_address
+    public const DELIVERY_FEE  = 15.75;   // delivery surcharge when send_to_address / home_delivery
     public const CPD_PENALTY           = 150.00;
     public const CPD_DELIVERY_FEE = 30.00;
 

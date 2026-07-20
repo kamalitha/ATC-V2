@@ -152,6 +152,7 @@ const api = {
     uploadDocs:     (id, fd) => requestUpload(`/cpd/requests/${id}/documents`, fd),
     searchByEid:    (eid)    => request('GET',  '/cpd/search-by-eid', { params: { eid } }),
     getByRef:       (ref)    => request('GET',  '/cpd/search-by-ref',   { params: { ref } }),
+    searchOwnByCarnet: (carnetNo) => request('GET', '/cpd/search-own-by-carnet', { params: { carnet_no: carnetNo } }),
     searchClaims:   (carnetNo) => request('GET',  '/cpd/claims/search',        { params: { carnet_no: carnetNo } }),
     addClaim:             (fd)                   => requestUpload('/cpd/claims', fd),
     getClaims:            (requestId)            => request('GET', `/cpd/requests/${requestId}/claims`),

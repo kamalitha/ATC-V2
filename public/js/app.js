@@ -6,7 +6,7 @@ import { renderCPDRequests, renderCPDNew, renderCPDRenew, renderCPDDetail, rende
 import { renderUsers }       from './pages/users.js';
 import { renderReports }     from './pages/reports.js';
 import { renderProfile }     from './pages/profile.js';
-import { renderPublicApplyIDL, renderPublicApplyCPD, renderPublicHistory, renderPaymentResult } from './pages/public.js';
+import { renderPublicApplyIDL, renderPublicApplyCPD, renderPublicHistory, renderPaymentResult, renderPublicCPDReturn, renderPublicCPDRenewSearch } from './pages/public.js';
 import { renderSupportTickets, renderPublicSupportTickets } from './pages/support.js';
 
 // ── Global JS error logging ───────────────────────────────────────────────────
@@ -92,6 +92,8 @@ const CRUMBS = {
   profile:       [{ label: 'Profile' }],
   'public-apply-idl': [{ label: 'Apply for IDL' }],
   'public-apply-cpd': [{ label: 'Apply for CPD' }],
+  'public-cpd-return': [{ label: 'Return your CPD' }],
+  'public-cpd-renew': [{ label: 'Renew your CPD' }],
   'public-history':        [{ label: 'My History' }],
   'payment-success':       [{ label: 'Payment Successful' }],
   'payment-declined':      [{ label: 'Payment Declined' }],
@@ -152,8 +154,10 @@ const ROUTES = {
   users:         ()    => renderUsers(),
   reports:       ()    => renderReports(),
   profile:       ()    => renderProfile(),
-  'public-apply-idl': () => renderPublicApplyIDL(),
-  'public-apply-cpd': () => renderPublicApplyCPD(),
+  'public-apply-idl': (param) => renderPublicApplyIDL(param),
+  'public-apply-cpd': (param) => renderPublicApplyCPD(param),
+  'public-cpd-return': () => renderPublicCPDReturn(),
+  'public-cpd-renew': () => renderPublicCPDRenewSearch(),
   'public-history':   () => renderPublicHistory(),
   'payment-success':  () => renderPaymentResult('success'),
   'payment-declined': () => renderPaymentResult('declined'),
@@ -177,13 +181,25 @@ export function navigate(route, param = null) {
     'idl-detail':             'idl-requests',
     'idl-new':                'idl-requests',
   };
-  const navRoute = NAV_PARENT_MAP[route] ?? route;
+  // Prefer a direct, currently-visible nav-item match for this exact route; only
+  // fall back to the mapped parent when no visible nav-item exists for the route
+  // itself (e.g. staff-side routes like cpd-renew/idl-new that have no dedicated
+  // sidebar entry there). offsetParent is null for elements inside a
+  // display:none ancestor, so this skips matches hidden by role-based nav visibility.
+  const directItem   = document.querySelector(`[data-route="${route}"]`);
+  const hasDirectItem = !!directItem && directItem.offsetParent !== null;
+  const navRoute = hasDirectItem ? route : (NAV_PARENT_MAP[route] ?? route);
+
+  const modeParam = (typeof param === 'object' && param?.mode) ? param.mode : null;
 
   if (typeFilter) {
     const subitem = document.querySelector(`[data-route="${navRoute}"][data-filter-type="${typeFilter}"]`);
     subitem?.classList.add('active');
+  } else if (modeParam) {
+    const subitem = document.querySelector(`[data-route="${navRoute}"][data-mode="${modeParam}"]`);
+    subitem?.classList.add('active');
   } else {
-    const active = document.querySelector(`[data-route="${navRoute}"]:not([data-filter-type])`);
+    const active = document.querySelector(`[data-route="${navRoute}"]:not([data-filter-type]):not([data-mode])`);
     active?.classList.add('active');
   }
 
@@ -292,6 +308,15 @@ function initSidebar() {
     document.getElementById('nav-cpd')?.classList.toggle('nav-collapsed');
   });
 
+  document.getElementById('nav-public-idl-toggle')?.addEventListener('click', () => {
+    document.getElementById('nav-public-idl-toggle')?.classList.toggle('open');
+    document.getElementById('nav-public-idl-submenu')?.classList.toggle('open');
+  });
+  document.getElementById('nav-public-cpd-toggle')?.addEventListener('click', () => {
+    document.getElementById('nav-public-cpd-toggle')?.classList.toggle('open');
+    document.getElementById('nav-public-cpd-submenu')?.classList.toggle('open');
+  });
+
   document.getElementById('sidebar-nav').addEventListener('click', e => {
     const item = e.target.closest('[data-route]');
     if (!item) return;
@@ -300,7 +325,8 @@ function initSidebar() {
 
     const route      = item.dataset.route;
     const filterType = item.dataset.filterType ?? null;
-    navigate(route, filterType ? { type: filterType } : null);
+    const mode       = item.dataset.mode ?? null;
+    navigate(route, filterType ? { type: filterType } : mode ? { mode } : null);
   });
 
   document.getElementById('logout-btn').addEventListener('click', handleLogout);

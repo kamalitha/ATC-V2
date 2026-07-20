@@ -457,7 +457,6 @@ export async function renderIDLNew() {
             <div class="field">
               <label>Total Fees (AED)</label>
               <input type="text" id="total-fees-display"
-                value="AED ${Number(idlCfg.idl_amount ?? 178.50).toFixed(2)}"
                 readonly style="background:var(--bg-elevated);cursor:default;font-weight:600;color:var(--accent)" />
             </div>
             <div class="field field-full" id="delivery-address-field" style="display:none">
@@ -509,15 +508,18 @@ export async function renderIDLNew() {
   const deliveryField  = document.getElementById('delivery-address-field');
   const deliveryInput  = document.getElementById('delivery_address');
 
-  const BASE_AMOUNT   = Number(idlCfg.idl_amount  ?? 178.50);
+  const BASE_AMOUNT   = Number(idlCfg.idl_amount  ?? 160.00);
+  const ADMIN_FEE     = Number(idlCfg.admin_fee    ?? 10.00);
   const DELIVERY_FEE  = Number(idlCfg.delivery_fee ?? 15.75);
   const totalDisplay  = document.getElementById('total-fees-display');
 
   function updateTotal() {
-    const isSend = deliverySelect.value === 'send_to_address';
-    const total  = isSend ? BASE_AMOUNT + DELIVERY_FEE : BASE_AMOUNT;
+    const isSend      = deliverySelect.value === 'send_to_address';
+    const deliveryFee = isSend ? DELIVERY_FEE : 0;
+    const vat         = Math.round((BASE_AMOUNT + deliveryFee) * 0.05 * 100) / 100;
+    const total       = BASE_AMOUNT + ADMIN_FEE + deliveryFee + vat;
     if (totalDisplay) {
-      totalDisplay.value = `AED ${total.toFixed(2)}${isSend ? ` (incl. AED ${DELIVERY_FEE.toFixed(2)} delivery)` : ''}`;
+      totalDisplay.value = `AED ${total.toFixed(2)} (IDL ${BASE_AMOUNT.toFixed(2)} + Admin ${ADMIN_FEE.toFixed(2)}${isSend ? ` + Delivery ${DELIVERY_FEE.toFixed(2)}` : ''} + VAT ${vat.toFixed(2)})`;
     }
   }
 
@@ -527,6 +529,8 @@ export async function renderIDLNew() {
     if (!isSend) { deliveryInput.value = ''; clearFieldError('delivery_address'); }
     updateTotal();
   });
+
+  updateTotal();
 
   // Activate upload zones
   initDocUploads();
@@ -800,7 +804,7 @@ export async function renderIDLDetail(param) {
   const status   = parseInt(r.request_status);
   const canEdit  = status === 1 || status === 2; // Not Paid / Processing
 
-  const CAT_LABELS   = { A:'Motorcycle', B:'Car', C:'Heavy Vehicle', D:'Bus', E:'Heavy Combination' };
+  const CAT_LABELS   = { A:'Motorcycle', B:'Car', C:'Heavy Vehicle', D:'Bus', E:'Car with Heavy Trailer' };
   const CAT_ICONS    = { A:'fa-motorcycle', B:'fa-car', C:'fa-truck', D:'fa-bus', E:'fa-trailer' };
   // Older requests store legacy numeric dl_type ids (mn_idl_dl_types) instead of the new A–E letter codes
   const LEGACY_CAT_MAP = { 1:'A', 2:'B', 3:'C', 4:'D', 5:'E', 6:'E' };

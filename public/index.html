@@ -76,14 +76,42 @@
           <span class="nav-icon"><i class="fa-solid fa-user-circle"></i></span>
           <span class="nav-text">User Profile</span>
         </a>
-        <a class="nav-item" data-route="public-apply-idl">
+        <div class="nav-item nav-item-parent open" id="nav-public-idl-toggle">
           <span class="nav-icon"><i class="fa-solid fa-id-card"></i></span>
           <span class="nav-text">Apply for IDL</span>
-        </a>
-        <a class="nav-item" data-route="public-apply-cpd">
+          <span class="nav-arrow"><i class="fa-solid fa-chevron-down"></i></span>
+        </div>
+        <div class="nav-submenu open" id="nav-public-idl-submenu">
+          <a class="nav-item nav-subitem" data-route="public-apply-idl">
+            <span class="nav-icon"><i class="fa-solid fa-plus"></i></span>
+            <span class="nav-text">Apply for new IDL</span>
+          </a>
+          <a class="nav-item nav-subitem" data-route="public-apply-idl" data-mode="renew">
+            <span class="nav-icon"><i class="fa-solid fa-rotate"></i></span>
+            <span class="nav-text">Renew your IDL</span>
+          </a>
+        </div>
+
+        <div class="nav-item nav-item-parent open" id="nav-public-cpd-toggle">
           <span class="nav-icon"><i class="fa-solid fa-car"></i></span>
           <span class="nav-text">Apply for CPD</span>
-        </a>
+          <span class="nav-arrow"><i class="fa-solid fa-chevron-down"></i></span>
+        </div>
+        <div class="nav-submenu open" id="nav-public-cpd-submenu">
+          <a class="nav-item nav-subitem" data-route="public-apply-cpd">
+            <span class="nav-icon"><i class="fa-solid fa-plus"></i></span>
+            <span class="nav-text">Apply for new CPD</span>
+          </a>
+          <a class="nav-item nav-subitem" data-route="public-cpd-return">
+            <span class="nav-icon"><i class="fa-solid fa-rotate-left"></i></span>
+            <span class="nav-text">Return your CPD</span>
+          </a>
+          <a class="nav-item nav-subitem" data-route="public-cpd-renew">
+            <span class="nav-icon"><i class="fa-solid fa-arrows-rotate"></i></span>
+            <span class="nav-text">Renew your CPD</span>
+          </a>
+        </div>
+
         <a class="nav-item" data-route="public-history">
           <span class="nav-icon"><i class="fa-solid fa-clock-rotate-left"></i></span>
           <span class="nav-text">History</span>

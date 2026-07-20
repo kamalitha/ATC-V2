@@ -14,8 +14,7 @@ const STEPS = [
 // ── Per-step required fields for validation ────────────────────────────────────
 const STEP_REQUIRED = {
   identity: [
-    { name: 'first_name',           label: 'First Name' },
-    { name: 'last_name',            label: 'Last Name' },
+    { name: 'full_name',            label: 'Full Name' },
     { name: 'emirates_id',          label: 'Emirates ID' },
     { name: 'nationality',          label: 'Nationality' },
     { name: 'sex',                  label: 'Gender' },
@@ -35,8 +34,9 @@ const STEP_REQUIRED = {
 };
 
 // ── Apply for IDL (wizard) ─────────────────────────────────────────────────────
-export async function renderPublicApplyIDL() {
+export async function renderPublicApplyIDL(param = null) {
   const content = document.getElementById('page-content');
+  const isRenew = (typeof param === 'object' && param?.mode === 'renew');
 
   const [nationalities, dlTypes, emirates, idlCfg] = await Promise.all([
     api.idl.nationalities(),
@@ -45,7 +45,8 @@ export async function renderPublicApplyIDL() {
     api.idl.config(),
   ]);
 
-  const BASE_AMOUNT  = Number(idlCfg.idl_amount  ?? 178.50);
+  const BASE_AMOUNT  = Number(idlCfg.idl_amount  ?? 160.00);
+  const ADMIN_FEE    = Number(idlCfg.admin_fee    ?? 10.00);
   const DELIVERY_FEE = Number(idlCfg.delivery_fee ?? 15.75);
 
   // Fetch last IDL request for this user to pre-populate fields
@@ -91,6 +92,7 @@ export async function renderPublicApplyIDL() {
 
     const firstName       = u.first_name ?? r.first_name ?? '';
     const lastName        = u.last_name ?? r.last_name ?? '';
+    const fullNameValue   = [firstName, lastName].filter(Boolean).join(' ');
     const emiratesId      = u.emirates_id ?? r.emirates_id ?? '';
     const dobRaw          = u.dob ?? r.dob ?? '';
     const dobValue        = dobRaw ? String(dobRaw).split('T')[0].split(' ')[0] : '';
@@ -145,15 +147,9 @@ export async function renderPublicApplyIDL() {
           </div>` : `
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
-            <span class="pub-id-label">First Name</span>
-            <input name="first_name" class="pub-id-inline-input" placeholder="First name" value="${firstName}" />
-            <div class="field-error" id="err-first_name" style="margin:0"></div>
-          </div>
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
-            <span class="pub-id-label">Last Name</span>
-            <input name="last_name" class="pub-id-inline-input" placeholder="Last name" value="${lastName}" />
-            <div class="field-error" id="err-last_name" style="margin:0"></div>
+            <span class="pub-id-label">Full Name</span>
+            <input name="full_name" class="pub-id-inline-input" placeholder="Full name" value="${fullNameValue}" />
+            <div class="field-error" id="err-full_name" style="margin:0"></div>
           </div>
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
@@ -281,7 +277,7 @@ export async function renderPublicApplyIDL() {
       { code:'B', icon:'fa-car',         name:'Car',               desc:'For motor vehicles up to 3,500 kg with up to 8 passenger seats.' },
       { code:'C', icon:'fa-truck',       name:'Heavy Vehicle',     desc:'For vehicles over 3,500 kg.' },
       { code:'D', icon:'fa-bus',         name:'Bus',               desc:'For buses with more than 8 passenger seats.' },
-      { code:'E', icon:'fa-trailer',     name:'Heavy Combination', desc:'For combination of vehicles in category B, C or D.' },
+      { code:'E', icon:'fa-trailer',     name:'Car with Heavy Trailer', desc:'For combination of vehicles in category B, C or D.' },
     ];
     return `
       <!-- ── Section header ── -->
@@ -351,7 +347,7 @@ export async function renderPublicApplyIDL() {
             <label class="vc-tile" id="vc-tile-${c.code}">
               <input type="checkbox" class="vc-cb" name="vc_${c.code}" value="${c.code}" style="display:none" />
               <i class="fa-solid ${c.icon} vc-tile-icon"></i>
-              <span class="vc-tile-code">${c.code}</span>
+              <span class="vc-tile-code">${c.code} &ndash; ${c.name}</span>
             </label>`).join('')}
         </div>
         <input type="hidden" name="type_of_dl" id="type_of_dl_hidden" />
@@ -417,7 +413,7 @@ export async function renderPublicApplyIDL() {
       id: 'dubai',
       deliveryValue: 'pick_from_dubai_office',
       name: 'Dubai Office',
-      addr: 'Emirates Transport Driving Institute, Al Garhoud, Next to GGICO Metro Station, Dubai, UAE',
+      addr: 'Emirates Motorsports Organization<br>P.O. Box 5078, Al Wuheida St, 5078,<br>Dubai, UAE',
       hours: [
         ['Mon–Thu', '8:00 AM – 7:30 PM'],
         ['Friday', '8:00 – 11:30 AM, 1:30 – 7:30 PM'],
@@ -429,7 +425,7 @@ export async function renderPublicApplyIDL() {
       id: 'abu_dhabi',
       deliveryValue: 'pick_from_abudhabi_office',
       name: 'Abu Dhabi Office',
-      addr: 'Emirates Transport Driving Institute, Mussafah 9, Abu Dhabi, UAE',
+      addr: 'Emirates Motorsports Organization<br>P.O. Box 27487, Abu Dhabi, UAE',
       hours: [
         ['Mon–Sat', '8:00 AM – 5:00 PM'],
         ['Sunday', 'Closed'],
@@ -464,7 +460,7 @@ export async function renderPublicApplyIDL() {
             <div class="del-method-icon-wrap"><i class="fa-solid fa-house"></i></div>
             <div>
               <div class="del-method-title">Home Delivery</div>
-              <div class="del-method-fee">AED ${DELIVERY_FEE.toFixed(0)}</div>
+              <div class="del-method-fee">AED ${DELIVERY_FEE.toFixed(2)}</div>
               <div class="del-method-desc">Delivered within 24–48 hours</div>
             </div>
           </label>
@@ -493,13 +489,25 @@ export async function renderPublicApplyIDL() {
           <div class="del-section-label">Delivery Address</div>
           <div class="del-address-grid">
 
-            <div class="field del-addr-full">
-              <label>Address in UAE *</label>
+            <div class="field del-addr-third">
+              <label>Building / Villa / Floor #</label>
+              <input name="del_building" id="del-building" placeholder="E.g. Villa 12, Floor 3" />
+            </div>
+
+            <div class="field del-addr-half">
+              <label>Street / Road</label>
+              <input name="del_street" id="del-street" placeholder="E.g. Sheikh Zayed Road" />
+            </div>
+
+            <div class="field del-addr-third">
+              <label>Area</label>
               <div class="pub-input-icon-wrap">
-                <input name="del_address_uae" id="del-address-uae" placeholder="Enter your complete address" />
-                <i class="fa-solid fa-location-dot pub-input-icon-right"></i>
+                <select name="del_area" id="del-area">
+                  <option value="">Select area</option>
+                </select>
+                <i class="fa-solid fa-chevron-down pub-input-icon-right"></i>
               </div>
-              <div class="field-error" id="err-del_address_uae"></div>
+              <div class="field-error" id="err-del_area"></div>
             </div>
 
             <div class="field del-addr-half">
@@ -512,27 +520,6 @@ export async function renderPublicApplyIDL() {
                 <i class="fa-solid fa-chevron-down pub-input-icon-right"></i>
               </div>
               <div class="field-error" id="err-del_emirate"></div>
-            </div>
-
-            <div class="field del-addr-third">
-              <label>Area *</label>
-              <div class="pub-input-icon-wrap">
-                <select name="del_area" id="del-area">
-                  <option value="">Select area</option>
-                </select>
-                <i class="fa-solid fa-chevron-down pub-input-icon-right"></i>
-              </div>
-              <div class="field-error" id="err-del_area"></div>
-            </div>
-
-            <div class="field del-addr-third">
-              <label>Building / Villa / Floor</label>
-              <input name="del_building" id="del-building" placeholder="E.g. Villa 12, Floor 3" />
-            </div>
-
-            <div class="field del-addr-half">
-              <label>Street / Road</label>
-              <input name="del_street" id="del-street" placeholder="E.g. Sheikh Zayed Road" />
             </div>
 
             <div class="field del-addr-half">
@@ -579,13 +566,17 @@ export async function renderPublicApplyIDL() {
 
   function stepReview() {
     const isHome      = formData.delivery_option === 'home_delivery';
+    const deliveryFee = isHome ? DELIVERY_FEE : 0;
+    const vatAmount   = Math.round((BASE_AMOUNT + deliveryFee) * 0.05 * 100) / 100;
+    const totalPayable = BASE_AMOUNT + ADMIN_FEE + deliveryFee + vatAmount;
+    const aed         = n => 'AED ' + Number(n).toFixed(2);
     const natLabel    = nationalities.find(n => String(n.nationality_id) === String(formData.nationality))?.nationality ?? formData.nationality ?? '—';
     const emirLabel   = emirates.find(e => String(e.emirate_id) === String(formData.emirate))?.emirate ?? formData.emirate ?? '—';
     const fullName    = [formData.first_name, formData.last_name].filter(Boolean).join(' ') || '—';
     const dob         = formData.dob ? new Date(formData.dob).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }) : '—';
 
     // Vehicle categories for review display
-    const CAT_LABELS = { A:'Motorcycle', B:'Car', C:'Heavy Vehicle', D:'Bus', E:'Heavy Combination' };
+    const CAT_LABELS = { A:'Motorcycle', B:'Car', C:'Heavy Vehicle', D:'Bus', E:'Car with Heavy Trailer' };
     const CAT_ICONS  = { A:'fa-motorcycle', B:'fa-car', C:'fa-truck', D:'fa-bus', E:'fa-trailer' };
     const selectedCats = (formData.type_of_dl || '').split(',').map(s => s.trim()).filter(Boolean);
     const issuePlaceLabel = emirates.find(e => String(e.emirate_id) === String(formData.place_of_issue))?.emirate ?? formData.place_of_issue ?? '—';
@@ -698,9 +689,11 @@ export async function renderPublicApplyIDL() {
           <div class="rv-delivery-desc">${isHome ? 'Delivered within 24–48 hours' : 'You will collect from our office'}</div>
           ${isHome ? `
           <div class="rv-delivery-rows">
-            <div class="rv-delivery-row"><span class="rv-delivery-label">Address</span><span>${formData.del_address_uae || '—'}</span></div>
-            <div class="rv-delivery-row"><span class="rv-delivery-label">Emirate</span><span>${emirates.find(e => String(e.emirate_id) === String(formData.del_emirate))?.emirate ?? formData.del_emirate ?? '—'}</span></div>
+            <div class="rv-delivery-row"><span class="rv-delivery-label">Building / Villa / Floor #</span><span>${formData.del_building || '—'}</span></div>
+            <div class="rv-delivery-row"><span class="rv-delivery-label">Street / Road</span><span>${formData.del_street || '—'}</span></div>
             ${formData.del_area ? `<div class="rv-delivery-row"><span class="rv-delivery-label">Area</span><span>${formData.del_area}</span></div>` : ''}
+            <div class="rv-delivery-row"><span class="rv-delivery-label">Emirate</span><span>${emirates.find(e => String(e.emirate_id) === String(formData.del_emirate))?.emirate ?? formData.del_emirate ?? '—'}</span></div>
+            ${formData.del_extra ? `<div class="rv-delivery-row"><span class="rv-delivery-label">Additional Details</span><span>${formData.del_extra}</span></div>` : ''}
           </div>` : ''}
         </div>
 
@@ -727,12 +720,24 @@ export async function renderPublicApplyIDL() {
 
       </div>
 
+      <!-- Fee Breakdown -->
+      <div class="rv-section">
+        <div class="rv-section-title" style="margin-bottom:12px">Fee Breakdown</div>
+        <div class="rv-extra-rows">
+          <div class="rv-extra-row"><span class="rv-extra-label">IDL Fee</span><span class="rv-extra-value">${aed(BASE_AMOUNT)}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Administration Fee</span><span class="rv-extra-value">${aed(ADMIN_FEE)}</span></div>
+          ${isHome ? `<div class="rv-extra-row"><span class="rv-extra-label">Delivery Fee</span><span class="rv-extra-value">${aed(deliveryFee)}</span></div>` : ''}
+          <div class="rv-extra-row"><span class="rv-extra-label">VAT 5%</span><span class="rv-extra-value">${aed(vatAmount)}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label" style="font-weight:700;color:var(--text-primary)">Total Payable</span><span class="rv-extra-value" style="font-weight:700;color:var(--accent);font-size:1rem">${aed(totalPayable)}</span></div>
+        </div>
+      </div>
+
       <!-- Payment Method -->
       <div class="rv-section">
         <div class="rv-section-title" style="margin-bottom:12px">Payment Method</div>
         <div class="field" style="max-width:280px">
           <select name="payment_method_display">
-            <option value="online" selected>Pay Online</option>
+            <option value="online" selected>Credit/Debit Card</option>
           </select>
         </div>
       </div>
@@ -778,8 +783,14 @@ export async function renderPublicApplyIDL() {
           <div class="pub-breadcrumb">
             <span class="pub-crumb">Services</span>
             <i class="fa-solid fa-chevron-right pub-crumb-sep"></i>
-            <span class="pub-crumb pub-crumb-active">International Driving Permit</span>
+            <span class="pub-crumb pub-crumb-active">${isRenew ? 'Renew your IDL' : 'International Driving Permit'}</span>
           </div>
+
+          ${isRenew ? `
+          <div class="pub-renew-banner">
+            <i class="fa-solid fa-rotate"></i>
+            <span>Renewing your last IDL${lastRequest?.request_id ? ` &ndash; ${lastRequest.request_id}` : ''}</span>
+          </div>` : ''}
 
           <!-- Step progress bar -->
           <div class="pub-step-bar">
@@ -842,6 +853,7 @@ export async function renderPublicApplyIDL() {
     formData.emirates_id          = r.emirates_id          ?? '';
     formData.first_name           = r.first_name           ?? '';
     formData.last_name            = r.last_name            ?? '';
+    formData.full_name            = [r.first_name, r.last_name].filter(Boolean).join(' ');
     formData.nationality          = String(r.nationality_id ?? r.nationality ?? '');
     formData.sex                  = r.sex                  ?? '';
     formData.dob                  = toDate(r.dob);
@@ -851,6 +863,8 @@ export async function renderPublicApplyIDL() {
     formData.email                = r.email                ?? '';
     formData.city                 = r.city                 ?? '';
     formData.home_country_address = r.home_country_address ?? '';
+    formData.additional_mobile_no = r.additional_mobile_no ?? '';
+    formData.additional_email     = r.additional_email     ?? '';
     // License Information
     formData.license_no           = r.license_no           ?? '';
     formData.place_of_birth       = r.place_of_birth       ?? '';
@@ -872,13 +886,20 @@ export async function renderPublicApplyIDL() {
     const form = document.getElementById('idl-wizard-form');
     if (!form) return;
     new FormData(form).forEach((val, key) => { formData[key] = val; });
-    // Build delivery_address string from new fields
-    const dAddr  = (formData.del_address_uae ?? '').trim();
-    const dBldg  = (formData.del_building    ?? '').trim();
-    const dSt    = (formData.del_street      ?? '').trim();
-    const dExtra = (formData.del_extra       ?? '').trim();
-    if (dAddr || dBldg || dSt) {
-      formData.delivery_address = [dAddr, dBldg, dSt, dExtra].filter(Boolean).join(', ');
+    // Explode Full Name into first_name (first two words) and last_name (remaining words)
+    if (formData.full_name) {
+      const nameParts = formData.full_name.trim().split(/\s+/).filter(Boolean);
+      formData.first_name = nameParts.slice(0, 2).join(' ');
+      formData.last_name  = nameParts.slice(2).join(' ');
+    }
+    // Build delivery_address string from the structured address fields
+    const dBldg    = (formData.del_building ?? '').trim();
+    const dSt      = (formData.del_street   ?? '').trim();
+    const dArea    = (formData.del_area     ?? '').trim();
+    const dEmirate = emirates.find(e => String(e.emirate_id) === String(formData.del_emirate))?.emirate ?? '';
+    const dExtra   = (formData.del_extra    ?? '').trim();
+    if (dBldg || dSt || dArea || dEmirate) {
+      formData.delivery_address = [dBldg, dSt, dArea, dEmirate, dExtra].filter(Boolean).join(' ');
     }
     // Save DL type hidden value
     const dlHidden = document.getElementById('type_of_dl_hidden');
@@ -926,13 +947,13 @@ export async function renderPublicApplyIDL() {
       updateDlHiddenValue();
     }
     // Restore delivery address fields
-    const delAddrUae  = document.getElementById('del-address-uae');
     const delEmirate  = document.getElementById('del-emirate');
+    const delArea     = document.getElementById('del-area');
     const delBuilding = document.getElementById('del-building');
     const delStreet   = document.getElementById('del-street');
     const delExtra    = document.getElementById('del-extra');
-    if (delAddrUae  && formData.del_address_uae)  delAddrUae.value  = formData.del_address_uae;
     if (delEmirate  && formData.del_emirate)       delEmirate.value  = formData.del_emirate;
+    if (delArea     && formData.del_area)          delArea.value     = formData.del_area;
     if (delBuilding && formData.del_building)      delBuilding.value = formData.del_building;
     if (delStreet   && formData.del_street)        delStreet.value   = formData.del_street;
     if (delExtra    && formData.del_extra)         delExtra.value    = formData.del_extra;
@@ -949,15 +970,6 @@ export async function renderPublicApplyIDL() {
     if (checked.length) {
       document.getElementById('err-type_of_dl')?.textContent && (document.getElementById('err-type_of_dl').textContent = '');
       document.getElementById('dl-type-select')?.classList.remove('field-invalid');
-    }
-  }
-
-  function updateTotal() {
-    const display = document.getElementById('total-fees-display');
-    const isSend  = document.getElementById('delivery_option')?.value === 'send_to_address';
-    if (display) {
-      const total = isSend ? BASE_AMOUNT + DELIVERY_FEE : BASE_AMOUNT;
-      display.value = `AED ${total.toFixed(2)}${isSend ? ` (incl. AED ${DELIVERY_FEE.toFixed(2)} delivery)` : ''}`;
     }
   }
 
@@ -1357,9 +1369,7 @@ export async function renderPublicApplyIDL() {
     if (key === 'delivery') {
       const isHome = (formData.delivery_option ?? 'home_delivery') === 'home_delivery';
       if (isHome) {
-        const addrUae = document.getElementById('del-address-uae')?.value?.trim();
         const emirate = document.getElementById('del-emirate')?.value;
-        if (!addrUae) { setErr('del_address_uae', 'Address in UAE is required'); ok = false; }
         if (!emirate) { setErr('del_emirate', 'Emirate is required'); ok = false; }
       }
     }
@@ -1397,13 +1407,26 @@ export async function renderPublicApplyIDL() {
       // 2. Create IDL request
       const res = await api.idl.create(body);
 
-      // 3. Upload documents using files captured when user left step 2
+      // 3. Upload documents using files captured when user left step 2. A slot may
+      // have no fresh File but still have a savedFileUrls entry — that's a document
+      // carried forward as a preview from the last request (e.g. re-applying without
+      // re-drawing a signature already on file); fetch it so it actually gets copied
+      // to the new request instead of silently being dropped.
       const slots  = ['eid_front','eid_back','dl_front','dl_back','passport_photo','signature'];
       const fd     = new FormData();
       let hasFiles = false;
-      slots.forEach(slot => {
-        if (savedFiles[slot]) { fd.append(slot, savedFiles[slot]); hasFiles = true; }
-      });
+      for (const slot of slots) {
+        if (savedFiles[slot]) {
+          fd.append(slot, savedFiles[slot]);
+          hasFiles = true;
+        } else if (savedFileUrls[slot]) {
+          try {
+            const blob = await (await fetch(savedFileUrls[slot], { credentials: 'include' })).blob();
+            fd.append(slot, blob, `${slot}.${blob.type === 'image/png' ? 'png' : 'jpg'}`);
+            hasFiles = true;
+          } catch { /* best-effort — skip if the carried-forward file can't be fetched */ }
+        }
+      }
       if (hasFiles) {
         try {
           await api.upload(`/idl/requests/${res.auto_id}/documents`, fd);
@@ -1458,8 +1481,11 @@ function docUploadHtml(key, label, placeholderImg = '') {
 }
 
 // ── Apply for CPD (wizard) ─────────────────────────────────────────────────────
-export async function renderPublicApplyCPD() {
+export async function renderPublicApplyCPD(param = null) {
   const content = document.getElementById('page-content');
+
+  const isRenew = (typeof param === 'object' && param?.mode === 'renew');
+  const renewSource = isRenew ? (param?.source ?? null) : null;
 
   const [nationalities, vehicleTypes, countries, guaranteeRules] = await Promise.all([
     api.idl.nationalities(),
@@ -1467,9 +1493,10 @@ export async function renderPublicApplyCPD() {
     api.cpd.countries(),
     api.cpd.guaranteeRules(),
   ]);
+  countries.sort((a, b) => a.nationality.localeCompare(b.nationality));
 
   const CPD_STEPS = [
-    { id: 'owner',   label: 'Owner Details'      },
+    { id: 'owner',   label: 'Identity Information' },
     { id: 'vehicle', label: 'Vehicle Information' },
     { id: 'trip',    label: 'Trip Details'        },
     { id: 'payment', label: 'Payment Details'     },
@@ -1477,8 +1504,7 @@ export async function renderPublicApplyCPD() {
 
   const CPD_REQUIRED = {
     owner:   [
-      { name: 'first_name', label: 'First Name' },
-      { name: 'last_name',  label: 'Last Name'  },
+      { name: 'full_name',  label: 'Full Name'  },
       { name: 'mobile_no',  label: 'Mobile No'  },
       { name: 'email',      label: 'Email'      },
     ],
@@ -1496,6 +1522,47 @@ export async function renderPublicApplyCPD() {
   let currentStep   = 0;
   const formData    = {};
   const savedCountries = [];
+
+  if (renewSource) {
+    const s = renewSource;
+    formData.parent_request_id = s.auto_id;
+    // Owner details
+    formData.title          = s.title          ?? '';
+    formData.first_name     = s.first_name     ?? '';
+    formData.last_name      = s.last_name      ?? '';
+    formData.full_name      = [s.first_name, s.last_name].filter(Boolean).join(' ');
+    formData.mobile_no      = s.mobile_no       ?? '';
+    formData.email          = s.email           ?? '';
+    formData.nationality    = s.nationality_id  ?? '';
+    formData.passport_no    = s.passport_no     ?? '';
+    formData.po_box         = s.po_box          ?? '';
+    formData.address        = s.uae_address     ?? '';
+    formData.city           = s.city            ?? '';
+    formData.extra_owner1_name = s.extra_owner1_name ?? '';
+    formData.extra_owner2_name = s.extra_owner2_name ?? '';
+    formData.emirates_id    = s.emirates_id     ?? '';
+    // Vehicle details
+    formData.mulkiya_no            = s.mulkiya_no            ?? '';
+    formData.registration_no       = s.registration_no       ?? '';
+    formData.vehicle_make          = s.vehicle_make          ?? '';
+    formData.vehicle_model         = s.vehicle_model         ?? '';
+    formData.vehicle_value         = s.vehicle_value         ?? '';
+    formData.vehicle_registered_in = s.vehicle_registered_in ?? '';
+    formData.body_type             = s.body_type             ?? '';
+    formData.manuf_year            = s.manuf_year            ?? '';
+    formData.color                 = s.color                 ?? '';
+    formData.net_weight            = s.net_weight            ?? '';
+    formData.chassis_no            = s.chassis_no             ?? '';
+    formData.engine_no             = s.engine_no             ?? '';
+    formData.horse_power           = s.horse_power           ?? '';
+    formData.no_of_cylinders       = s.no_of_cylinders       ?? '';
+    formData.upholstery            = s.upholstery            ?? '';
+    formData.no_of_seats           = s.no_of_seats           ?? '';
+    formData.radio                 = s.radio                 ?? '';
+    formData.spare_tyre            = s.spare_tyre            ?? '';
+    // Destination countries
+    (s.countries ?? []).forEach(c => savedCountries.push(String(c.country_id)));
+  }
   const savedDocs = {};
 
   const UAE_STATES = ['Abu Dhabi','Dubai','Sharjah','Ajman','Umm Al Quwain','Ras Al Khaimah','Fujairah'];
@@ -1523,168 +1590,285 @@ export async function renderPublicApplyCPD() {
   }
 
   function stepOwner() {
-    return `<div class="form-grid">
-      <div class="field"><label>Emirates ID</label>
-        <input name="emirates_id" placeholder="784-XXXX-XXXXXXX-X" />
-        <div class="field-error" id="err-emirates_id"></div></div>
+    return `
+      <div class="pub-identity-card">
+        <div class="pub-identity-rows">
 
-      <div class="field"><label>Salutation</label>
-        <select name="title">
-          <option value="">Select</option>
-          <option value="Mr">Mr</option>
-          <option value="Mrs">Mrs</option>
-          <option value="Ms">Ms</option>
-          <option value="Dr">Dr</option>
-          <option value="Sheikh">Sheikh</option>
-          <option value="His Excellency">His Excellency</option>
-        </select></div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
+            <span class="pub-id-label">Emirates ID</span>
+            <input name="emirates_id" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
+            <div class="field-error" id="err-emirates_id" style="margin:0"></div>
+          </div>
 
-      <div class="field"><label>First Name *</label>
-        <input name="first_name" required placeholder="First name" />
-        <div class="field-error" id="err-first_name"></div></div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-user-tag"></i></span>
+            <span class="pub-id-label">Salutation</span>
+            <select name="title" class="pub-id-inline-select">
+              <option value="">Select</option>
+              <option value="Mr">Mr</option>
+              <option value="Mrs">Mrs</option>
+              <option value="Ms">Ms</option>
+              <option value="Dr">Dr</option>
+              <option value="Sheikh">Sheikh</option>
+              <option value="His Excellency">His Excellency</option>
+            </select>
+          </div>
 
-      <div class="field"><label>Last Name *</label>
-        <input name="last_name" required placeholder="Last name" />
-        <div class="field-error" id="err-last_name"></div></div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
+            <span class="pub-id-label">Full Name</span>
+            <input name="full_name" class="pub-id-inline-input" placeholder="Full name" />
+            <div class="field-error" id="err-full_name" style="margin:0"></div>
+          </div>
 
-      <div class="field"><label>Mobile No *</label>
-        <input name="mobile_no" required placeholder="+971 50 xxx xxxx" />
-        <div class="field-error" id="err-mobile_no"></div></div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+            <span class="pub-id-label">Mobile No</span>
+            <input name="mobile_no" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
+            <div class="field-error" id="err-mobile_no" style="margin:0"></div>
+          </div>
 
-      <div class="field"><label>Nationality</label>
-        <select name="nationality">
-          <option value="">Select nationality</option>
-          ${nationalities.map(n => `<option value="${n.nationality_id}">${n.nationality}</option>`).join('')}
-        </select></div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-flag"></i></span>
+            <span class="pub-id-label">Nationality</span>
+            <select name="nationality" class="pub-id-inline-select">
+              <option value="">Select nationality</option>
+              ${nationalities.map(n => `<option value="${n.nationality_id}">${n.nationality}</option>`).join('')}
+            </select>
+          </div>
 
-      <div class="field"><label>Email *</label>
-        <input name="email" type="email" required placeholder="your@email.com" />
-        <div class="field-error" id="err-email"></div></div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-envelope"></i></span>
+            <span class="pub-id-label">Email</span>
+            <input name="email" type="email" class="pub-id-inline-input" placeholder="your@email.com" />
+            <div class="field-error" id="err-email" style="margin:0"></div>
+          </div>
 
-      <div class="field"><label>Passport No</label>
-        <input name="passport_no" placeholder="Passport number" /></div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
+            <span class="pub-id-label">Passport No</span>
+            <input name="passport_no" class="pub-id-inline-input" placeholder="Passport number" />
+          </div>
 
-      <div class="field"><label>PO Box</label>
-        <input name="po_box" placeholder="PO Box" /></div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-inbox"></i></span>
+            <span class="pub-id-label">PO Box</span>
+            <input name="po_box" class="pub-id-inline-input" placeholder="PO Box" />
+          </div>
 
-      <div class="field field-full"><label>Address</label>
-        <input name="address" placeholder="Street, area, emirate" /></div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-location-dot"></i></span>
+            <span class="pub-id-label">Address</span>
+            <input name="address" class="pub-id-inline-input" placeholder="Street, area, emirate" />
+          </div>
 
-      <div class="field"><label>City</label>
-        <input name="city" placeholder="City" /></div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-city"></i></span>
+            <span class="pub-id-label">City</span>
+            <input name="city" class="pub-id-inline-input" placeholder="City" />
+          </div>
 
-      <div class="field"><label>Extra Driver 1 Name</label>
-        <input name="extra_owner1_name" placeholder="Full name" /></div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
+            <span class="pub-id-label">Extra Driver 1 Name</span>
+            <input name="extra_owner1_name" class="pub-id-inline-input" placeholder="Full name" />
+          </div>
 
-      <div class="field"><label>Extra Driver 2 Name</label>
-        <input name="extra_owner2_name" placeholder="Full name" /></div>
-    </div>`;
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
+            <span class="pub-id-label">Extra Driver 2 Name</span>
+            <input name="extra_owner2_name" class="pub-id-inline-input" placeholder="Full name" />
+          </div>
+
+        </div>
+      </div>`;
   }
 
   function stepVehicle() {
     const yearOpts = Array.from({length:41},(_,i)=>2030-i).map(y=>`<option value="${y}">${y}</option>`).join('');
-    return `<div class="form-grid">
-      <div class="field"><label>Traffic File No</label>
-        <input name="mulkiya_no" placeholder="Traffic file / Mulkiya number" /></div>
+    return `
+    <div class="pub-identity-card">
+      <div class="pub-identity-rows">
 
-      <div class="field"><label>Registration No *</label>
-        <input name="registration_no" required placeholder="e.g. Dubai A 12345" />
-        <div class="field-error" id="err-registration_no"></div></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-regular fa-file-lines"></i></span>
+          <span class="pub-id-label">Traffic File No</span>
+          <input name="mulkiya_no" class="pub-id-inline-input" placeholder="Traffic file / Mulkiya number" />
+        </div>
 
-      <div class="field"><label>Vehicle Make *</label>
-        <select name="vehicle_make" required>
-          <option value="">Select make</option>
-          ${vehicleTypes.map(v => `<option value="${v.vehicle_type}">${v.vehicle_type}</option>`).join('')}
-        </select>
-        <div class="field-error" id="err-vehicle_make"></div></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-hashtag"></i></span>
+          <span class="pub-id-label">Registration No</span>
+          <input name="registration_no" required class="pub-id-inline-input" placeholder="e.g. Dubai A 12345" />
+          <div class="field-error" id="err-registration_no" style="margin:0"></div>
+        </div>
 
-      <div class="field"><label>Vehicle Model *</label>
-        <input name="vehicle_model" required placeholder="e.g. Land Cruiser" />
-        <div class="field-error" id="err-vehicle_model"></div></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-car"></i></span>
+          <span class="pub-id-label">Vehicle Make</span>
+          <select name="vehicle_make" required class="pub-id-inline-select">
+            <option value="">Select make</option>
+            ${vehicleTypes.map(v => `<option value="${v.vehicle_type}">${v.vehicle_type}</option>`).join('')}
+          </select>
+          <div class="field-error" id="err-vehicle_make" style="margin:0"></div>
+        </div>
 
-      <div class="field"><label>Vehicle Value (AED)</label>
-        <input name="vehicle_value" type="number" placeholder="80000" /></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-car-side"></i></span>
+          <span class="pub-id-label">Vehicle Model</span>
+          <input name="vehicle_model" required class="pub-id-inline-input" placeholder="e.g. Land Cruiser" />
+          <div class="field-error" id="err-vehicle_model" style="margin:0"></div>
+        </div>
 
-      <div class="field"><label>Vehicle Registered In</label>
-        <select name="vehicle_registered_in">
-          <option value="">Select emirate</option>
-          ${UAE_STATES.map(s => `<option value="${s}">${s}</option>`).join('')}
-        </select></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-sack-dollar"></i></span>
+          <span class="pub-id-label">Vehicle Value (AED)</span>
+          <input name="vehicle_value" type="number" class="pub-id-inline-input" placeholder="80000" />
+        </div>
 
-      <div class="field"><label>Body Type</label>
-        <select name="body_type">
-          <option value="">Select type</option>
-          ${BODY_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
-        </select></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-location-dot"></i></span>
+          <span class="pub-id-label">Vehicle Registered In</span>
+          <select name="vehicle_registered_in" class="pub-id-inline-select">
+            <option value="">Select emirate</option>
+            ${UAE_STATES.map(s => `<option value="${s}">${s}</option>`).join('')}
+          </select>
+        </div>
 
-      <div class="field"><label>Year of Manufacture *</label>
-        <select name="manuf_year" required>
-          <option value="">Select year</option>
-          ${yearOpts}
-        </select>
-        <div class="field-error" id="err-manuf_year"></div></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-shapes"></i></span>
+          <span class="pub-id-label">Body Type</span>
+          <select name="body_type" class="pub-id-inline-select">
+            <option value="">Select type</option>
+            ${BODY_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+          </select>
+        </div>
 
-      <div class="field"><label>Color as per Mulkiya</label>
-        <select name="color">
-          <option value="">Select color</option>
-          ${COLORS.map(c => `<option value="${c}">${c}</option>`).join('')}
-        </select></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-regular fa-calendar"></i></span>
+          <span class="pub-id-label">Year of Manufacture</span>
+          <select name="manuf_year" required class="pub-id-inline-select">
+            <option value="">Select year</option>
+            ${yearOpts}
+          </select>
+          <div class="field-error" id="err-manuf_year" style="margin:0"></div>
+        </div>
 
-      <div class="field"><label>Net Weight (Empty Load)</label>
-        <input name="net_weight" placeholder="kg" /></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-palette"></i></span>
+          <span class="pub-id-label">Color as per Mulkiya</span>
+          <select name="color" class="pub-id-inline-select">
+            <option value="">Select color</option>
+            ${COLORS.map(c => `<option value="${c}">${c}</option>`).join('')}
+          </select>
+        </div>
 
-      <div class="field"><label>Chassis No *</label>
-        <input name="chassis_no" required placeholder="VIN / Chassis number" />
-        <div class="field-error" id="err-chassis_no"></div></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-weight-hanging"></i></span>
+          <span class="pub-id-label">Net Weight (Empty Load)</span>
+          <input name="net_weight" class="pub-id-inline-input" placeholder="kg" />
+        </div>
 
-      <div class="field"><label>Engine No</label>
-        <input name="engine_no" placeholder="Engine number" /></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-barcode"></i></span>
+          <span class="pub-id-label">Chassis No</span>
+          <input name="chassis_no" required class="pub-id-inline-input" placeholder="VIN / Chassis number" />
+          <div class="field-error" id="err-chassis_no" style="margin:0"></div>
+        </div>
 
-      <div class="field"><label>Horse Power</label>
-        <input name="horse_power" placeholder="e.g. 200" /></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-gears"></i></span>
+          <span class="pub-id-label">Engine No</span>
+          <input name="engine_no" class="pub-id-inline-input" placeholder="Engine number" />
+        </div>
 
-      <div class="field"><label>No of Cylinders</label>
-        <input name="no_of_cylinders" placeholder="e.g. 4" /></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-gauge-high"></i></span>
+          <span class="pub-id-label">Horse Power</span>
+          <input name="horse_power" class="pub-id-inline-input" placeholder="e.g. 200" />
+        </div>
 
-      <div class="field"><label>Upholstery</label>
-        <input name="upholstery" placeholder="e.g. Leather" /></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-layer-group"></i></span>
+          <span class="pub-id-label">No of Cylinders</span>
+          <input name="no_of_cylinders" class="pub-id-inline-input" placeholder="e.g. 4" />
+        </div>
 
-      <div class="field"><label>No of Seats</label>
-        <input name="no_of_seats" type="number" placeholder="5" /></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-chair"></i></span>
+          <span class="pub-id-label">Upholstery</span>
+          <input name="upholstery" class="pub-id-inline-input" placeholder="e.g. Leather" />
+        </div>
 
-      <div class="field"><label>Radio</label>
-        <select name="radio">
-          <option value="">Select</option>
-          <option value="Yes">Yes</option><option value="No">No</option>
-        </select></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-users"></i></span>
+          <span class="pub-id-label">No of Seats</span>
+          <input name="no_of_seats" type="number" class="pub-id-inline-input" placeholder="5" />
+        </div>
 
-      <div class="field"><label>Spare Tyre</label>
-        <select name="spare_tyre">
-          <option value="">Select</option>
-          <option value="Yes">Yes</option><option value="No">No</option>
-        </select></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-radio"></i></span>
+          <span class="pub-id-label">Radio</span>
+          <select name="radio" class="pub-id-inline-select">
+            <option value="">Select</option>
+            <option value="Yes">Yes</option><option value="No">No</option>
+          </select>
+        </div>
 
-      <div class="field field-full"><label>Additional Remarks</label>
-        <textarea name="additional_remarks" rows="2" style="width:100%;resize:vertical"
-          placeholder="Any additional vehicle remarks…"></textarea></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-ring"></i></span>
+          <span class="pub-id-label">Spare Tyre</span>
+          <select name="spare_tyre" class="pub-id-inline-select">
+            <option value="">Select</option>
+            <option value="Yes">Yes</option><option value="No">No</option>
+          </select>
+        </div>
 
-      <div class="field field-full"><label>Other Particulars / Extra Items (1)</label>
-        <input name="others1" placeholder="e.g. Roof rack, bull bar…" /></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-regular fa-comment"></i></span>
+          <span class="pub-id-label">Additional Remarks</span>
+          <textarea name="additional_remarks" rows="1" class="pub-id-inline-input" style="resize:vertical"
+            placeholder="Any additional vehicle remarks…"></textarea>
+        </div>
 
-      <div class="field field-full"><label>Other Particulars / Extra Items (2)</label>
-        <input name="others2" placeholder="e.g. Winch, spare parts…" /></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-list"></i></span>
+          <span class="pub-id-label">Other Particulars (1)</span>
+          <input name="others1" class="pub-id-inline-input" placeholder="e.g. Roof rack, bull bar…" />
+        </div>
 
-      <div class="field"><label>Reference 1 (UAE) Name / Contact</label>
-        <input name="uae_refree1" placeholder="Full name and phone number" /></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-list"></i></span>
+          <span class="pub-id-label">Other Particulars (2)</span>
+          <input name="others2" class="pub-id-inline-input" placeholder="e.g. Winch, spare parts…" />
+        </div>
 
-      <div class="field"><label>Reference 2 (UAE) Name / Contact</label>
-        <input name="uae_refree2" placeholder="Full name and phone number" /></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
+          <span class="pub-id-label">Reference 1 (UAE)</span>
+          <input name="uae_refree1" class="pub-id-inline-input" placeholder="Full name and phone number" />
+        </div>
 
-      <div class="field"><label>Reference 1 (Destination) Name / Contact</label>
-        <input name="destination_refree1" placeholder="Full name and phone number" /></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
+          <span class="pub-id-label">Reference 2 (UAE)</span>
+          <input name="uae_refree2" class="pub-id-inline-input" placeholder="Full name and phone number" />
+        </div>
 
-      <div class="field"><label>Reference 2 (Destination) Name / Contact</label>
-        <input name="destination_refree2" placeholder="Full name and phone number" /></div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
+          <span class="pub-id-label">Reference 1 (Destination)</span>
+          <input name="destination_refree1" class="pub-id-inline-input" placeholder="Full name and phone number" />
+        </div>
+
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
+          <span class="pub-id-label">Reference 2 (Destination)</span>
+          <input name="destination_refree2" class="pub-id-inline-input" placeholder="Full name and phone number" />
+        </div>
+
+      </div>
     </div>
     <div style="margin-top:24px">
       <div style="font-weight:600;margin-bottom:12px;color:var(--text-secondary)">
@@ -1705,8 +1889,17 @@ export async function renderPublicApplyCPD() {
 
   function stepTrip() {
     return `
+      <div class="pub-step-header">
+        <div class="pub-step-icon-wrap"><i class="fa-solid fa-globe"></i></div>
+        <div>
+          <div class="pub-step-title">Trip Details</div>
+          <div class="pub-step-sub">Provide details about your intended trip.</div>
+        </div>
+      </div>
+
       <div class="field" style="margin-bottom:20px">
-        <label style="display:block;margin-bottom:8px;font-weight:500">Destination Countries</label>
+        <label style="display:block;margin-bottom:2px;font-weight:600">Destination Countries</label>
+        <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:12px">Select all countries you plan to visit.</div>
         <div style="display:flex;flex-wrap:wrap;gap:8px">
           ${countries.map(c => `
           <label class="cpd-country-check ${savedCountries.includes(String(c.nationality_id)) ? 'checked' : ''}">
@@ -1998,10 +2191,15 @@ export async function renderPublicApplyCPD() {
     content.innerHTML = `
       <div class="page-header">
         <div class="page-title-block">
-          <h1 class="page-title">Apply for CPD</h1>
+          <h1 class="page-title">${isRenew ? 'Renew your CPD' : 'Apply for CPD'}</h1>
           <p class="page-subtitle">Carnet de Passage en Douane application</p>
         </div>
       </div>
+      ${isRenew ? `
+      <div class="pub-renew-banner">
+        <i class="fa-solid fa-rotate"></i>
+        <span>Renewing your last Carnet${renewSource?.request_id ? ` &ndash; ${renewSource.request_id}` : ''}</span>
+      </div>` : ''}
       <div class="wizard-progress">
         ${CPD_STEPS.map((s, i) => `
         <div class="wizard-step ${i === currentStep ? 'active' : i < currentStep ? 'done' : ''}">
@@ -2012,7 +2210,7 @@ export async function renderPublicApplyCPD() {
       </div>
       <form id="cpd-wizard-form" novalidate>
         <div class="section-card">
-          <div class="section-card-header">${CPD_STEPS[currentStep].label}</div>
+          ${CPD_STEPS[currentStep].id === 'trip' ? '' : `<div class="section-card-header">${CPD_STEPS[currentStep].label}</div>`}
           <div class="section-card-body" id="cpd-step-body">
             ${STEP_HTML[currentStep]()}
           </div>
@@ -2038,6 +2236,12 @@ export async function renderPublicApplyCPD() {
     const form = document.getElementById('cpd-wizard-form');
     if (!form) return;
     new FormData(form).forEach((val, key) => { formData[key] = val; });
+    // Explode Full Name into first_name (first two words) and last_name (remaining words)
+    if (formData.full_name) {
+      const nameParts = formData.full_name.trim().split(/\s+/).filter(Boolean);
+      formData.first_name = nameParts.slice(0, 2).join(' ');
+      formData.last_name  = nameParts.slice(2).join(' ');
+    }
     if (CPD_STEPS[currentStep].id === 'trip') {
       savedCountries.length = 0;
       document.querySelectorAll('.cpd-country-check input:checked').forEach(cb => savedCountries.push(cb.value));
@@ -2246,6 +2450,299 @@ export async function renderPublicApplyCPD() {
   }
 
   renderCPDWizard();
+}
+
+// ── Return your CPD ─────────────────────────────────────────────────────────────
+export async function renderPublicCPDReturn() {
+  const content = document.getElementById('page-content');
+
+  const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const idRow = (icon, label, value) => `
+    <div class="rv-identity-row"><span class="rv-id-icon"><i class="${icon}"></i></span><span class="rv-id-label">${label}</span><span class="rv-id-value">${value || '—'}</span></div>`;
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div class="page-title-block">
+        <h1 class="page-title">Return your CPD</h1>
+        <p class="page-subtitle">Enter your Carnet number to look up your application and submit a return request.</p>
+      </div>
+    </div>
+
+    <div class="rv-section" style="max-width:560px">
+      <div class="rv-section-title" style="margin-bottom:12px">Find Your Carnet</div>
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <div class="field" style="margin:0;flex:1">
+          <input id="cpd-return-carnet-no" type="text" placeholder="e.g. DDD164172" autocomplete="off" />
+        </div>
+        <button class="btn btn-primary" id="cpd-return-search-btn" style="height:42px">
+          <i class="fa-solid fa-magnifying-glass"></i> Search
+        </button>
+      </div>
+      <div id="cpd-return-search-status" style="font-size:.85rem;margin-top:8px;min-height:18px"></div>
+    </div>
+
+    <div id="cpd-return-result"></div>`;
+
+  const searchBtn  = document.getElementById('cpd-return-search-btn');
+  const carnetInput= document.getElementById('cpd-return-carnet-no');
+  const statusEl   = document.getElementById('cpd-return-search-status');
+  const resultEl   = document.getElementById('cpd-return-result');
+
+  async function doSearch() {
+    const carnetNo = carnetInput.value.trim();
+    if (!carnetNo) { statusEl.innerHTML = '<span style="color:var(--danger)">Please enter a Carnet number.</span>'; return; }
+
+    statusEl.textContent = '';
+    resultEl.innerHTML = '';
+    searchBtn.disabled = true;
+    searchBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+    try {
+      const r = await api.cpd.searchOwnByCarnet(carnetNo);
+      renderResult(r);
+    } catch (e) {
+      statusEl.innerHTML = `<span style="color:var(--danger)">${esc(e.message || 'No carnet found with that number on your account.')}</span>`;
+    } finally {
+      searchBtn.disabled = false;
+      searchBtn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Search';
+    }
+  }
+
+  searchBtn.addEventListener('click', doSearch);
+  carnetInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+  function renderResult(r) {
+    const alreadyReturned = !!r.existing_return;
+
+    resultEl.innerHTML = `
+      <div class="rv-section" style="margin-top:20px">
+        <div class="rv-section-header">
+          <span class="rv-section-title">Application Details</span>
+        </div>
+        <div class="rv-identity-rows">
+          ${idRow('fa-solid fa-hashtag',      'Request No',        esc(r.request_id))}
+          ${idRow('fa-solid fa-id-card',      'Carnet No',         esc(r.carnet_no))}
+          ${idRow('fa-regular fa-user',       'Applicant',         [r.first_name, r.last_name].filter(Boolean).map(esc).join(' '))}
+          ${idRow('fa-solid fa-car',          'Vehicle',           [r.vehicle_make, r.vehicle_model].filter(Boolean).map(esc).join(' '))}
+          ${idRow('fa-solid fa-hashtag',      'Registration No',   esc(r.registration_no))}
+          ${idRow('fa-solid fa-hashtag',      'Chassis No',        esc(r.chassis_no))}
+          ${idRow('fa-solid fa-calendar',     'Manufacture Year',  esc(r.manuf_year))}
+          ${idRow('fa-solid fa-palette',      'Colour',            esc(r.color))}
+          ${idRow('fa-solid fa-calendar-check','Submitted',        formatDateTime(r.requested_datetime))}
+        </div>
+      </div>
+
+      ${alreadyReturned ? `
+      <div class="rv-section">
+        <div class="rv-section-title" style="margin-bottom:12px">Return Status</div>
+        <div class="rv-extra-rows">
+          <div class="rv-extra-row"><span class="rv-extra-label">Submitted</span><span class="rv-extra-value">${formatDateTime(r.existing_return.added_datetime)}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Status</span><span class="rv-extra-value">${r.existing_return.confirmed_by ? 'Confirmed' : 'Pending confirmation'}</span></div>
+        </div>
+      </div>` : `
+      <div class="rv-section" id="cpd-return-form-section">
+        <div class="rv-section-title" style="margin-bottom:12px">Submit Return Request</div>
+
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem">
+          <div style="flex:1;min-width:200px">
+            <div class="field" style="margin:0">
+              <label>Delivery Option *</label>
+              <div style="display:flex;gap:.75rem;margin-top:.4rem;flex-wrap:wrap">
+                <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-weight:400">
+                  <input type="radio" name="ret-delivery" value="DELIVER_BY_HAND" checked /> Deliver by Hand
+                </label>
+                <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-weight:400">
+                  <input type="radio" name="ret-delivery" value="ARAMAX" /> Aramex
+                </label>
+              </div>
+            </div>
+          </div>
+          <div style="flex:1;min-width:200px">
+            <div class="field" style="margin:0">
+              <label>Return Payment Option *</label>
+              <div style="display:flex;gap:.75rem;margin-top:.4rem;flex-wrap:wrap">
+                <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-weight:400">
+                  <input type="radio" name="ret-payment" value="COLLECT_CHEQUE" checked /> Collect Cheque
+                </label>
+                <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-weight:400">
+                  <input type="radio" name="ret-payment" value="BANK_DEPOSIT" /> Bank Deposit
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="ret-bank-fields" style="display:none;background:var(--bg-base);border-radius:var(--radius);padding:16px;margin-bottom:16px">
+          <div class="form-grid">
+            <div class="field"><label>Bank Name *</label><input type="text" id="ret-bank-name" placeholder="Bank name" /></div>
+            <div class="field"><label>Account No *</label><input type="text" id="ret-account-no" placeholder="Account number" /></div>
+            <div class="field"><label>IBAN</label><input type="text" id="ret-iban" placeholder="AE00 0000 …" /></div>
+            <div class="field"><label>Beneficiary Name *</label><input type="text" id="ret-beneficiary" placeholder="Account holder name" /></div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Remarks *</label>
+          <textarea id="ret-remarks" rows="3" style="width:100%;resize:vertical" placeholder="Condition of carnet and reason for return…"></textarea>
+        </div>
+        <div id="cpd-return-submit-error" class="form-error hidden" style="margin-top:8px"></div>
+
+        <button class="btn btn-primary" id="cpd-return-submit-btn" style="margin-top:12px">
+          <i class="fa-solid fa-rotate-left"></i> Submit Return Request
+        </button>
+      </div>`}
+    `;
+
+    if (!alreadyReturned) bindReturnForm(r.auto_id);
+  }
+
+  function bindReturnForm(autoId) {
+    document.querySelectorAll('input[name="ret-payment"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        document.getElementById('ret-bank-fields').style.display =
+          radio.value === 'BANK_DEPOSIT' && radio.checked ? '' : 'none';
+      });
+    });
+
+    document.getElementById('cpd-return-submit-btn').addEventListener('click', async () => {
+      const delivery = document.querySelector('input[name="ret-delivery"]:checked')?.value;
+      const payment  = document.querySelector('input[name="ret-payment"]:checked')?.value;
+      const remarks  = document.getElementById('ret-remarks').value.trim();
+      const errEl    = document.getElementById('cpd-return-submit-error');
+      const btn      = document.getElementById('cpd-return-submit-btn');
+
+      errEl.classList.add('hidden');
+
+      if (!remarks) { errEl.textContent = 'Please enter remarks'; errEl.classList.remove('hidden'); return; }
+
+      const body = { remarks, delivery_option: delivery, payment_option: payment };
+
+      if (payment === 'BANK_DEPOSIT') {
+        body.bank_name   = document.getElementById('ret-bank-name').value.trim();
+        body.account_no  = document.getElementById('ret-account-no').value.trim();
+        body.iban        = document.getElementById('ret-iban').value.trim();
+        body.beneficiary = document.getElementById('ret-beneficiary').value.trim();
+        if (!body.bank_name)   { errEl.textContent = 'Bank name is required';   errEl.classList.remove('hidden'); return; }
+        if (!body.account_no)  { errEl.textContent = 'Account number is required'; errEl.classList.remove('hidden'); return; }
+        if (!body.beneficiary) { errEl.textContent = 'Beneficiary name is required'; errEl.classList.remove('hidden'); return; }
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting…';
+
+      try {
+        await api.cpd.returnCarnet(autoId, body);
+        toast('Return request submitted successfully', 'success');
+        doSearch(); // refresh to show the now-pending return status
+      } catch (e) {
+        errEl.textContent = e.message || 'Failed to submit return request';
+        errEl.classList.remove('hidden');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-rotate-left"></i> Submit Return Request';
+      }
+    });
+  }
+}
+
+export async function renderPublicCPDRenewSearch() {
+  const content = document.getElementById('page-content');
+
+  const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const idRow = (icon, label, value) => `
+    <div class="rv-identity-row"><span class="rv-id-icon"><i class="${icon}"></i></span><span class="rv-id-label">${label}</span><span class="rv-id-value">${value || '—'}</span></div>`;
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div class="page-title-block">
+        <h1 class="page-title">Renew your CPD</h1>
+        <p class="page-subtitle">Enter your Carnet number to look up your application and renew it.</p>
+      </div>
+    </div>
+
+    <div class="rv-section" style="max-width:560px">
+      <div class="rv-section-title" style="margin-bottom:12px">Find Your Carnet</div>
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <div class="field" style="margin:0;flex:1">
+          <input id="cpd-renew-carnet-no" type="text" placeholder="e.g. DDD164172" autocomplete="off" />
+        </div>
+        <button class="btn btn-primary" id="cpd-renew-search-btn" style="height:42px">
+          <i class="fa-solid fa-magnifying-glass"></i> Search
+        </button>
+      </div>
+      <div id="cpd-renew-search-status" style="font-size:.85rem;margin-top:8px;min-height:18px"></div>
+    </div>
+
+    <div id="cpd-renew-result"></div>`;
+
+  const searchBtn  = document.getElementById('cpd-renew-search-btn');
+  const carnetInput= document.getElementById('cpd-renew-carnet-no');
+  const statusEl   = document.getElementById('cpd-renew-search-status');
+  const resultEl   = document.getElementById('cpd-renew-result');
+
+  async function doSearch() {
+    const carnetNo = carnetInput.value.trim();
+    if (!carnetNo) { statusEl.innerHTML = '<span style="color:var(--danger)">Please enter a Carnet number.</span>'; return; }
+
+    statusEl.textContent = '';
+    resultEl.innerHTML = '';
+    searchBtn.disabled = true;
+    searchBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+    try {
+      const r = await api.cpd.searchOwnByCarnet(carnetNo);
+      renderResult(r);
+    } catch (e) {
+      statusEl.innerHTML = `<span style="color:var(--danger)">${esc(e.message || 'No carnet found with that number on your account.')}</span>`;
+    } finally {
+      searchBtn.disabled = false;
+      searchBtn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Search';
+    }
+  }
+
+  searchBtn.addEventListener('click', doSearch);
+  carnetInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+  function renderResult(r) {
+    const alreadyRenewed = !!r.existing_renewal;
+
+    resultEl.innerHTML = `
+      <div class="rv-section" style="margin-top:20px">
+        <div class="rv-section-header">
+          <span class="rv-section-title">Application Details</span>
+        </div>
+        <div class="rv-identity-rows">
+          ${idRow('fa-solid fa-hashtag',      'Request No',        esc(r.request_id))}
+          ${idRow('fa-solid fa-id-card',      'Carnet No',         esc(r.carnet_no))}
+          ${idRow('fa-regular fa-user',       'Applicant',         [r.first_name, r.last_name].filter(Boolean).map(esc).join(' '))}
+          ${idRow('fa-solid fa-car',          'Vehicle',           [r.vehicle_make, r.vehicle_model].filter(Boolean).map(esc).join(' '))}
+          ${idRow('fa-solid fa-hashtag',      'Registration No',   esc(r.registration_no))}
+          ${idRow('fa-solid fa-hashtag',      'Chassis No',        esc(r.chassis_no))}
+          ${idRow('fa-solid fa-calendar',     'Manufacture Year',  esc(r.manuf_year))}
+          ${idRow('fa-solid fa-palette',      'Colour',            esc(r.color))}
+          ${idRow('fa-solid fa-calendar-check','Submitted',        formatDateTime(r.requested_datetime))}
+        </div>
+      </div>
+
+      ${alreadyRenewed ? `
+      <div class="rv-section">
+        <div class="rv-section-title" style="margin-bottom:12px">Renewal Status</div>
+        <div class="rv-extra-rows">
+          <div class="rv-extra-row"><span class="rv-extra-label">This Carnet has already been renewed</span><span class="rv-extra-value">${esc(r.existing_renewal.request_id)}</span></div>
+        </div>
+      </div>` : `
+      <div class="rv-section">
+        <button class="btn btn-primary" id="cpd-renew-proceed-btn" style="margin-top:4px">
+          <i class="fa-solid fa-rotate"></i> Renew This Carnet
+        </button>
+      </div>`}
+    `;
+
+    if (!alreadyRenewed) {
+      document.getElementById('cpd-renew-proceed-btn').addEventListener('click', () => {
+        navigate('public-apply-cpd', { mode: 'renew', source: r });
+      });
+    }
+  }
 }
 
 // ── History ────────────────────────────────────────────────────────────────────
@@ -3103,7 +3600,7 @@ async function renderPublicIDLView(autoId) {
 
   const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-  const CAT_LABELS   = { A:'Motorcycle', B:'Car', C:'Heavy Vehicle', D:'Bus', E:'Heavy Combination' };
+  const CAT_LABELS   = { A:'Motorcycle', B:'Car', C:'Heavy Vehicle', D:'Bus', E:'Car with Heavy Trailer' };
   const CAT_ICONS    = { A:'fa-motorcycle', B:'fa-car', C:'fa-truck', D:'fa-bus', E:'fa-trailer' };
   // Older requests store legacy numeric dl_type ids (mn_idl_dl_types) instead of the new A–E letter codes
   const LEGACY_CAT_MAP = { 1:'A', 2:'B', 3:'C', 4:'D', 5:'E', 6:'E' };
