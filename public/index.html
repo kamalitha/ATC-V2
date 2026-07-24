@@ -38,7 +38,8 @@
             </button>
           </div>
         </div>
-        <div style="text-align:right;margin:-8px 0 12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin:-8px 0 12px">
+          <a href="#" id="link-register" style="font-size:.82rem;color:var(--accent)">Register</a>
           <a href="#" id="link-forgot-password" style="font-size:.82rem;color:var(--accent)">Forgot password?</a>
         </div>
         <div id="login-error" class="login-error hidden"></div>
@@ -49,9 +50,7 @@
 
         <div class="login-divider"><span>or</span></div>
 
-        <button type="button" id="btn-uae-pass" class="btn-uae-pass">
-          <span>Sign in with UAE Pass</span>
-        </button>
+        <button type="button" id="btn-uae-pass" class="btn-uae-pass" aria-label="Login with UAE PASS"></button>
       </form>
 
       <form id="forgot-password-form" class="hidden" novalidate>

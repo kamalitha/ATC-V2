@@ -3,6 +3,23 @@ import api, { API_BASE, PUBLIC_BASE } from '../api.js';
 import { navigate, toast, openModal, closeModal, currentUser, confirm } from '../app.js';
 import { statusBadge, formatDate, formatDateTime } from '../components/table.js';
 
+// ── Shared "Continue with UAE PASS" fake-retrieval loader (demo only) ─────────
+function showUaePassLoader(onDone) {
+  const overlay = document.createElement('div');
+  overlay.className = 'pub-uaepass-loader';
+  overlay.innerHTML = `
+    <div class="pub-uaepass-loader-box">
+      <i class="fa-solid fa-spinner fa-spin pub-uaepass-loader-spinner"></i>
+      <div class="pub-uaepass-loader-title">Loading....</div>
+      <div class="pub-uaepass-loader-sub">Please wait while we retrieve your information</div>
+    </div>`;
+  document.body.appendChild(overlay);
+  setTimeout(() => {
+    overlay.remove();
+    onDone();
+  }, 5000);
+}
+
 // ── Select Service (shown once, right after a public user logs in) ────────────
 export async function renderPublicSelectService() {
   const content = document.getElementById('page-content');
@@ -114,6 +131,7 @@ export async function renderPublicApplyIDL(param = null) {
   }
 
   let currentStep = 0;
+  let uaePassJustVerified = false; // true only right after "Continue with UAE PASS" is used
 
   // ── Build step content HTML ──────────────────────────────────────────────────
   function stepIdentity() {
@@ -298,6 +316,16 @@ export async function renderPublicApplyIDL(param = null) {
           </div>
 
         </div>
+      </div>
+
+      <!-- UAE PASS request widget -->
+      <div class="pub-uaepass-widget">
+        <div class="pub-uaepass-icon"><i class="fa-solid fa-id-card"></i></div>
+        <div class="pub-uaepass-text">
+          <div class="pub-uaepass-title">We will be requesting your Emirates ID, Passport and Visa</div>
+          <div class="pub-uaepass-sub">Share authentic and up to date documents eliminating the need for paper and physical visits</div>
+        </div>
+        <button type="button" class="btn-uae-pass-continue" aria-label="Continue with UAE PASS"></button>
       </div>`;
   }
 
@@ -318,6 +346,15 @@ export async function renderPublicApplyIDL(param = null) {
           <div class="pub-step-sub">Provide your driving licence details and upload the required documents.</div>
         </div>
       </div>
+
+      ${uaePassJustVerified ? `
+      <!-- UAE PASS success banner -->
+      <div class="pub-verified-banner">
+        <i class="fa-solid fa-circle-check pub-verified-icon"></i>
+        <div>
+          <div class="pub-verified-title">Your details were successfully received from UAE Pass</div>
+        </div>
+      </div>` : ''}
 
       <!-- ── Driving Licence Details ── -->
       <div class="pub-additional-card" style="margin-bottom:20px">
@@ -395,7 +432,7 @@ export async function renderPublicApplyIDL(param = null) {
           ${docUploadHtml('eid_back',      'Emirates ID (Back)',           `${PUBLIC_BASE}/images/doc-placeholders/em_id_back.png`)}
           ${docUploadHtml('dl_front',      'Driving Licence (Front)',      `${PUBLIC_BASE}/images/doc-placeholders/dl_front.png`)}
           ${docUploadHtml('dl_back',       'Driving Licence (Back)',       `${PUBLIC_BASE}/images/doc-placeholders/dl_back.png`)}
-          ${docUploadHtml('passport_photo','Passport Size Photo',          `${PUBLIC_BASE}/images/doc-placeholders/passport.png`)}
+          ${docUploadHtml('passport_photo', uaePassJustVerified ? 'As retrieved from Emirates ID' : 'Passport Photo', `${PUBLIC_BASE}/images/doc-placeholders/passport.png`)}
           <div class="doc-upload-item">
             <div class="doc-upload-label">Signature *</div>
             <div class="doc-upload-zone" data-key="signature" id="doc-zone-signature">
@@ -1303,8 +1340,17 @@ export async function renderPublicApplyIDL(param = null) {
     });
 
     // Navigation buttons
+    document.querySelector('.btn-uae-pass-continue')?.addEventListener('click', () => {
+      showUaePassLoader(() => {
+        uaePassJustVerified = true;
+        currentStep = 1;
+        renderWizard();
+      });
+    });
+
     document.getElementById('btn-wizard-back')?.addEventListener('click', () => {
       if (currentStep === 0) { navigate('public-history'); return; }
+      uaePassJustVerified = false;
       saveCurrentStepData();
       currentStep--;
       renderWizard();
@@ -1313,6 +1359,7 @@ export async function renderPublicApplyIDL(param = null) {
     document.getElementById('btn-wizard-next')?.addEventListener('click', async () => {
       if (!validateStep(currentStep)) return;
       saveCurrentStepData();
+      uaePassJustVerified = false;
 
       if (currentStep < STEPS.length - 1) {
         currentStep++;
@@ -1561,6 +1608,7 @@ export async function renderPublicApplyCPD(param = null) {
   };
 
   let currentStep   = 0;
+  let uaePassJustVerified = false; // true only right after "Continue with UAE PASS" is used
   const formData    = {};
   const savedCountries = [];
 
@@ -1807,6 +1855,16 @@ export async function renderPublicApplyCPD(param = null) {
           </div>
 
         </div>
+      </div>
+
+      <!-- UAE PASS request widget -->
+      <div class="pub-uaepass-widget">
+        <div class="pub-uaepass-icon"><i class="fa-solid fa-id-card"></i></div>
+        <div class="pub-uaepass-text">
+          <div class="pub-uaepass-title">We will be requesting your Emirates ID and Driving License</div>
+          <div class="pub-uaepass-sub">Share authentic and up to date documents eliminating the need for paper and physical visits</div>
+        </div>
+        <button type="button" class="btn-uae-pass-continue" aria-label="Continue with UAE PASS"></button>
       </div>`;
   }
 
@@ -1823,6 +1881,15 @@ export async function renderPublicApplyCPD(param = null) {
         <div class="pub-step-sub">Provide your vehicle and additional details.</div>
       </div>
     </div>
+
+    ${uaePassJustVerified ? `
+    <!-- UAE PASS success banner -->
+    <div class="pub-verified-banner">
+      <i class="fa-solid fa-circle-check pub-verified-icon"></i>
+      <div>
+        <div class="pub-verified-title">Your details were successfully received from UAE Pass</div>
+      </div>
+    </div>` : ''}
 
     <div class="rv-section-title" style="margin-bottom:12px">Driving Licence Details</div>
     <div class="pub-identity-card" style="margin-bottom:20px">
@@ -2946,8 +3013,17 @@ export async function renderPublicApplyCPD(param = null) {
       }
     });
 
+    document.querySelector('.btn-uae-pass-continue')?.addEventListener('click', () => {
+      showUaePassLoader(() => {
+        uaePassJustVerified = true;
+        currentStep = 1;
+        renderCPDWizard();
+      });
+    });
+
     document.getElementById('btn-cpd-back')?.addEventListener('click', () => {
       if (currentStep === 0) { navigate('public-history'); return; }
+      uaePassJustVerified = false;
       saveCPDStep();
       currentStep--;
       renderCPDWizard();
@@ -2956,6 +3032,7 @@ export async function renderPublicApplyCPD(param = null) {
     document.getElementById('btn-cpd-next')?.addEventListener('click', async () => {
       if (!validateCPDStep(currentStep)) return;
       saveCPDStep();
+      uaePassJustVerified = false;
       if (currentStep < CPD_STEPS.length - 1) {
         currentStep++;
         renderCPDWizard();

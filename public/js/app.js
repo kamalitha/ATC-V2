@@ -585,9 +585,10 @@ async function boot() {
   document.getElementById('link-forgot-password')?.addEventListener('click', e => { e.preventDefault(); showForgotPassword(); });
   document.getElementById('link-back-to-login')?.addEventListener('click', e => { e.preventDefault(); showLoginForm(); });
 
-  // UAE Pass — placeholder: alert until OAuth is configured
-  document.getElementById('btn-uae-pass')?.addEventListener('click', () => {
-    alert('UAE Pass integration requires a registered client_id from UAE Pass. Please contact your system administrator.');
+  // Register — placeholder: no self-registration flow exists yet
+  document.getElementById('link-register')?.addEventListener('click', e => {
+    e.preventDefault();
+    alert('Registration is coming soon.');
   });
   document.getElementById('modal-close').addEventListener('click', closeModal);
   document.getElementById('modal-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });

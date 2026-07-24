@@ -140,18 +140,78 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 }
 
 .btn-uae-pass {
-  width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
-  padding: 11px 16px; border-radius: 6px; cursor: pointer;
-  background: #00732F; border: none; color: #fff;
-  font-size: .9rem; font-weight: 600; letter-spacing: .01em;
-  transition: background .15s, transform .1s;
+  width: 100%; aspect-ratio: 253 / 50; cursor: pointer;
+  background-color: transparent; border: none; padding: 0;
+  background-image: url('../images/uae-pass/login-with/Active.svg');
+  background-size: contain; background-repeat: no-repeat; background-position: center;
+  transition: transform .1s;
+  height: 50px;
 }
-.btn-uae-pass:hover  { background: #005e25; transform: scale(1.01); }
-.btn-uae-pass:active { transform: scale(0.99); }
-.uae-pass-logo {
-  width: 36px; height: 24px; display: flex; align-items: center; justify-content: center;
-  background: #fff; border-radius: 3px; flex-shrink: 0;
+.btn-uae-pass:hover:not(:disabled)  { background-image: url('../images/uae-pass/login-with/Focus.svg'); transform: scale(1.01); }
+.btn-uae-pass:active:not(:disabled) { background-image: url('../images/uae-pass/login-with/Pressed.svg'); transform: scale(0.99); }
+.btn-uae-pass:disabled {
+  background-image: url('../images/uae-pass/login-with/Disabled.svg');
+  cursor: default;
 }
+
+/* ── "We will be requesting…" UAE PASS widget (public wizard first step) ──── */
+.pub-uaepass-widget {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+.pub-uaepass-icon {
+  width: 44px; height: 44px; flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--accent-10, rgba(59,130,246,.12));
+  color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem;
+}
+.pub-uaepass-text { flex: 1; min-width: 220px; }
+.pub-uaepass-title { font-size: .88rem; font-weight: 700; color: var(--text-primary); }
+.pub-uaepass-sub   { font-size: .8rem; color: var(--text-muted); margin-top: 2px; }
+.btn-uae-pass-continue {
+  width: 230px; aspect-ratio: 285 / 50; cursor: pointer; flex-shrink: 0;
+  background-color: transparent; border: none; padding: 0;
+  background-image: url('../images/uae-pass/continue-with/Active.svg');
+  background-size: contain; background-repeat: no-repeat; background-position: center;
+  transition: transform .1s;
+}
+.btn-uae-pass-continue:hover:not(:disabled)  { background-image: url('../images/uae-pass/continue-with/Focus.svg'); transform: scale(1.01); }
+.btn-uae-pass-continue:active:not(:disabled) { background-image: url('../images/uae-pass/continue-with/Pressed.svg'); transform: scale(0.99); }
+.btn-uae-pass-continue:disabled {
+  background-image: url('../images/uae-pass/continue-with/Disabled.svg');
+  cursor: default;
+}
+@media (max-width: 560px) {
+  .pub-uaepass-widget { flex-direction: column; align-items: stretch; text-align: center; }
+  .btn-uae-pass-continue { width: 100%; }
+}
+
+/* ── UAE PASS fake-retrieval full-page loader (demo only) ──────────────────── */
+.pub-uaepass-loader {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(15, 17, 21, .72);
+  backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+}
+.pub-uaepass-loader-box {
+  background: var(--bg-elevated);
+  border-radius: var(--radius);
+  padding: 36px 44px;
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(0,0,0,.35);
+}
+.pub-uaepass-loader-spinner { font-size: 2rem; color: var(--accent); margin-bottom: 16px; }
+.pub-uaepass-loader-title { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); }
+.pub-uaepass-loader-sub   { font-size: .88rem; color: var(--text-muted); margin-top: 6px; }
 
 @media (max-width: 768px) {
   .login-wrapper { justify-content: center; padding: 1.5rem; }
