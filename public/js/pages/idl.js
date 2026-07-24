@@ -839,7 +839,6 @@ export async function renderIDLDetail(param) {
         ${identityRow('fa-solid fa-tag',           'Request Type',         r.request_type)}
         ${identityRow('fa-regular fa-user',        'Full Name',           [r.first_name, r.last_name].filter(Boolean).join(' '))}
         ${identityRow('fa-regular fa-id-card',     'Emirates ID',         r.emirates_id)}
-        ${identityRow('fa-regular fa-calendar',    'Date of Birth',       formatDate(r.dob))}
         ${identityRow('fa-solid fa-flag',          'Nationality',         r.nationality)}
         ${identityRow('fa-solid fa-venus-mars',    'Gender',              r.sex)}
         ${identityRow('fa-solid fa-mobile-screen', 'Mobile Number',       r.mobile_no)}
@@ -855,6 +854,7 @@ export async function renderIDLDetail(param) {
     <div class="rv-section">
       <div class="rv-section-title" style="margin-bottom:12px">Additional Information</div>
       <div class="rv-extra-rows">
+        <div class="rv-extra-row"><span class="rv-extra-label">Date of Birth</span><span class="rv-extra-value">${formatDate(r.dob)}</span></div>
         <div class="rv-extra-row"><span class="rv-extra-label">Place of Birth</span><span class="rv-extra-value">${r.place_of_birth || '—'}</span></div>
         <div class="rv-extra-row"><span class="rv-extra-label">UAE Permanent Place of Residence</span><span class="rv-extra-value">${r.emirate_name ?? r.emirate ?? '—'}</span></div>
         <div class="rv-extra-row"><span class="rv-extra-label">Additional Phone Number</span><span class="rv-extra-value">${r.additional_mobile_no || '—'}</span></div>

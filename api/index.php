@@ -8,6 +8,7 @@ require_once API_ROOT . '/core/Response.php';
 require_once API_ROOT . '/core/Auth.php';
 require_once API_ROOT . '/core/Validator.php';
 require_once API_ROOT . '/core/Router.php';
+require_once API_ROOT . '/core/MailHandler.php';
 
 // ── Global error/exception handlers ──────────────────────────────────────────
 set_exception_handler(function (\Throwable $e) {
@@ -67,6 +68,7 @@ $r = new Router();
 $r->post('/api/auth/login',          [AuthController::class,'login']);
 $r->post('/api/auth/logout',         [AuthController::class,'logout']);
 $r->get('/api/auth/me',              [AuthController::class,'me']);
+$r->post('/api/auth/forgot-password',[AuthController::class,'forgotPassword']);
 $r->put('/api/auth/profile',         [AuthController::class,'updateProfile'],   auth:true);
 $r->put('/api/auth/change-password', [AuthController::class,'changeOwnPassword'],auth:true);
 // Users
@@ -86,6 +88,7 @@ $r->get('/api/idl/search-by-eid',           [IDLController::class,'searchByEid']
 $r->get('/api/cpd/search-by-eid',           [CPDController::class,'searchByEid'],   auth:true);
 $r->get('/api/cpd/search-by-ref',           [CPDController::class,'searchByRef'],   auth:true);
 $r->get('/api/cpd/search-own-by-carnet',    [CPDController::class,'searchOwnByCarnet'], auth:true);
+$r->get('/api/cpd/my-issued-carnets',       [CPDController::class,'myIssuedCarnets'],   auth:true);
 $r->get('/api/cpd/claims/search',           [CPDController::class,'searchClaims'],  auth:true);
 $r->post('/api/cpd/claims',                 [CPDController::class,'addClaim'],       auth:true);
 $r->get('/api/cpd/requests/{id}/claims',                    [CPDController::class,'getClaims'],           auth:true);

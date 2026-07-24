@@ -3,6 +3,38 @@ import api, { API_BASE, PUBLIC_BASE } from '../api.js';
 import { navigate, toast, openModal, closeModal, currentUser, confirm } from '../app.js';
 import { statusBadge, formatDate, formatDateTime } from '../components/table.js';
 
+// ── Select Service (shown once, right after a public user logs in) ────────────
+export async function renderPublicSelectService() {
+  const content = document.getElementById('page-content');
+  content.innerHTML = `
+    <div class="page-header">
+      <div class="page-title-block">
+        <h1 class="page-title">Welcome${currentUser?.first_name ? `, ${currentUser.first_name}` : ''}</h1>
+        <p class="page-subtitle">Which service would you like to use today?</p>
+      </div>
+    </div>
+
+    <div class="del-method-grid" style="max-width:720px">
+      <label class="del-method-card" id="select-service-idl">
+        <div class="del-method-icon-wrap"><i class="fa-solid fa-id-card"></i></div>
+        <div>
+          <div class="del-method-title">International Driving Licence (IDL)</div>
+          <div class="del-method-desc">Apply for or renew your International Driving Permit.</div>
+        </div>
+      </label>
+      <label class="del-method-card" id="select-service-cpd">
+        <div class="del-method-icon-wrap"><i class="fa-solid fa-car"></i></div>
+        <div>
+          <div class="del-method-title">Carnet De Passage (CPD)</div>
+          <div class="del-method-desc">Apply for, renew or return your vehicle Carnet.</div>
+        </div>
+      </label>
+    </div>`;
+
+  document.getElementById('select-service-idl').addEventListener('click', () => navigate('public-apply-idl'));
+  document.getElementById('select-service-cpd').addEventListener('click', () => navigate('public-apply-cpd'));
+}
+
 // ── Wizard step definitions ────────────────────────────────────────────────────
 const STEPS = [
   { id: 'identity',  label: 'Identity Verification'      },
@@ -116,12 +148,6 @@ export async function renderPublicApplyIDL(param = null) {
             <input type="hidden" name="emirates_id" value="${emiratesId}" />
           </div>
           <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-regular fa-calendar"></i></span>
-            <span class="pub-id-label">Date of Birth</span>
-            <span class="pub-id-value">${dobDisplay}</span>
-            <input type="hidden" name="dob" value="${dobValue}" />
-          </div>
-          <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-solid fa-flag"></i></span>
             <span class="pub-id-label">Nationality</span>
             <span class="pub-id-value">${nationalityName}</span>
@@ -156,11 +182,6 @@ export async function renderPublicApplyIDL(param = null) {
             <span class="pub-id-label">Emirates ID</span>
             <input name="emirates_id" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" value="${emiratesId}" />
             <div class="field-error" id="err-emirates_id" style="margin:0"></div>
-          </div>
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-regular fa-calendar"></i></span>
-            <span class="pub-id-label">Date of Birth</span>
-            <input name="dob" type="date" class="pub-id-inline-input" value="${dobValue}" />
           </div>
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-solid fa-flag"></i></span>
@@ -229,6 +250,15 @@ export async function renderPublicApplyIDL(param = null) {
       <div class="pub-additional-card">
         <div class="pub-additional-title">Additional Information</div>
         <div class="form-grid pub-additional-grid" style="margin-top:16px">
+
+          <div class="field"><label>Date of Birth</label>
+            <div class="pub-input-icon-wrap">
+              ${viaUaePass
+                ? `<input value="${dobDisplay}" readonly /><input type="hidden" name="dob" value="${dobValue}" />`
+                : `<input name="dob" type="date" value="${dobValue}" />`}
+              <i class="fa-regular fa-calendar pub-input-icon-right"></i>
+            </div>
+          </div>
 
           <div class="field"><label>Place of Birth *</label>
             <div class="pub-input-icon-wrap">
@@ -622,7 +652,6 @@ export async function renderPublicApplyIDL(param = null) {
         <div class="rv-identity-rows">
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-user"></i></span><span class="rv-id-label">Full Name</span><span class="rv-id-value">${fullName}</span></div>
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-id-card"></i></span><span class="rv-id-label">Emirates ID</span><span class="rv-id-value">${formData.emirates_id || '—'}</span></div>
-          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-calendar"></i></span><span class="rv-id-label">Date of Birth</span><span class="rv-id-value">${dob}</span></div>
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-flag"></i></span><span class="rv-id-label">Nationality</span><span class="rv-id-value">${natLabel}</span></div>
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-venus-mars"></i></span><span class="rv-id-label">Gender</span><span class="rv-id-value">${formData.sex || '—'}</span></div>
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-mobile-screen"></i></span><span class="rv-id-label">Mobile Number</span><span class="rv-id-value">${formData.mobile_no || '—'}</span></div>
@@ -634,6 +663,7 @@ export async function renderPublicApplyIDL(param = null) {
       <div class="rv-section">
         <div class="rv-section-title" style="margin-bottom:12px">Additional Information</div>
         <div class="rv-extra-rows">
+          <div class="rv-extra-row"><span class="rv-extra-label">Date of Birth</span><span class="rv-extra-value">${dob}</span></div>
           <div class="rv-extra-row"><span class="rv-extra-label">Place of Birth</span><span class="rv-extra-value">${formData.place_of_birth || '—'}</span></div>
           <div class="rv-extra-row"><span class="rv-extra-label">UAE Permanent Place of Residence</span><span class="rv-extra-value">${emirLabel}</span></div>
           <div class="rv-extra-row"><span class="rv-extra-label">Additional Phone Number</span><span class="rv-extra-value">${formData.additional_mobile_no || '—'}</span></div>
@@ -1496,26 +1526,37 @@ export async function renderPublicApplyCPD(param = null) {
   countries.sort((a, b) => a.nationality.localeCompare(b.nationality));
 
   const CPD_STEPS = [
-    { id: 'owner',   label: 'Identity Information' },
-    { id: 'vehicle', label: 'Vehicle Information' },
-    { id: 'trip',    label: 'Trip Details'        },
-    { id: 'payment', label: 'Payment Details'     },
+    { id: 'identity', label: 'Identity Information'      },
+    { id: 'vehicle',  label: 'Vehicle Information'        },
+    { id: 'trip',     label: 'Trip Details'               },
+    { id: 'review',   label: 'Review & Pay'               },
+    { id: 'payment',  label: 'Payment Details'            },
   ];
 
   const CPD_REQUIRED = {
-    owner:   [
-      { name: 'full_name',  label: 'Full Name'  },
-      { name: 'mobile_no',  label: 'Mobile No'  },
-      { name: 'email',      label: 'Email'      },
+    identity: [
+      { name: 'full_name',   label: 'Full Name'   },
+      { name: 'emirates_id', label: 'Emirates ID' },
+      { name: 'nationality', label: 'Nationality' },
+      { name: 'sex',         label: 'Gender'      },
+      { name: 'mobile_no',   label: 'Mobile No'   },
+      { name: 'email',       label: 'Email'       },
+      { name: 'passport_no', label: 'Passport Number' },
     ],
     vehicle: [
-      { name: 'vehicle_make',    label: 'Vehicle Make'    },
-      { name: 'vehicle_model',   label: 'Vehicle Model'   },
-      { name: 'registration_no', label: 'Registration No' },
-      { name: 'chassis_no',      label: 'Chassis No'      },
-      { name: 'manuf_year',      label: 'Manufacture Year'},
+      { name: 'license_no',      label: 'Driving Licence Number'      },
+      { name: 'license_expiry',  label: 'Driving Licence Expiry Date' },
+      { name: 'vehicle_make',    label: 'Vehicle Make'     },
+      { name: 'vehicle_model',   label: 'Vehicle Model'    },
+      { name: 'registration_no', label: 'Registration No'  },
+      { name: 'mulkiya_no',      label: 'Traffic File Number' },
+      { name: 'chassis_no',      label: 'Chassis No'       },
+      { name: 'manuf_year',      label: 'Manufacture Year' },
+      { name: 'radio',           label: 'Radio'            },
+      { name: 'spare_tyre',      label: 'Spare Tyre'       },
     ],
     trip:    [],
+    review:  [],
     payment: [],
   };
 
@@ -1541,6 +1582,11 @@ export async function renderPublicApplyCPD(param = null) {
     formData.extra_owner1_name = s.extra_owner1_name ?? '';
     formData.extra_owner2_name = s.extra_owner2_name ?? '';
     formData.emirates_id    = s.emirates_id     ?? '';
+    formData.dob             = s.dob ? String(s.dob).split('T')[0].split(' ')[0] : '';
+    formData.sex             = s.sex             ?? '';
+    formData.license_no      = s.license_no      ?? '';
+    formData.license_expiry  = s.license_expiry ? String(s.license_expiry).split('T')[0].split(' ')[0] : '';
+    formData.usage_type      = s.usage_type      ?? 'PERSONAL';
     // Vehicle details
     formData.mulkiya_no            = s.mulkiya_no            ?? '';
     formData.registration_no       = s.registration_no       ?? '';
@@ -1566,9 +1612,36 @@ export async function renderPublicApplyCPD(param = null) {
   const savedDocs = {};
 
   const UAE_STATES = ['Abu Dhabi','Dubai','Sharjah','Ajman','Umm Al Quwain','Ras Al Khaimah','Fujairah'];
-  const BODY_TYPES = ['Luxury','Station','Saloon','Motor Cycle','Truck','Coupe','Bus','Trailer','-Coupe','-Station','-Saloon','Pickup'];
+  const BODY_TYPES = ['Luxury','Station','Saloon','Motor Cycle','Truck','Trailer','Pickup'];
   const COLORS     = ['White','Silver','Black','Grey','Blue','Red','Brown','Green','Other'];
   const YEAR_OPTS  = Array.from({length:41},(_,i)=>2030-i).map(y=>`<option value="${y}">${y}</option>`).join('');
+
+  // Delivery / Pick-up from ATC Office (same offices as the IDL wizard)
+  const CPD_DELIVERY_FEE = parseFloat(guaranteeRules.delivery_fee ?? 30);
+  const OFFICES = [
+    {
+      id: 'dubai',
+      deliveryValue: 'pick_from_dubai_office',
+      name: 'Dubai Office',
+      addr: 'Emirates Motorsports Organization<br>P.O. Box 5078, Al Wuheida St, 5078,<br>Dubai, UAE',
+      hours: [
+        ['Mon–Thu', '8:00 AM – 7:30 PM'],
+        ['Friday', '8:00 – 11:30 AM, 1:30 – 7:30 PM'],
+        ['Saturday', '9:00 AM – 4:30 PM'],
+        ['Sunday', 'Closed'],
+      ],
+    },
+    {
+      id: 'abu_dhabi',
+      deliveryValue: 'pick_from_abudhabi_office',
+      name: 'Abu Dhabi Office',
+      addr: 'Emirates Motorsports Organization<br>P.O. Box 27487, Abu Dhabi, UAE',
+      hours: [
+        ['Mon–Sat', '8:00 AM – 5:00 PM'],
+        ['Sunday', 'Closed'],
+      ],
+    },
+  ];
 
   function cpdDocZone(key, label) {
     return `<div class="doc-upload-item">
@@ -1589,31 +1662,22 @@ export async function renderPublicApplyCPD(param = null) {
     </div>`;
   }
 
-  function stepOwner() {
+  function stepIdentity() {
+    const usageType = formData.usage_type || 'PERSONAL';
     return `
+      <div class="pub-step-header">
+        <div class="pub-step-icon-wrap"><i class="fa-solid fa-user"></i></div>
+        <div>
+          <div class="pub-step-title">Verify Your Identity</div>
+          <div class="pub-step-sub">Please enter your identity details below.</div>
+        </div>
+      </div>
+
       <div class="pub-identity-card">
+        <div class="pub-identity-card-header">
+          <span>Your Identity Information</span>
+        </div>
         <div class="pub-identity-rows">
-
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
-            <span class="pub-id-label">Emirates ID</span>
-            <input name="emirates_id" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
-            <div class="field-error" id="err-emirates_id" style="margin:0"></div>
-          </div>
-
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-solid fa-user-tag"></i></span>
-            <span class="pub-id-label">Salutation</span>
-            <select name="title" class="pub-id-inline-select">
-              <option value="">Select</option>
-              <option value="Mr">Mr</option>
-              <option value="Mrs">Mrs</option>
-              <option value="Ms">Ms</option>
-              <option value="Dr">Dr</option>
-              <option value="Sheikh">Sheikh</option>
-              <option value="His Excellency">His Excellency</option>
-            </select>
-          </div>
 
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
@@ -1623,10 +1687,10 @@ export async function renderPublicApplyCPD(param = null) {
           </div>
 
           <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
-            <span class="pub-id-label">Mobile No</span>
-            <input name="mobile_no" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
-            <div class="field-error" id="err-mobile_no" style="margin:0"></div>
+            <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
+            <span class="pub-id-label">Emirates ID</span>
+            <input name="emirates_id" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
+            <div class="field-error" id="err-emirates_id" style="margin:0"></div>
           </div>
 
           <div class="pub-identity-row">
@@ -1636,19 +1700,52 @@ export async function renderPublicApplyCPD(param = null) {
               <option value="">Select nationality</option>
               ${nationalities.map(n => `<option value="${n.nationality_id}">${n.nationality}</option>`).join('')}
             </select>
+            <div class="field-error" id="err-nationality" style="margin:0"></div>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-venus-mars"></i></span>
+            <span class="pub-id-label">Gender</span>
+            <select name="sex" class="pub-id-inline-select">
+              <option value="">Select</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+            <div class="field-error" id="err-sex" style="margin:0"></div>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+            <span class="pub-id-label">Mobile Number</span>
+            <input name="mobile_no" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
+            <div class="field-error" id="err-mobile_no" style="margin:0"></div>
           </div>
 
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-regular fa-envelope"></i></span>
-            <span class="pub-id-label">Email</span>
+            <span class="pub-id-label">Email Address</span>
             <input name="email" type="email" class="pub-id-inline-input" placeholder="your@email.com" />
             <div class="field-error" id="err-email" style="margin:0"></div>
           </div>
 
+        </div>
+      </div>
+
+      <div class="rv-section-title" style="margin-bottom:12px">Additional Information</div>
+      <div class="pub-identity-card">
+        <div class="pub-identity-rows pub-identity-rows-2col">
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-calendar"></i></span>
+            <span class="pub-id-label">Date of Birth</span>
+            <input name="dob" type="date" class="pub-id-inline-input" />
+          </div>
+
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
-            <span class="pub-id-label">Passport No</span>
+            <span class="pub-id-label">Passport Number</span>
             <input name="passport_no" class="pub-id-inline-input" placeholder="Passport number" />
+            <div class="field-error" id="err-passport_no" style="margin:0"></div>
           </div>
 
           <div class="pub-identity-row">
@@ -1669,16 +1766,44 @@ export async function renderPublicApplyCPD(param = null) {
             <input name="city" class="pub-id-inline-input" placeholder="City" />
           </div>
 
+        </div>
+
+        <div class="pub-identity-rows pub-identity-rows-bycol-3">
+
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
-            <span class="pub-id-label">Extra Driver 1 Name</span>
+            <span class="pub-id-label">Extra Driver 1 Full Name</span>
             <input name="extra_owner1_name" class="pub-id-inline-input" placeholder="Full name" />
           </div>
 
           <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
+            <span class="pub-id-label">Extra Driver 1 Emirates ID</span>
+            <input name="extra_owner1_eid" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
+            <span class="pub-id-label">Extra Driver 1 Passport Number</span>
+            <input name="extra_owner1_passport" class="pub-id-inline-input" placeholder="Passport number" />
+          </div>
+
+          <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
-            <span class="pub-id-label">Extra Driver 2 Name</span>
+            <span class="pub-id-label">Extra Driver 2 Full Name</span>
             <input name="extra_owner2_name" class="pub-id-inline-input" placeholder="Full name" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
+            <span class="pub-id-label">Extra Driver 2 Emirates ID</span>
+            <input name="extra_owner2_eid" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
+            <span class="pub-id-label">Extra Driver 2 Passport Number</span>
+            <input name="extra_owner2_passport" class="pub-id-inline-input" placeholder="Passport number" />
           </div>
 
         </div>
@@ -1687,21 +1812,55 @@ export async function renderPublicApplyCPD(param = null) {
 
   function stepVehicle() {
     const yearOpts = Array.from({length:41},(_,i)=>2030-i).map(y=>`<option value="${y}">${y}</option>`).join('');
+    const usageType = formData.usage_type || 'PERSONAL';
+    const upholsteryChoice = ['Yes','No'].includes(formData.upholstery) ? formData.upholstery : (formData.upholstery ? 'Other' : '');
+    const upholsteryOther  = upholsteryChoice === 'Other' ? formData.upholstery : '';
     return `
-    <div class="pub-identity-card">
-      <div class="pub-identity-rows">
+    <div class="pub-step-header">
+      <div class="pub-step-icon-wrap"><i class="fa-solid fa-car"></i></div>
+      <div>
+        <div class="pub-step-title">Vehicle Information</div>
+        <div class="pub-step-sub">Provide your vehicle and additional details.</div>
+      </div>
+    </div>
+
+    <div class="rv-section-title" style="margin-bottom:12px">Driving Licence Details</div>
+    <div class="pub-identity-card" style="margin-bottom:20px">
+      <div class="pub-identity-rows pub-identity-rows-2col">
 
         <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-regular fa-file-lines"></i></span>
-          <span class="pub-id-label">Traffic File No</span>
-          <input name="mulkiya_no" class="pub-id-inline-input" placeholder="Traffic file / Mulkiya number" />
+          <span class="pub-id-icon"><i class="fa-solid fa-id-card"></i></span>
+          <span class="pub-id-label">Driving Licence Number</span>
+          <input name="license_no" class="pub-id-inline-input" placeholder="Licence number" />
+          <div class="field-error" id="err-license_no" style="margin:0"></div>
         </div>
+
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-regular fa-calendar-xmark"></i></span>
+          <span class="pub-id-label">Driving Licence Expiry Date</span>
+          <input name="license_expiry" type="date" class="pub-id-inline-input" />
+          <div class="field-error" id="err-license_expiry" style="margin:0"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="rv-section-title" style="margin-bottom:12px">Vehicle Details</div>
+    <div class="pub-identity-card" style="margin-bottom:20px">
+      <div class="pub-identity-rows pub-identity-rows-2col">
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-hashtag"></i></span>
           <span class="pub-id-label">Registration No</span>
           <input name="registration_no" required class="pub-id-inline-input" placeholder="e.g. Dubai A 12345" />
           <div class="field-error" id="err-registration_no" style="margin:0"></div>
+        </div>
+
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-regular fa-file-lines"></i></span>
+          <span class="pub-id-label">Traffic File Number</span>
+          <input name="mulkiya_no" required class="pub-id-inline-input" placeholder="Traffic file / Mulkiya number" />
+          <div class="field-error" id="err-mulkiya_no" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
@@ -1798,7 +1957,18 @@ export async function renderPublicApplyCPD(param = null) {
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-chair"></i></span>
           <span class="pub-id-label">Upholstery</span>
-          <input name="upholstery" class="pub-id-inline-input" placeholder="e.g. Leather" />
+          <select name="upholstery_choice" id="cpd-upholstery-choice" class="pub-id-inline-select">
+            <option value="">Select</option>
+            <option value="Yes" ${upholsteryChoice === 'Yes' ? 'selected' : ''}>Yes</option>
+            <option value="No" ${upholsteryChoice === 'No' ? 'selected' : ''}>No</option>
+            <option value="Other" ${upholsteryChoice === 'Other' ? 'selected' : ''}>Other</option>
+          </select>
+        </div>
+
+        <div class="pub-identity-row" id="cpd-upholstery-other-row" style="display:${upholsteryChoice === 'Other' ? '' : 'none'}">
+          <span class="pub-id-icon"><i class="fa-solid fa-pen"></i></span>
+          <span class="pub-id-label">Specify Upholstery</span>
+          <input name="upholstery_other" class="pub-id-inline-input" placeholder="e.g. Leather" value="${upholsteryOther}" />
         </div>
 
         <div class="pub-identity-row">
@@ -1810,19 +1980,21 @@ export async function renderPublicApplyCPD(param = null) {
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-radio"></i></span>
           <span class="pub-id-label">Radio</span>
-          <select name="radio" class="pub-id-inline-select">
+          <select name="radio" required class="pub-id-inline-select">
             <option value="">Select</option>
             <option value="Yes">Yes</option><option value="No">No</option>
           </select>
+          <div class="field-error" id="err-radio" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-ring"></i></span>
           <span class="pub-id-label">Spare Tyre</span>
-          <select name="spare_tyre" class="pub-id-inline-select">
+          <select name="spare_tyre" required class="pub-id-inline-select">
             <option value="">Select</option>
             <option value="Yes">Yes</option><option value="No">No</option>
           </select>
+          <div class="field-error" id="err-spare_tyre" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
@@ -1845,27 +2017,64 @@ export async function renderPublicApplyCPD(param = null) {
         </div>
 
         <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-briefcase"></i></span>
+          <span class="pub-id-label">Usage Type</span>
+          <select name="usage_type" id="cpd-usage-type" class="pub-id-inline-select">
+            <option value="PERSONAL" ${usageType === 'PERSONAL' ? 'selected' : ''}>Personal Use</option>
+            <option value="COMPANY" ${usageType === 'COMPANY' ? 'selected' : ''}>Company Use</option>
+          </select>
+        </div>
+
+      </div>
+
+      <div class="pub-identity-rows pub-identity-rows-bycol-4">
+
+        <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
-          <span class="pub-id-label">Reference 1 (UAE)</span>
-          <input name="uae_refree1" class="pub-id-inline-input" placeholder="Full name and phone number" />
+          <span class="pub-id-label">Reference 1 in UAE Full Name</span>
+          <input name="uae_refree1" class="pub-id-inline-input" placeholder="Full name" />
+        </div>
+
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+          <span class="pub-id-label">Reference 1 in UAE Mobile Number</span>
+          <input name="uae_refree1_mobile" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
         </div>
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
-          <span class="pub-id-label">Reference 2 (UAE)</span>
-          <input name="uae_refree2" class="pub-id-inline-input" placeholder="Full name and phone number" />
+          <span class="pub-id-label">Reference 1 in Destination Full Name</span>
+          <input name="destination_refree1" class="pub-id-inline-input" placeholder="Full name" />
+        </div>
+
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+          <span class="pub-id-label">Reference 1 in Destination Mobile Number</span>
+          <input name="destination_refree1_mobile" class="pub-id-inline-input" placeholder="Mobile number" />
         </div>
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
-          <span class="pub-id-label">Reference 1 (Destination)</span>
-          <input name="destination_refree1" class="pub-id-inline-input" placeholder="Full name and phone number" />
+          <span class="pub-id-label">Reference 2 in UAE Full Name</span>
+          <input name="uae_refree2" class="pub-id-inline-input" placeholder="Full name" />
+        </div>
+
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+          <span class="pub-id-label">Reference 2 in UAE Mobile Number</span>
+          <input name="uae_refree2_mobile" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
         </div>
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
-          <span class="pub-id-label">Reference 2 (Destination)</span>
-          <input name="destination_refree2" class="pub-id-inline-input" placeholder="Full name and phone number" />
+          <span class="pub-id-label">Reference 2 in Destination Full Name</span>
+          <input name="destination_refree2" class="pub-id-inline-input" placeholder="Full name" />
+        </div>
+
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+          <span class="pub-id-label">Reference 2 in Destination Mobile Number</span>
+          <input name="destination_refree2_mobile" class="pub-id-inline-input" placeholder="Mobile number" />
         </div>
 
       </div>
@@ -1874,15 +2083,19 @@ export async function renderPublicApplyCPD(param = null) {
       <div style="font-weight:600;margin-bottom:12px;color:var(--text-secondary)">
         <i class="fa-solid fa-paperclip" style="margin-right:6px"></i>Supporting Documents
       </div>
-      <div class="doc-upload-grid">
-        ${cpdDocZone('traffic_front',  'Traffic File Front Image')}
-        ${cpdDocZone('traffic_back',   'Traffic File Back Image')}
-        ${cpdDocZone('eid_front',      'Emirates ID Front')}
-        ${cpdDocZone('eid_back',       'Emirates ID Back')}
-        ${cpdDocZone('passport_photo', 'Passport Size Photo')}
-        ${cpdDocZone('visa_page',      'Visa Page of Owner')}
-        ${cpdDocZone('trade_license',  'Trade License')}
-        ${cpdDocZone('noc',            'NOC from Company Owner')}
+      <div class="doc-upload-grid" id="cpd-doc-grid">
+        ${cpdDocZone('eid_front',      'Emirates ID (Front)')}
+        ${cpdDocZone('eid_back',       'Emirates ID (Back)')}
+        ${cpdDocZone('dl_front',       'Driving License (Front)')}
+        ${cpdDocZone('dl_back',        'Driving License (Back)')}
+        ${cpdDocZone('traffic_front',  'Traffic File (Front)')}
+        ${cpdDocZone('traffic_back',   'Traffic File (Back)')}
+        ${cpdDocZone('passport_photo', 'Passport Copy')}
+        <div id="cpd-corporate-docs" style="display:${usageType === 'COMPANY' ? 'contents' : 'none'}">
+          ${cpdDocZone('visa_page',      'Visa Page of Owner')}
+          ${cpdDocZone('trade_license',  'Trade License')}
+          ${cpdDocZone('noc',            'NOC from Company Owner')}
+        </div>
       </div>
     </div>`;
   }
@@ -1914,6 +2127,297 @@ export async function renderPublicApplyCPD(param = null) {
         <div class="field field-full"><label>Additional Remarks</label>
           <textarea name="additional_remarks" rows="3"
             style="width:100%;resize:vertical" placeholder="Any special requirements or notes…"></textarea>
+        </div>
+      </div>`;
+  }
+
+  function stepCPDReview() {
+    const natLabel = nationalities.find(n => String(n.nationality_id) === String(formData.nationality))?.nationality ?? formData.nationality ?? '—';
+    const dob       = formData.dob ? new Date(formData.dob).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }) : '—';
+    const licExpiry = formData.license_expiry ? new Date(formData.license_expiry).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }) : '—';
+    const fullName  = formData.full_name || [formData.first_name, formData.last_name].filter(Boolean).join(' ') || '—';
+    const usageType = formData.usage_type === 'COMPANY' ? 'Company Use' : 'Personal Use';
+    const isCompany = formData.usage_type === 'COMPANY';
+    const selectedCountryNames = savedCountries
+      .map(id => countries.find(c => String(c.nationality_id) === String(id))?.nationality)
+      .filter(Boolean);
+
+    const isHomeDelivery = (formData.delivery_option ?? 'home_delivery') === 'home_delivery';
+    const currentOffice  = OFFICES.find(o => o.deliveryValue === formData.delivery_option) ?? OFFICES[0];
+    const selectedOffice = currentOffice.id;
+
+    const docThumb = (slot, label) => {
+      const hasFile = !!savedDocs[slot];
+      return `
+        <div class="rv-doc-item">
+          <div class="rv-doc-thumb ${hasFile ? '' : 'rv-doc-thumb-empty'}" data-slot="${slot}">
+            ${hasFile ? '<span class="rv-doc-loading"><i class="fa-solid fa-spinner fa-spin"></i></span>' : '<i class="fa-solid fa-file-image"></i>'}
+          </div>
+          <div class="rv-doc-label">${label}</div>
+        </div>`;
+    };
+
+    return `
+      <!-- Header -->
+      <div class="pub-step-header">
+        <div class="pub-step-icon-wrap"><i class="fa-solid fa-circle-check"></i></div>
+        <div>
+          <div class="pub-step-title">Review Your Details</div>
+          <div class="pub-step-sub">Please review all your information before proceeding to payment.</div>
+        </div>
+      </div>
+
+      <!-- Info banner -->
+      <div class="rv-info-banner">
+        <i class="fa-solid fa-circle-info rv-info-icon"></i>
+        <div class="rv-info-lines">
+          <div>After agreeing to the preview, accept and continue to payment. You will no longer be able to change the information.</div>
+          <div>By proceeding, you agree to and consent to all the information provided.</div>
+          <div>If you proceed and there is a mistake in the information, we will not be held responsible and no refund will be provided.</div>
+        </div>
+      </div>
+
+      <!-- Identity Information -->
+      <div class="rv-section">
+        <div class="rv-section-header">
+          <span class="rv-section-title">Your Identity Information</span>
+        </div>
+        <div class="rv-identity-rows">
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-user"></i></span><span class="rv-id-label">Full Name</span><span class="rv-id-value">${fullName}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-id-card"></i></span><span class="rv-id-label">Emirates ID</span><span class="rv-id-value">${formData.emirates_id || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-flag"></i></span><span class="rv-id-label">Nationality</span><span class="rv-id-value">${natLabel}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-venus-mars"></i></span><span class="rv-id-label">Gender</span><span class="rv-id-value">${formData.sex || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-mobile-screen"></i></span><span class="rv-id-label">Mobile Number</span><span class="rv-id-value">${formData.mobile_no || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-envelope"></i></span><span class="rv-id-label">Email Address</span><span class="rv-id-value">${formData.email || '—'}</span></div>
+        </div>
+      </div>
+
+      <!-- Additional Information -->
+      <div class="rv-section">
+        <div class="rv-section-title" style="margin-bottom:12px">Additional Information</div>
+        <div class="rv-extra-rows">
+          <div class="rv-extra-row"><span class="rv-extra-label">Date of Birth</span><span class="rv-extra-value">${dob}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Passport Number</span><span class="rv-extra-value">${formData.passport_no || '—'}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">PO Box</span><span class="rv-extra-value">${formData.po_box || '—'}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Address</span><span class="rv-extra-value">${formData.address || '—'}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">City</span><span class="rv-extra-value">${formData.city || '—'}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Extra Driver 1 Full Name</span><span class="rv-extra-value">${formData.extra_owner1_name || '—'}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Extra Driver 1 Emirates ID</span><span class="rv-extra-value">${formData.extra_owner1_eid || '—'}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Extra Driver 1 Passport Number</span><span class="rv-extra-value">${formData.extra_owner1_passport || '—'}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Extra Driver 2 Full Name</span><span class="rv-extra-value">${formData.extra_owner2_name || '—'}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Extra Driver 2 Emirates ID</span><span class="rv-extra-value">${formData.extra_owner2_eid || '—'}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Extra Driver 2 Passport Number</span><span class="rv-extra-value">${formData.extra_owner2_passport || '—'}</span></div>
+        </div>
+      </div>
+
+      <!-- Driving Licence Details -->
+      <div class="rv-section">
+        <div class="rv-section-title" style="margin-bottom:14px">Driving Licence Details</div>
+        <div class="rv-identity-rows">
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-id-card"></i></span><span class="rv-id-label">Licence Number</span><span class="rv-id-value">${formData.license_no || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-calendar-xmark"></i></span><span class="rv-id-label">Date of Expiry</span><span class="rv-id-value">${licExpiry}</span></div>
+        </div>
+      </div>
+
+      <!-- Vehicle Details -->
+      <div class="rv-section">
+        <div class="rv-section-title" style="margin-bottom:14px">Vehicle Details</div>
+        <div class="rv-identity-rows">
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-hashtag"></i></span><span class="rv-id-label">Registration No</span><span class="rv-id-value">${formData.registration_no || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-file-lines"></i></span><span class="rv-id-label">Traffic File No</span><span class="rv-id-value">${formData.mulkiya_no || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-car"></i></span><span class="rv-id-label">Vehicle Make</span><span class="rv-id-value">${formData.vehicle_make || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-car-side"></i></span><span class="rv-id-label">Vehicle Model</span><span class="rv-id-value">${formData.vehicle_model || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-sack-dollar"></i></span><span class="rv-id-label">Vehicle Value (AED)</span><span class="rv-id-value">${formData.vehicle_value || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-location-dot"></i></span><span class="rv-id-label">Vehicle Registered In</span><span class="rv-id-value">${formData.vehicle_registered_in || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-shapes"></i></span><span class="rv-id-label">Body Type</span><span class="rv-id-value">${formData.body_type || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-calendar"></i></span><span class="rv-id-label">Year of Manufacture</span><span class="rv-id-value">${formData.manuf_year || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-palette"></i></span><span class="rv-id-label">Color as per Mulkiya</span><span class="rv-id-value">${formData.color || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-weight-hanging"></i></span><span class="rv-id-label">Net Weight (Empty Load)</span><span class="rv-id-value">${formData.net_weight || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-barcode"></i></span><span class="rv-id-label">Chassis No</span><span class="rv-id-value">${formData.chassis_no || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-gears"></i></span><span class="rv-id-label">Engine No</span><span class="rv-id-value">${formData.engine_no || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-gauge-high"></i></span><span class="rv-id-label">Horse Power</span><span class="rv-id-value">${formData.horse_power || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-layer-group"></i></span><span class="rv-id-label">No of Cylinders</span><span class="rv-id-value">${formData.no_of_cylinders || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-chair"></i></span><span class="rv-id-label">Upholstery</span><span class="rv-id-value">${formData.upholstery || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-users"></i></span><span class="rv-id-label">No of Seats</span><span class="rv-id-value">${formData.no_of_seats || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-radio"></i></span><span class="rv-id-label">Radio</span><span class="rv-id-value">${formData.radio || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-ring"></i></span><span class="rv-id-label">Spare Tyre</span><span class="rv-id-value">${formData.spare_tyre || '—'}</span></div>
+        </div>
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--bg-base)">
+          <div class="rv-extra-rows">
+            <div class="rv-extra-row"><span class="rv-extra-label">Additional Remarks</span><span class="rv-extra-value">${formData.additional_remarks || '—'}</span></div>
+            <div class="rv-extra-row"><span class="rv-extra-label">Other Particulars (1)</span><span class="rv-extra-value">${formData.others1 || '—'}</span></div>
+            <div class="rv-extra-row"><span class="rv-extra-label">Other Particulars (2)</span><span class="rv-extra-value">${formData.others2 || '—'}</span></div>
+            <div class="rv-extra-row"><span class="rv-extra-label">Reference 1 in UAE Full Name</span><span class="rv-extra-value">${formData.uae_refree1 || '—'}</span></div>
+            <div class="rv-extra-row"><span class="rv-extra-label">Reference 1 in UAE Mobile Number</span><span class="rv-extra-value">${formData.uae_refree1_mobile || '—'}</span></div>
+            <div class="rv-extra-row"><span class="rv-extra-label">Reference 2 in UAE Full Name</span><span class="rv-extra-value">${formData.uae_refree2 || '—'}</span></div>
+            <div class="rv-extra-row"><span class="rv-extra-label">Reference 2 in UAE Mobile Number</span><span class="rv-extra-value">${formData.uae_refree2_mobile || '—'}</span></div>
+            <div class="rv-extra-row"><span class="rv-extra-label">Reference 1 in Destination Full Name</span><span class="rv-extra-value">${formData.destination_refree1 || '—'}</span></div>
+            <div class="rv-extra-row"><span class="rv-extra-label">Reference 1 in Destination Mobile Number</span><span class="rv-extra-value">${formData.destination_refree1_mobile || '—'}</span></div>
+            <div class="rv-extra-row"><span class="rv-extra-label">Reference 2 in Destination Full Name</span><span class="rv-extra-value">${formData.destination_refree2 || '—'}</span></div>
+            <div class="rv-extra-row"><span class="rv-extra-label">Reference 2 in Destination Mobile Number</span><span class="rv-extra-value">${formData.destination_refree2_mobile || '—'}</span></div>
+            <div class="rv-extra-row"><span class="rv-extra-label">Usage Type</span><span class="rv-extra-value">${usageType}</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Documents Attached -->
+      <div class="rv-section">
+        <div class="rv-section-title">Documents Attached</div>
+        <div class="rv-section-sub">These are the documents you have uploaded.</div>
+        <div class="rv-docs-grid">
+          ${docThumb('eid_front',     'Emirates ID (Front)')}
+          ${docThumb('eid_back',      'Emirates ID (Back)')}
+          ${docThumb('dl_front',      'Driving License (Front)')}
+          ${docThumb('dl_back',       'Driving License (Back)')}
+          ${docThumb('traffic_front', 'Traffic File (Front)')}
+          ${docThumb('traffic_back',  'Traffic File (Back)')}
+          ${docThumb('passport_photo','Passport Copy')}
+          ${isCompany ? docThumb('visa_page',     'Visa Page of Owner') : ''}
+          ${isCompany ? docThumb('trade_license', 'Trade License') : ''}
+          ${isCompany ? docThumb('noc',           'NOC from Company Owner') : ''}
+        </div>
+      </div>
+
+      <!-- Trip Details -->
+      <div class="rv-section">
+        <div class="rv-section-title" style="margin-bottom:12px">Trip Details</div>
+        <div class="rv-extra-rows">
+          <div class="rv-extra-row"><span class="rv-extra-label">Destination Countries</span><span class="rv-extra-value">${selectedCountryNames.length ? selectedCountryNames.join(', ') : '—'}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Additional Remarks</span><span class="rv-extra-value">${formData.additional_remarks || '—'}</span></div>
+        </div>
+      </div>
+
+      <!-- Delivery / Pick-up from ATC Office -->
+      <div class="rv-section">
+        <div class="rv-section-title" style="margin-bottom:12px">Delivery or Pick up from ATC Office</div>
+
+        <div style="margin-bottom:24px">
+          <div class="del-method-label">Choose Delivery Method</div>
+          <div class="del-method-grid">
+
+            <label class="del-method-card ${isHomeDelivery ? 'del-method-card-active' : ''}" id="cpd-del-card-home">
+              <input type="radio" name="delivery_option" value="home_delivery" ${isHomeDelivery ? 'checked' : ''} style="display:none" />
+              <div class="del-method-radio" id="cpd-del-radio-home">
+                ${isHomeDelivery ? '<i class="fa-solid fa-circle-dot" style="color:var(--accent)"></i>' : '<i class="fa-regular fa-circle"></i>'}
+              </div>
+              <div class="del-method-icon-wrap"><i class="fa-solid fa-house"></i></div>
+              <div>
+                <div class="del-method-title">Home Delivery</div>
+                <div class="del-method-fee">AED ${CPD_DELIVERY_FEE.toFixed(2)}</div>
+                <div class="del-method-desc">Delivered within 24–48 hours</div>
+              </div>
+            </label>
+
+            <label class="del-method-card ${!isHomeDelivery ? 'del-method-card-active' : ''}" id="cpd-del-card-collection">
+              <input type="radio" name="delivery_option" id="cpd-del-radio-collection-input" value="${currentOffice.deliveryValue}" ${!isHomeDelivery ? 'checked' : ''} style="display:none" />
+              <div class="del-method-radio" id="cpd-del-radio-collection">
+                ${!isHomeDelivery ? '<i class="fa-solid fa-circle-dot" style="color:var(--accent)"></i>' : '<i class="fa-regular fa-circle"></i>'}
+              </div>
+              <div class="del-method-icon-wrap"><i class="fa-solid fa-building"></i></div>
+              <div>
+                <div class="del-method-title">Collection</div>
+                <div class="del-method-fee del-method-fee-free">Free</div>
+                <div class="del-method-desc">Collect from our office</div>
+              </div>
+            </label>
+
+          </div>
+        </div>
+
+        <div class="del-body-grid">
+
+          <div id="cpd-del-address-col" style="display:${isHomeDelivery ? '' : 'none'}">
+            <div class="del-section-label">Delivery Address</div>
+            <div class="del-address-grid">
+
+              <div class="field del-addr-third">
+                <label>Building / Villa / Floor #</label>
+                <input name="del_building" id="cpd-del-building" placeholder="E.g. Villa 12, Floor 3" value="${formData.del_building || ''}" />
+              </div>
+
+              <div class="field del-addr-half">
+                <label>Street / Road</label>
+                <input name="del_street" id="cpd-del-street" placeholder="E.g. Sheikh Zayed Road" value="${formData.del_street || ''}" />
+              </div>
+
+              <div class="field del-addr-third">
+                <label>Area</label>
+                <input name="del_area" id="cpd-del-area" placeholder="Area" value="${formData.del_area || ''}" />
+              </div>
+
+              <div class="field del-addr-half">
+                <label>Emirate *</label>
+                <div class="pub-input-icon-wrap">
+                  <select name="del_emirate" id="cpd-del-emirate">
+                    <option value="">Select emirate</option>
+                    ${UAE_STATES.map(s => `<option value="${s}" ${formData.del_emirate === s ? 'selected' : ''}>${s}</option>`).join('')}
+                  </select>
+                  <i class="fa-solid fa-chevron-down pub-input-icon-right"></i>
+                </div>
+                <div class="field-error" id="err-del_emirate"></div>
+              </div>
+
+              <div class="field del-addr-half">
+                <label>Additional Address Details <span style="color:var(--text-muted);font-weight:400">(Optional)</span></label>
+                <input name="del_extra" id="cpd-del-extra" placeholder="E.g. Near landmark or building name" value="${formData.del_extra || ''}" />
+              </div>
+
+            </div>
+
+            <div class="del-info-banner">
+              <i class="fa-solid fa-circle-info" style="color:var(--accent);flex-shrink:0;font-size:1rem"></i>
+              <div>
+                <div>Please ensure someone is available to receive the delivery.</div>
+                <div>A valid contact number is required for delivery updates.</div>
+              </div>
+            </div>
+          </div>
+
+          <div id="cpd-del-collection-col" style="display:${!isHomeDelivery ? '' : 'none'}">
+            <div class="del-section-label">Collection Locations</div>
+            <img src="${PUBLIC_BASE}/css/office_map.png" alt="Office Locations Map" class="del-map-img" />
+            <div class="del-offices-grid">
+              ${OFFICES.map(o => `
+              <div class="del-office-card ${selectedOffice === o.id ? 'del-office-card-active' : ''}" data-office="${o.id}">
+                <div class="del-office-header">
+                  <i class="fa-solid fa-building" style="color:var(--accent)"></i>
+                  <span class="del-office-name">${o.name}</span>
+                  <span class="del-office-radio">${selectedOffice === o.id
+                    ? '<i class="fa-solid fa-circle-dot" style="color:var(--accent)"></i>'
+                    : '<i class="fa-regular fa-circle"></i>'}</span>
+                </div>
+                <div class="del-office-addr">${o.addr}</div>
+                <div class="del-office-hours">
+                  ${o.hours.map(([day, time]) => `<div class="del-hours-row"><span>${day}</span><span${time === 'Closed' ? ' class="pub-closed"' : ''}>${time}</span></div>`).join('')}
+                </div>
+              </div>`).join('')}
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Declaration -->
+      <div class="rv-section">
+        <div class="rv-section-title" style="margin-bottom:12px">Declaration</div>
+        <label class="disclaimer-check" id="disclaimer-check-1">
+          <input type="checkbox" name="disclaimer_1" id="disclaimer_1" />
+          <span>I confirm that all the information provided is correct and complete. I understand that once I proceed to payment, I will not be able to make any changes. I agree to the <a href="#" style="color:var(--accent)">terms and conditions</a> and consent to the processing of my data.<br><br>
+          I understand that if I proceed and there is a mistake in the information, I will not hold EMSO responsible and no refund will be provided.</span>
+        </label>
+        <div class="field-error" id="err-disclaimer_1"></div>
+      </div>
+
+      <!-- Next Steps -->
+      <div class="rv-section">
+        <div class="rv-next-steps-header">
+          <i class="fa-solid fa-circle-check rv-next-steps-icon"></i>
+          <span class="rv-section-title">Next Steps</span>
+        </div>
+        <div class="rv-next-steps-list">
+          <div class="rv-next-step-item"><span class="rv-next-step-num">1</span><span>Your CPD application will be submitted for review after payment.</span></div>
+          <div class="rv-next-step-item"><span class="rv-next-step-num">2</span><span>A confirmation email will be sent to you.</span></div>
+          <div class="rv-next-step-item"><span class="rv-next-step-num">3</span><span>You can track the status of your application anytime under History.</span></div>
         </div>
       </div>`;
   }
@@ -1975,12 +2479,14 @@ export async function renderPublicApplyCPD(param = null) {
   function calcGuarantee() {
     const tier = getVehicleTier(formData.body_type);
     const band = getYearBand(formData.manuf_year);
+    const isMotorcycle  = formData.body_type === 'Motor Cycle';
+    const isUaeNational = nationalities.find(n => String(n.nationality_id) === String(formData.nationality))?.nationality === 'United Arab Emirates';
 
     const selectedNames = savedCountries
       .map(id => countries.find(c => String(c.nationality_id) === String(id))?.nationality ?? '')
       .filter(Boolean);
 
-    if (!selectedNames.length) return { guaranteeFee: 0, bookingFee: 0, extraFee: 0, vat: 0, total: 0, notes: [], breakdown: [] };
+    if (!selectedNames.length) return { guaranteeFee: 0, bookingFee: 0, extraFee: 0, deliveryFee: 0, processingFee: 0, vat: 0, total: 0, notes: [], breakdown: [] };
 
     const groupAmounts   = {};
     const groupCountries = {};
@@ -1994,8 +2500,12 @@ export async function renderPublicApplyCPD(param = null) {
       const grp     = _groups[grpCode];
 
       let amount = 0;
-      if (grp?.fixed_amount != null) {
-        amount = +grp.fixed_amount;
+      if (isMotorcycle && grp?.motorcycle_flat_amount != null) {
+        amount = +grp.motorcycle_flat_amount;
+      } else if (grp?.fixed_amount != null) {
+        amount = (isUaeNational && grp?.fixed_amount_uae_national != null)
+          ? +grp.fixed_amount_uae_national
+          : +grp.fixed_amount;
       } else {
         const bandRates = (_rates[grpCode] ?? [])[band];
         amount = bandRates ? bandRates[tier] : 0;
@@ -2022,20 +2532,26 @@ export async function renderPublicApplyCPD(param = null) {
     const EXTRA_FEE_AMOUNT = parseFloat(guaranteeRules.extra_driver_fee ?? 50);
     const extraFee = (formData.extra_owner1_name?.trim() || formData.extra_owner2_name?.trim()) ? EXTRA_FEE_AMOUNT : 0;
 
-    // VAT 5% on guarantee + booking + extra
-    const vatBase = guaranteeFee + bookingFee + extraFee;
+    // Delivery fee — charged only for Home Delivery
+    const deliveryFee = (formData.delivery_option ?? 'home_delivery') === 'home_delivery' ? CPD_DELIVERY_FEE : 0;
+
+    // Processing fee — 2.5% of the guarantee fee only
+    const processingFee = Math.round(guaranteeFee * 0.025 * 100) / 100;
+
+    // VAT 5% on booking + extra driver + delivery only (guarantee fee is excluded)
+    const vatBase = bookingFee + extraFee + deliveryFee;
     const vat     = Math.round(vatBase * 0.05 * 100) / 100;
-    const total   = vatBase + vat;
+    const total   = guaranteeFee + bookingFee + extraFee + deliveryFee + processingFee + vat;
 
     const breakdown = Object.entries(groupAmounts).map(([grpCode, amount]) => ({
       countries: groupCountries[grpCode].join(', '),
       amount,
     }));
 
-    return { guaranteeFee, bookingFee, extraFee, vat, total, notes: [...notesSet], breakdown };
+    return { guaranteeFee, bookingFee, extraFee, deliveryFee, processingFee, vat, total, notes: [...notesSet], breakdown };
   }
   function stepPayment() {
-    const { guaranteeFee, bookingFee, extraFee, vat, total, notes, breakdown } = calcGuarantee();
+    const { guaranteeFee, bookingFee, extraFee, deliveryFee, processingFee, vat, total, notes, breakdown } = calcGuarantee();
     const tier      = getVehicleTier(formData.body_type);
     const band      = getYearBand(formData.manuf_year);
     const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1);
@@ -2129,8 +2645,10 @@ export async function renderPublicApplyCPD(param = null) {
           <table style="width:100%;border-collapse:collapse">
             <tbody>
               ${feeRow('Guarantee Fee', guaranteeFee)}
+              ${feeRow('Processing Fee (2.5% of Guarantee Fee)', processingFee)}
               ${feeRow('Booking Fee', bookingFee)}
               ${feeRow(`Extra Driver Fee${extraFee ? ' (driver added)' : ''}`, extraFee)}
+              ${deliveryFee ? feeRow('Delivery Fee', deliveryFee) : feeRow('Delivery Fee (Collection — Free)', 0)}
               ${feeRow('VAT (5%)', vat)}
               ${feeRow('Total Payable', total, true, true)}
             </tbody>
@@ -2149,7 +2667,6 @@ export async function renderPublicApplyCPD(param = null) {
             <label>Select Payment Method *</label>
             <select id="cpd-payment-method" name="payment_method">
               <option value="">— Select —</option>
-              <option value="CASH">Cash</option>
               <option value="CREDIT_CARD">Credit / Debit Card</option>
             </select>
             <div class="field-error" id="err-cpd-payment-method"></div>
@@ -2185,7 +2702,7 @@ export async function renderPublicApplyCPD(param = null) {
     updateInfo();
   }
 
-  const STEP_HTML = [stepOwner, stepVehicle, stepTrip, stepPayment];
+  const STEP_HTML = [stepIdentity, stepVehicle, stepTrip, stepCPDReview, stepPayment];
 
   function renderCPDWizard() {
     content.innerHTML = `
@@ -2210,7 +2727,7 @@ export async function renderPublicApplyCPD(param = null) {
       </div>
       <form id="cpd-wizard-form" novalidate>
         <div class="section-card">
-          ${CPD_STEPS[currentStep].id === 'trip' ? '' : `<div class="section-card-header">${CPD_STEPS[currentStep].label}</div>`}
+          ${['identity','vehicle','trip','review'].includes(CPD_STEPS[currentStep].id) ? '' : `<div class="section-card-header">${CPD_STEPS[currentStep].label}</div>`}
           <div class="section-card-body" id="cpd-step-body">
             ${STEP_HTML[currentStep]()}
           </div>
@@ -2242,13 +2759,29 @@ export async function renderPublicApplyCPD(param = null) {
       formData.first_name = nameParts.slice(0, 2).join(' ');
       formData.last_name  = nameParts.slice(2).join(' ');
     }
+    // Upholstery: Yes/No/Other choice + free text when Other is selected
+    if (CPD_STEPS[currentStep].id === 'vehicle') {
+      formData.upholstery = formData.upholstery_choice === 'Other'
+        ? (formData.upholstery_other ?? '')
+        : (formData.upholstery_choice ?? '');
+    }
     if (CPD_STEPS[currentStep].id === 'trip') {
       savedCountries.length = 0;
       document.querySelectorAll('.cpd-country-check input:checked').forEach(cb => savedCountries.push(cb.value));
     }
+    // Build delivery_address string from the structured address fields
+    if (CPD_STEPS[currentStep].id === 'review') {
+      const dBldg  = (formData.del_building ?? '').trim();
+      const dSt    = (formData.del_street   ?? '').trim();
+      const dArea  = (formData.del_area     ?? '').trim();
+      const dExtra = (formData.del_extra    ?? '').trim();
+      formData.delivery_address = (formData.delivery_option ?? 'home_delivery') === 'home_delivery'
+        ? [dBldg, dSt, dArea, formData.del_emirate, dExtra].filter(Boolean).join(' ')
+        : '';
+    }
     // Capture document File objects before this step's DOM is destroyed
     if (CPD_STEPS[currentStep].id === 'vehicle') {
-      const slots = ['traffic_front','traffic_back','eid_front','eid_back',
+      const slots = ['eid_front','eid_back','dl_front','dl_back','traffic_front','traffic_back',
                      'passport_photo','visa_page','trade_license','noc'];
       slots.forEach(slot => {
         const input = document.querySelector(`input[data-cpd-doc="${slot}"]`);
@@ -2276,6 +2809,96 @@ export async function renderPublicApplyCPD(param = null) {
 
     // Bind payment method toggle on payment step
     bindPaymentMethodToggle();
+
+    // Toggle corporate-only documents when Usage Type changes
+    document.getElementById('cpd-usage-type')?.addEventListener('change', e => {
+      const corpDocs = document.getElementById('cpd-corporate-docs');
+      if (corpDocs) corpDocs.style.display = e.target.value === 'COMPANY' ? 'contents' : 'none';
+    });
+
+    // Toggle the "specify upholstery" textbox when Other is selected
+    document.getElementById('cpd-upholstery-choice')?.addEventListener('change', e => {
+      const otherRow = document.getElementById('cpd-upholstery-other-row');
+      if (otherRow) otherRow.style.display = e.target.value === 'Other' ? '' : 'none';
+    });
+
+    // Load review step document thumbnails
+    if (CPD_STEPS[currentStep].id === 'review') {
+      document.querySelectorAll('.rv-doc-thumb[data-slot]').forEach(thumbEl => {
+        const slot  = thumbEl.dataset.slot;
+        const label = thumbEl.closest('.rv-doc-item')?.querySelector('.rv-doc-label')?.textContent ?? slot;
+        const file  = savedDocs[slot];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          thumbEl.classList.remove('rv-doc-thumb-empty');
+          thumbEl.innerHTML = `<img src="${ev.target.result}" alt="${slot}" /><span class="rv-doc-check"><i class="fa-solid fa-circle-check"></i></span>`;
+          thumbEl.classList.add('rv-doc-thumb-clickable');
+          thumbEl.addEventListener('click', () => {
+            openModal({
+              title: label,
+              body: `<img src="${ev.target.result}" alt="${label}" style="display:block;max-width:100%;max-height:75vh;margin:0 auto;border-radius:var(--radius)" />`,
+              size: 'lg',
+            });
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Delivery method card toggle (review step)
+    const cpdDelCards = document.querySelectorAll('#cpd-del-card-home, #cpd-del-card-collection');
+    if (cpdDelCards.length) {
+      const addrCol   = document.getElementById('cpd-del-address-col');
+      const collCol   = document.getElementById('cpd-del-collection-col');
+      const radioHome = document.getElementById('cpd-del-radio-home');
+      const radioColl = document.getElementById('cpd-del-radio-collection');
+      const cardHome  = document.getElementById('cpd-del-card-home');
+      const cardColl  = document.getElementById('cpd-del-card-collection');
+
+      const applyCpdDelivery = val => {
+        const isHome = val === 'home_delivery';
+        if (addrCol)   addrCol.style.display  = isHome ? '' : 'none';
+        if (collCol)   collCol.style.display  = isHome ? 'none' : '';
+        if (radioHome) radioHome.innerHTML    = isHome
+          ? '<i class="fa-solid fa-circle-dot" style="color:var(--accent)"></i>'
+          : '<i class="fa-regular fa-circle"></i>';
+        if (radioColl) radioColl.innerHTML    = !isHome
+          ? '<i class="fa-solid fa-circle-dot" style="color:var(--accent)"></i>'
+          : '<i class="fa-regular fa-circle"></i>';
+        cardHome?.classList.toggle('del-method-card-active', isHome);
+        cardColl?.classList.toggle('del-method-card-active', !isHome);
+        formData.delivery_option = val;
+      };
+
+      cpdDelCards.forEach(card => {
+        card.addEventListener('click', () => {
+          const radio = card.querySelector('input[type="radio"]');
+          if (radio) { radio.checked = true; applyCpdDelivery(radio.value); }
+        });
+      });
+    }
+
+    // Collection office card selection (review step)
+    const cpdOfficeCards = document.querySelectorAll('#cpd-del-collection-col .del-office-card');
+    if (cpdOfficeCards.length) {
+      const collectionRadio = document.getElementById('cpd-del-radio-collection-input');
+      cpdOfficeCards.forEach(card => {
+        card.addEventListener('click', () => {
+          cpdOfficeCards.forEach(c => {
+            const isSelected = c === card;
+            c.classList.toggle('del-office-card-active', isSelected);
+            const radioIcon = c.querySelector('.del-office-radio');
+            if (radioIcon) radioIcon.innerHTML = isSelected
+              ? '<i class="fa-solid fa-circle-dot" style="color:var(--accent)"></i>'
+              : '<i class="fa-regular fa-circle"></i>';
+          });
+          const office = OFFICES.find(o => o.id === card.dataset.office);
+          if (collectionRadio) { collectionRadio.value = office.deliveryValue; collectionRadio.checked = true; }
+          formData.delivery_option = office.deliveryValue;
+        });
+      });
+    }
 
     // Doc upload zones (vehicle step)
     document.querySelectorAll('[data-cpd-doc]').forEach(input => {
@@ -2352,16 +2975,36 @@ export async function renderPublicApplyCPD(param = null) {
   function validateCPDStep(step) {
     document.querySelectorAll('.field-error').forEach(el => { el.textContent = ''; });
     document.querySelectorAll('.field-invalid').forEach(el => el.classList.remove('field-invalid'));
+    document.getElementById('cpd-form-error')?.classList.add('hidden');
     const key = CPD_STEPS[step].id;
     let ok = true;
     (CPD_REQUIRED[key] ?? []).forEach(({ name, label }) => {
       const el = document.querySelector(`[name="${name}"]`);
       if (!el?.value?.trim()) { setErrCPD(name, `${label} is required`); ok = false; }
     });
-    if (key === 'owner') {
+    if (key === 'identity') {
       const emailEl = document.querySelector('[name="email"]');
       if (emailEl?.value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailEl.value)) {
         setErrCPD('email', 'Enter a valid email address'); ok = false;
+      }
+    }
+    if (key === 'vehicle' && formData.upholstery_choice === 'Other' && !document.getElementById('cpd-upholstery-other-row')?.querySelector('input')?.value?.trim()) {
+      // no dedicated error element for this nested field — surface as a generic form error
+      ok = false;
+      document.getElementById('cpd-form-error').textContent = 'Please specify the upholstery type';
+      document.getElementById('cpd-form-error').classList.remove('hidden');
+    }
+    if (key === 'review') {
+      const deliveryOption = document.querySelector('[name="delivery_option"]:checked')?.value ?? 'home_delivery';
+      if (deliveryOption === 'home_delivery') {
+        const emirate = document.getElementById('cpd-del-emirate')?.value;
+        if (!emirate) { setErrCPD('del_emirate', 'Emirate is required'); ok = false; }
+      }
+      const d1 = document.getElementById('disclaimer_1');
+      if (!d1?.checked) {
+        document.getElementById('err-disclaimer_1').textContent = 'You must read and accept the declaration to proceed';
+        document.getElementById('disclaimer-check-1')?.classList.add('disclaimer-invalid');
+        ok = false;
       }
     }
     if (key === 'payment') {
@@ -2385,23 +3028,26 @@ export async function renderPublicApplyCPD(param = null) {
     errEl?.classList.add('hidden');
 
     try {
-      const { guaranteeFee, bookingFee, extraFee, vat, total } = calcGuarantee();
+      const { guaranteeFee, bookingFee, extraFee, deliveryFee, processingFee, vat, total } = calcGuarantee();
       const paymentMethod = formData.payment_method ?? 'CASH';
       const body = {
         ...formData,
         countries:        savedCountries.map(Number),
         guarantee_amount: guaranteeFee,
         booking_fee:      bookingFee,
-        extra_fees:       extraFee,
+        extra_fees:       extraFee + deliveryFee,
+        processing_fee:   processingFee,
         vat_amount:       vat,
         total_amount:     total,
         payment_method:   paymentMethod,
+        delivery_option:  formData.delivery_option ?? 'home_delivery',
+        delivery_address: formData.delivery_address ?? '',
       };
 
       const res = await api.cpd.publicStore(body);
 
       // Upload documents
-      const slots  = ['traffic_front','traffic_back','eid_front','eid_back',
+      const slots  = ['eid_front','eid_back','dl_front','dl_back','traffic_front','traffic_back',
                        'passport_photo','visa_page','trade_license','noc'];
       const fd     = new FormData();
       let hasFiles = false;
@@ -2455,294 +3101,139 @@ export async function renderPublicApplyCPD(param = null) {
 // ── Return your CPD ─────────────────────────────────────────────────────────────
 export async function renderPublicCPDReturn() {
   const content = document.getElementById('page-content');
+  content.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
 
-  const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  const idRow = (icon, label, value) => `
-    <div class="rv-identity-row"><span class="rv-id-icon"><i class="${icon}"></i></span><span class="rv-id-label">${label}</span><span class="rv-id-value">${value || '—'}</span></div>`;
+  let rows = [];
+  try {
+    rows = (await api.cpd.myIssuedCarnets()) ?? [];
+  } catch { /* show empty state below */ }
 
   content.innerHTML = `
     <div class="page-header">
       <div class="page-title-block">
         <h1 class="page-title">Return your CPD</h1>
-        <p class="page-subtitle">Enter your Carnet number to look up your application and submit a return request.</p>
+        <p class="page-subtitle">Select an issued Carnet below to submit a return request.</p>
       </div>
     </div>
+    <div id="cpd-return-grid"></div>`;
 
-    <div class="rv-section" style="max-width:560px">
-      <div class="rv-section-title" style="margin-bottom:12px">Find Your Carnet</div>
-      <div style="display:flex;gap:10px;align-items:flex-start">
-        <div class="field" style="margin:0;flex:1">
-          <input id="cpd-return-carnet-no" type="text" placeholder="e.g. DDD164172" autocomplete="off" />
-        </div>
-        <button class="btn btn-primary" id="cpd-return-search-btn" style="height:42px">
-          <i class="fa-solid fa-magnifying-glass"></i> Search
-        </button>
-      </div>
-      <div id="cpd-return-search-status" style="font-size:.85rem;margin-top:8px;min-height:18px"></div>
-    </div>
+  const gridEl = document.getElementById('cpd-return-grid');
 
-    <div id="cpd-return-result"></div>`;
-
-  const searchBtn  = document.getElementById('cpd-return-search-btn');
-  const carnetInput= document.getElementById('cpd-return-carnet-no');
-  const statusEl   = document.getElementById('cpd-return-search-status');
-  const resultEl   = document.getElementById('cpd-return-result');
-
-  async function doSearch() {
-    const carnetNo = carnetInput.value.trim();
-    if (!carnetNo) { statusEl.innerHTML = '<span style="color:var(--danger)">Please enter a Carnet number.</span>'; return; }
-
-    statusEl.textContent = '';
-    resultEl.innerHTML = '';
-    searchBtn.disabled = true;
-    searchBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-
-    try {
-      const r = await api.cpd.searchOwnByCarnet(carnetNo);
-      renderResult(r);
-    } catch (e) {
-      statusEl.innerHTML = `<span style="color:var(--danger)">${esc(e.message || 'No carnet found with that number on your account.')}</span>`;
-    } finally {
-      searchBtn.disabled = false;
-      searchBtn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Search';
+  function renderGrid() {
+    if (!rows.length) {
+      gridEl.innerHTML = emptyState('fa-car', 'No issued Carnets', 'Carnets you have been issued will appear here once ready to be returned.');
+      return;
     }
-  }
 
-  searchBtn.addEventListener('click', doSearch);
-  carnetInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
-
-  function renderResult(r) {
-    const alreadyReturned = !!r.existing_return;
-
-    resultEl.innerHTML = `
-      <div class="rv-section" style="margin-top:20px">
-        <div class="rv-section-header">
-          <span class="rv-section-title">Application Details</span>
+    gridEl.innerHTML = `
+      <div class="section-card" style="margin-top:16px">
+        <div class="section-card-body" style="padding:0">
+          <table class="data-table">
+            <thead><tr>
+              <th>Request ID</th><th>Carnet No</th><th>Vehicle</th><th>Submitted</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody>
+              ${rows.map(r => `<tr>
+                <td><strong>${r.request_id ?? '—'}</strong></td>
+                <td>${r.carnet_no ?? '—'}</td>
+                <td>${[r.vehicle_make, r.vehicle_model].filter(Boolean).join(' ') || '—'}</td>
+                <td>${formatDateTime(r.requested_datetime)}</td>
+                <td>${r.return_id
+                  ? (r.return_confirmed_by
+                      ? '<span class="badge badge-success">Return Confirmed</span>'
+                      : '<span class="badge badge-warning">Return Pending Confirmation</span>')
+                  : '<span class="badge badge-default">Not Returned</span>'}</td>
+                <td>
+                  ${r.return_id
+                    ? ''
+                    : `<button class="btn btn-primary btn-sm return-cpd-btn" data-id="${r.auto_id}">
+                         <i class="fa-solid fa-rotate-left"></i> Return
+                       </button>`}
+                </td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
         </div>
-        <div class="rv-identity-rows">
-          ${idRow('fa-solid fa-hashtag',      'Request No',        esc(r.request_id))}
-          ${idRow('fa-solid fa-id-card',      'Carnet No',         esc(r.carnet_no))}
-          ${idRow('fa-regular fa-user',       'Applicant',         [r.first_name, r.last_name].filter(Boolean).map(esc).join(' '))}
-          ${idRow('fa-solid fa-car',          'Vehicle',           [r.vehicle_make, r.vehicle_model].filter(Boolean).map(esc).join(' '))}
-          ${idRow('fa-solid fa-hashtag',      'Registration No',   esc(r.registration_no))}
-          ${idRow('fa-solid fa-hashtag',      'Chassis No',        esc(r.chassis_no))}
-          ${idRow('fa-solid fa-calendar',     'Manufacture Year',  esc(r.manuf_year))}
-          ${idRow('fa-solid fa-palette',      'Colour',            esc(r.color))}
-          ${idRow('fa-solid fa-calendar-check','Submitted',        formatDateTime(r.requested_datetime))}
-        </div>
-      </div>
+      </div>`;
 
-      ${alreadyReturned ? `
-      <div class="rv-section">
-        <div class="rv-section-title" style="margin-bottom:12px">Return Status</div>
-        <div class="rv-extra-rows">
-          <div class="rv-extra-row"><span class="rv-extra-label">Submitted</span><span class="rv-extra-value">${formatDateTime(r.existing_return.added_datetime)}</span></div>
-          <div class="rv-extra-row"><span class="rv-extra-label">Status</span><span class="rv-extra-value">${r.existing_return.confirmed_by ? 'Confirmed' : 'Pending confirmation'}</span></div>
-        </div>
-      </div>` : `
-      <div class="rv-section" id="cpd-return-form-section">
-        <div class="rv-section-title" style="margin-bottom:12px">Submit Return Request</div>
-
-        <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem">
-          <div style="flex:1;min-width:200px">
-            <div class="field" style="margin:0">
-              <label>Delivery Option *</label>
-              <div style="display:flex;gap:.75rem;margin-top:.4rem;flex-wrap:wrap">
-                <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-weight:400">
-                  <input type="radio" name="ret-delivery" value="DELIVER_BY_HAND" checked /> Deliver by Hand
-                </label>
-                <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-weight:400">
-                  <input type="radio" name="ret-delivery" value="ARAMAX" /> Aramex
-                </label>
-              </div>
-            </div>
-          </div>
-          <div style="flex:1;min-width:200px">
-            <div class="field" style="margin:0">
-              <label>Return Payment Option *</label>
-              <div style="display:flex;gap:.75rem;margin-top:.4rem;flex-wrap:wrap">
-                <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-weight:400">
-                  <input type="radio" name="ret-payment" value="COLLECT_CHEQUE" checked /> Collect Cheque
-                </label>
-                <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-weight:400">
-                  <input type="radio" name="ret-payment" value="BANK_DEPOSIT" /> Bank Deposit
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div id="ret-bank-fields" style="display:none;background:var(--bg-base);border-radius:var(--radius);padding:16px;margin-bottom:16px">
-          <div class="form-grid">
-            <div class="field"><label>Bank Name *</label><input type="text" id="ret-bank-name" placeholder="Bank name" /></div>
-            <div class="field"><label>Account No *</label><input type="text" id="ret-account-no" placeholder="Account number" /></div>
-            <div class="field"><label>IBAN</label><input type="text" id="ret-iban" placeholder="AE00 0000 …" /></div>
-            <div class="field"><label>Beneficiary Name *</label><input type="text" id="ret-beneficiary" placeholder="Account holder name" /></div>
-          </div>
-        </div>
-
-        <div class="field">
-          <label>Remarks *</label>
-          <textarea id="ret-remarks" rows="3" style="width:100%;resize:vertical" placeholder="Condition of carnet and reason for return…"></textarea>
-        </div>
-        <div id="cpd-return-submit-error" class="form-error hidden" style="margin-top:8px"></div>
-
-        <button class="btn btn-primary" id="cpd-return-submit-btn" style="margin-top:12px">
-          <i class="fa-solid fa-rotate-left"></i> Submit Return Request
-        </button>
-      </div>`}
-    `;
-
-    if (!alreadyReturned) bindReturnForm(r.auto_id);
-  }
-
-  function bindReturnForm(autoId) {
-    document.querySelectorAll('input[name="ret-payment"]').forEach(radio => {
-      radio.addEventListener('change', () => {
-        document.getElementById('ret-bank-fields').style.display =
-          radio.value === 'BANK_DEPOSIT' && radio.checked ? '' : 'none';
+    gridEl.querySelectorAll('.return-cpd-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openCPDReturnModal(Number(btn.dataset.id), () => renderPublicCPDReturn());
       });
     });
-
-    document.getElementById('cpd-return-submit-btn').addEventListener('click', async () => {
-      const delivery = document.querySelector('input[name="ret-delivery"]:checked')?.value;
-      const payment  = document.querySelector('input[name="ret-payment"]:checked')?.value;
-      const remarks  = document.getElementById('ret-remarks').value.trim();
-      const errEl    = document.getElementById('cpd-return-submit-error');
-      const btn      = document.getElementById('cpd-return-submit-btn');
-
-      errEl.classList.add('hidden');
-
-      if (!remarks) { errEl.textContent = 'Please enter remarks'; errEl.classList.remove('hidden'); return; }
-
-      const body = { remarks, delivery_option: delivery, payment_option: payment };
-
-      if (payment === 'BANK_DEPOSIT') {
-        body.bank_name   = document.getElementById('ret-bank-name').value.trim();
-        body.account_no  = document.getElementById('ret-account-no').value.trim();
-        body.iban        = document.getElementById('ret-iban').value.trim();
-        body.beneficiary = document.getElementById('ret-beneficiary').value.trim();
-        if (!body.bank_name)   { errEl.textContent = 'Bank name is required';   errEl.classList.remove('hidden'); return; }
-        if (!body.account_no)  { errEl.textContent = 'Account number is required'; errEl.classList.remove('hidden'); return; }
-        if (!body.beneficiary) { errEl.textContent = 'Beneficiary name is required'; errEl.classList.remove('hidden'); return; }
-      }
-
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting…';
-
-      try {
-        await api.cpd.returnCarnet(autoId, body);
-        toast('Return request submitted successfully', 'success');
-        doSearch(); // refresh to show the now-pending return status
-      } catch (e) {
-        errEl.textContent = e.message || 'Failed to submit return request';
-        errEl.classList.remove('hidden');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-rotate-left"></i> Submit Return Request';
-      }
-    });
   }
+
+  renderGrid();
 }
 
 export async function renderPublicCPDRenewSearch() {
   const content = document.getElementById('page-content');
+  content.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
 
-  const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  const idRow = (icon, label, value) => `
-    <div class="rv-identity-row"><span class="rv-id-icon"><i class="${icon}"></i></span><span class="rv-id-label">${label}</span><span class="rv-id-value">${value || '—'}</span></div>`;
+  let rows = [];
+  try {
+    rows = (await api.cpd.myIssuedCarnets()) ?? [];
+  } catch { /* show empty state below */ }
 
   content.innerHTML = `
     <div class="page-header">
       <div class="page-title-block">
         <h1 class="page-title">Renew your CPD</h1>
-        <p class="page-subtitle">Enter your Carnet number to look up your application and renew it.</p>
+        <p class="page-subtitle">Select an issued Carnet below to renew it.</p>
       </div>
     </div>
+    <div id="cpd-renew-grid"></div>`;
 
-    <div class="rv-section" style="max-width:560px">
-      <div class="rv-section-title" style="margin-bottom:12px">Find Your Carnet</div>
-      <div style="display:flex;gap:10px;align-items:flex-start">
-        <div class="field" style="margin:0;flex:1">
-          <input id="cpd-renew-carnet-no" type="text" placeholder="e.g. DDD164172" autocomplete="off" />
-        </div>
-        <button class="btn btn-primary" id="cpd-renew-search-btn" style="height:42px">
-          <i class="fa-solid fa-magnifying-glass"></i> Search
-        </button>
-      </div>
-      <div id="cpd-renew-search-status" style="font-size:.85rem;margin-top:8px;min-height:18px"></div>
-    </div>
+  const gridEl = document.getElementById('cpd-renew-grid');
 
-    <div id="cpd-renew-result"></div>`;
-
-  const searchBtn  = document.getElementById('cpd-renew-search-btn');
-  const carnetInput= document.getElementById('cpd-renew-carnet-no');
-  const statusEl   = document.getElementById('cpd-renew-search-status');
-  const resultEl   = document.getElementById('cpd-renew-result');
-
-  async function doSearch() {
-    const carnetNo = carnetInput.value.trim();
-    if (!carnetNo) { statusEl.innerHTML = '<span style="color:var(--danger)">Please enter a Carnet number.</span>'; return; }
-
-    statusEl.textContent = '';
-    resultEl.innerHTML = '';
-    searchBtn.disabled = true;
-    searchBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-
-    try {
-      const r = await api.cpd.searchOwnByCarnet(carnetNo);
-      renderResult(r);
-    } catch (e) {
-      statusEl.innerHTML = `<span style="color:var(--danger)">${esc(e.message || 'No carnet found with that number on your account.')}</span>`;
-    } finally {
-      searchBtn.disabled = false;
-      searchBtn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Search';
-    }
+  if (!rows.length) {
+    gridEl.innerHTML = emptyState('fa-car', 'No issued Carnets', 'Carnets you have been issued will appear here once ready to be renewed.');
+    return;
   }
 
-  searchBtn.addEventListener('click', doSearch);
-  carnetInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
-
-  function renderResult(r) {
-    const alreadyRenewed = !!r.existing_renewal;
-
-    resultEl.innerHTML = `
-      <div class="rv-section" style="margin-top:20px">
-        <div class="rv-section-header">
-          <span class="rv-section-title">Application Details</span>
-        </div>
-        <div class="rv-identity-rows">
-          ${idRow('fa-solid fa-hashtag',      'Request No',        esc(r.request_id))}
-          ${idRow('fa-solid fa-id-card',      'Carnet No',         esc(r.carnet_no))}
-          ${idRow('fa-regular fa-user',       'Applicant',         [r.first_name, r.last_name].filter(Boolean).map(esc).join(' '))}
-          ${idRow('fa-solid fa-car',          'Vehicle',           [r.vehicle_make, r.vehicle_model].filter(Boolean).map(esc).join(' '))}
-          ${idRow('fa-solid fa-hashtag',      'Registration No',   esc(r.registration_no))}
-          ${idRow('fa-solid fa-hashtag',      'Chassis No',        esc(r.chassis_no))}
-          ${idRow('fa-solid fa-calendar',     'Manufacture Year',  esc(r.manuf_year))}
-          ${idRow('fa-solid fa-palette',      'Colour',            esc(r.color))}
-          ${idRow('fa-solid fa-calendar-check','Submitted',        formatDateTime(r.requested_datetime))}
-        </div>
+  gridEl.innerHTML = `
+    <div class="section-card" style="margin-top:16px">
+      <div class="section-card-body" style="padding:0">
+        <table class="data-table">
+          <thead><tr>
+            <th>Request ID</th><th>Carnet No</th><th>Vehicle</th><th>Submitted</th><th>Status</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(r => `<tr>
+              <td><strong>${r.request_id ?? '—'}</strong></td>
+              <td>${r.carnet_no ?? '—'}</td>
+              <td>${[r.vehicle_make, r.vehicle_model].filter(Boolean).join(' ') || '—'}</td>
+              <td>${formatDateTime(r.requested_datetime)}</td>
+              <td>${r.renewal_request_id
+                ? `<span class="badge badge-success">Renewed — ${r.renewal_request_id}</span>`
+                : '<span class="badge badge-default">Not Renewed</span>'}</td>
+              <td>
+                ${r.renewal_request_id
+                  ? ''
+                  : `<button class="btn btn-primary btn-sm renew-cpd-btn" data-id="${r.auto_id}">
+                       <i class="fa-solid fa-rotate"></i> Renew
+                     </button>`}
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
       </div>
+    </div>`;
 
-      ${alreadyRenewed ? `
-      <div class="rv-section">
-        <div class="rv-section-title" style="margin-bottom:12px">Renewal Status</div>
-        <div class="rv-extra-rows">
-          <div class="rv-extra-row"><span class="rv-extra-label">This Carnet has already been renewed</span><span class="rv-extra-value">${esc(r.existing_renewal.request_id)}</span></div>
-        </div>
-      </div>` : `
-      <div class="rv-section">
-        <button class="btn btn-primary" id="cpd-renew-proceed-btn" style="margin-top:4px">
-          <i class="fa-solid fa-rotate"></i> Renew This Carnet
-        </button>
-      </div>`}
-    `;
-
-    if (!alreadyRenewed) {
-      document.getElementById('cpd-renew-proceed-btn').addEventListener('click', () => {
-        navigate('public-apply-cpd', { mode: 'renew', source: r });
-      });
-    }
-  }
+  gridEl.querySelectorAll('.renew-cpd-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+      try {
+        const source = await api.cpd.get(Number(btn.dataset.id));
+        navigate('public-apply-cpd', { mode: 'renew', source });
+      } catch (e) {
+        toast(e.message || 'Could not load Carnet details', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-rotate"></i> Renew';
+      }
+    });
+  });
 }
 
 // ── History ────────────────────────────────────────────────────────────────────
@@ -2923,6 +3414,169 @@ function emptyState(icon, title, subtitle) {
         <p style="color:var(--text-muted);font-size:.9rem">${subtitle}</p>
       </div>
     </div>`;
+}
+
+// ── Shared "Return Carnet" modal (used by the CPD detail view and the Return list) ──
+function openCPDReturnModal(autoId, onSuccess) {
+  openModal({
+    title: 'Return Carnet',
+    size: 'lg',
+    body: `
+      <div class="field" style="margin-bottom:16px">
+        <label style="display:block;margin-bottom:8px;font-weight:600">Delivery Option</label>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+            border:1px solid var(--accent);border-radius:var(--radius);cursor:pointer;
+            transition:border-color .15s" id="label-del-aramex">
+            <input type="radio" name="return-delivery" value="ARAMAX" id="del-aramex" checked
+              style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" />
+            <span><strong>Return via Aramex</strong><br>
+              <small style="color:var(--text-muted)">We arrange Aramex pickup</small></span>
+          </label>
+        </div>
+        <div id="aramex-fee-notice" style="margin-top:8px;padding:8px 12px;
+          background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);border-radius:var(--radius);
+          font-size:.88rem;color:var(--warning,#ca8a04)">
+          <i class="fa-solid fa-circle-info"></i>
+          An additional charge of <strong>AED 30.00</strong> will apply for Aramex pickup.
+        </div>
+      </div>
+
+      <div class="field" style="margin-bottom:16px">
+        <label style="display:block;margin-bottom:8px;font-weight:600">Return Payment Option <span style="color:var(--accent)">*</span></label>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+            border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;
+            transition:border-color .15s" id="label-pay-bank">
+            <input type="radio" name="return-payment" value="BANK_DEPOSIT" id="pay-bank"
+              style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" />
+            <span><strong>Deposit to Bank</strong></span>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+            border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;
+            transition:border-color .15s" id="label-pay-cheque">
+            <input type="radio" name="return-payment" value="COLLECT_CHEQUE" id="pay-cheque"
+              style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" />
+            <span><strong>Collect Cheque from Office</strong></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Bank Details (shown when Deposit to Bank selected) -->
+      <div id="bank-details-section" style="display:none;background:var(--bg-elevated);
+        border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px">
+        <div style="font-size:.85rem;font-weight:600;color:var(--text-muted);margin-bottom:12px;
+          text-transform:uppercase;letter-spacing:.05em">Bank Details</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="field" style="margin:0">
+            <label>Bank Name <span style="color:var(--accent)">*</span></label>
+            <input type="text" id="ret-bank-name" placeholder="e.g. Emirates NBD" />
+          </div>
+          <div class="field" style="margin:0">
+            <label>Account Number <span style="color:var(--accent)">*</span></label>
+            <input type="text" id="ret-account-no" placeholder="Account number" />
+          </div>
+          <div class="field" style="margin:0">
+            <label>IBAN Number</label>
+            <input type="text" id="ret-iban" placeholder="AE00 0000 0000 0000 0000 000" />
+          </div>
+          <div class="field" style="margin:0">
+            <label>Beneficiary Name <span style="color:var(--accent)">*</span></label>
+            <input type="text" id="ret-beneficiary" placeholder="Account holder name" />
+          </div>
+        </div>
+      </div>
+
+      <div class="field" style="margin:0">
+        <label>Remarks <span style="color:var(--accent)">*</span></label>
+        <textarea id="return-carnet-remarks" rows="3"
+          placeholder="Describe the condition of the carnet and reason for return…"
+          style="width:100%;resize:vertical"></textarea>
+      </div>`,
+    footer: `<button class="btn btn-ghost" onclick="closeModalGlobal()">
+               <i class="fa-solid fa-xmark"></i> Close
+             </button>
+             <button class="btn btn-warning" id="return-carnet-confirm">
+               <i class="fa-solid fa-rotate-left"></i> Submit Return
+             </button>`,
+  });
+
+  // Highlight selected option on change
+  const highlightOption = (name, value, prefix) => {
+    document.querySelectorAll(`input[name="${name}"]`).forEach(r => {
+      const lbl = document.getElementById(`${prefix}${r.value.toLowerCase()}`);
+      if (lbl) lbl.style.borderColor = r.checked ? 'var(--accent)' : 'var(--border)';
+    });
+  };
+
+  // Bank details section
+  document.querySelectorAll('input[name="return-payment"]').forEach(r => {
+    r.addEventListener('change', () => {
+      document.getElementById('bank-details-section').style.display =
+        document.getElementById('pay-bank').checked ? '' : 'none';
+      highlightOption('return-payment', r.value, 'label-pay-');
+    });
+  });
+
+  document.getElementById('return-carnet-confirm').onclick = async () => {
+    const delivery = document.querySelector('input[name="return-delivery"]:checked')?.value;
+    const payment  = document.querySelector('input[name="return-payment"]:checked')?.value;
+    const remarks  = document.getElementById('return-carnet-remarks').value.trim();
+    if (!delivery) return toast('Please select a delivery option', 'error');
+    if (!payment)  return toast('Please select a return payment option', 'error');
+    if (!remarks)  return toast('Please enter remarks', 'error');
+
+    const body = { remarks, delivery_option: delivery, payment_option: payment };
+
+    if (payment === 'BANK_DEPOSIT') {
+      const bankName    = document.getElementById('ret-bank-name').value.trim();
+      const accountNo   = document.getElementById('ret-account-no').value.trim();
+      const iban        = document.getElementById('ret-iban').value.trim();
+      const beneficiary = document.getElementById('ret-beneficiary').value.trim();
+      if (!bankName)    return toast('Please enter the bank name', 'error');
+      if (!accountNo)   return toast('Please enter the account number', 'error');
+      if (!beneficiary) return toast('Please enter the beneficiary name', 'error');
+      body.bank_name       = bankName;
+      body.account_no      = accountNo;
+      body.iban            = iban;
+      body.beneficiary     = beneficiary;
+    }
+
+    const btn = document.getElementById('return-carnet-confirm');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    try {
+      const res = await api.cpd.returnCarnet(autoId, body);
+
+      if (delivery === 'ARAMAX') {
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Redirecting to payment…';
+        try {
+          const pay = await api.cpd.telrInitReturn(res.return_id);
+          if (pay?.redirect_url) {
+            closeModal();
+            window.location.href = pay.redirect_url;
+          } else {
+            toast('Payment gateway did not return a redirect URL', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-rotate-left"></i> Submit Return';
+          }
+        } catch (pe) {
+          console.error('telrInitReturn error:', pe);
+          toast(`Payment initiation failed: ${pe.message}`, 'error');
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-rotate-left"></i> Submit Return';
+        }
+      } else {
+        closeModal();
+        toast('Carnet return request submitted successfully', 'success');
+        onSuccess?.();
+      }
+    } catch (e) {
+      toast(e.message || 'Failed to submit return request', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-rotate-left"></i> Submit Return';
+    }
+  };
 }
 
 // ── Public CPD Application View ───────────────────────────────────────────────
@@ -3272,169 +3926,10 @@ async function renderPublicCPDView(autoId) {
   document.getElementById('btn-back-cpd-footer')?.addEventListener('click', () => renderPublicHistory('cpd'));
 
   // Return Carnet handler (status=3 only)
-  const openReturnCarnetModal = () => {
-    openModal({
-      title: 'Return Carnet',
-      size: 'lg',
-      body: `
-        <div class="field" style="margin-bottom:16px">
-          <label style="display:block;margin-bottom:8px;font-weight:600">Delivery Option</label>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
-              border:1px solid var(--accent);border-radius:var(--radius);cursor:pointer;
-              transition:border-color .15s" id="label-del-aramex">
-              <input type="radio" name="return-delivery" value="ARAMAX" id="del-aramex" checked
-                style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" />
-              <span><strong>Return via Aramex</strong><br>
-                <small style="color:var(--text-muted)">We arrange Aramex pickup</small></span>
-            </label>
-          </div>
-          <div id="aramex-fee-notice" style="margin-top:8px;padding:8px 12px;
-            background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);border-radius:var(--radius);
-            font-size:.88rem;color:var(--warning,#ca8a04)">
-            <i class="fa-solid fa-circle-info"></i>
-            An additional charge of <strong>AED 30.00</strong> will apply for Aramex pickup.
-          </div>
-        </div>
-
-        <div class="field" style="margin-bottom:16px">
-          <label style="display:block;margin-bottom:8px;font-weight:600">Return Payment Option <span style="color:var(--accent)">*</span></label>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
-              border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;
-              transition:border-color .15s" id="label-pay-bank">
-              <input type="radio" name="return-payment" value="BANK_DEPOSIT" id="pay-bank"
-                style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" />
-              <span><strong>Deposit to Bank</strong></span>
-            </label>
-            <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
-              border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;
-              transition:border-color .15s" id="label-pay-cheque">
-              <input type="radio" name="return-payment" value="COLLECT_CHEQUE" id="pay-cheque"
-                style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" />
-              <span><strong>Collect Cheque from Office</strong></span>
-            </label>
-          </div>
-        </div>
-
-        <!-- Bank Details (shown when Deposit to Bank selected) -->
-        <div id="bank-details-section" style="display:none;background:var(--bg-elevated);
-          border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px">
-          <div style="font-size:.85rem;font-weight:600;color:var(--text-muted);margin-bottom:12px;
-            text-transform:uppercase;letter-spacing:.05em">Bank Details</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div class="field" style="margin:0">
-              <label>Bank Name <span style="color:var(--accent)">*</span></label>
-              <input type="text" id="ret-bank-name" placeholder="e.g. Emirates NBD" />
-            </div>
-            <div class="field" style="margin:0">
-              <label>Account Number <span style="color:var(--accent)">*</span></label>
-              <input type="text" id="ret-account-no" placeholder="Account number" />
-            </div>
-            <div class="field" style="margin:0">
-              <label>IBAN Number</label>
-              <input type="text" id="ret-iban" placeholder="AE00 0000 0000 0000 0000 000" />
-            </div>
-            <div class="field" style="margin:0">
-              <label>Beneficiary Name <span style="color:var(--accent)">*</span></label>
-              <input type="text" id="ret-beneficiary" placeholder="Account holder name" />
-            </div>
-          </div>
-        </div>
-
-        <div class="field" style="margin:0">
-          <label>Remarks <span style="color:var(--accent)">*</span></label>
-          <textarea id="return-carnet-remarks" rows="3"
-            placeholder="Describe the condition of the carnet and reason for return…"
-            style="width:100%;resize:vertical"></textarea>
-        </div>`,
-      footer: `<button class="btn btn-ghost" onclick="closeModalGlobal()">
-                 <i class="fa-solid fa-xmark"></i> Close
-               </button>
-               <button class="btn btn-warning" id="return-carnet-confirm">
-                 <i class="fa-solid fa-rotate-left"></i> Submit Return
-               </button>`,
-    });
-
-    // Highlight selected option on change
-    const highlightOption = (name, value, prefix) => {
-      document.querySelectorAll(`input[name="${name}"]`).forEach(r => {
-        const lbl = document.getElementById(`${prefix}${r.value.toLowerCase()}`);
-        if (lbl) lbl.style.borderColor = r.checked ? 'var(--accent)' : 'var(--border)';
-      });
-    };
-
-
-    // Bank details section
-    document.querySelectorAll('input[name="return-payment"]').forEach(r => {
-      r.addEventListener('change', () => {
-        document.getElementById('bank-details-section').style.display =
-          document.getElementById('pay-bank').checked ? '' : 'none';
-        highlightOption('return-payment', r.value, 'label-pay-');
-      });
-    });
-
-    document.getElementById('return-carnet-confirm').onclick = async () => {
-      const delivery = document.querySelector('input[name="return-delivery"]:checked')?.value;
-      const payment  = document.querySelector('input[name="return-payment"]:checked')?.value;
-      const remarks  = document.getElementById('return-carnet-remarks').value.trim();
-      if (!delivery) return toast('Please select a delivery option', 'error');
-      if (!payment)  return toast('Please select a return payment option', 'error');
-      if (!remarks)  return toast('Please enter remarks', 'error');
-
-      const body = { remarks, delivery_option: delivery, payment_option: payment };
-
-      if (payment === 'BANK_DEPOSIT') {
-        const bankName    = document.getElementById('ret-bank-name').value.trim();
-        const accountNo   = document.getElementById('ret-account-no').value.trim();
-        const iban        = document.getElementById('ret-iban').value.trim();
-        const beneficiary = document.getElementById('ret-beneficiary').value.trim();
-        if (!bankName)    return toast('Please enter the bank name', 'error');
-        if (!accountNo)   return toast('Please enter the account number', 'error');
-        if (!beneficiary) return toast('Please enter the beneficiary name', 'error');
-        body.bank_name       = bankName;
-        body.account_no      = accountNo;
-        body.iban            = iban;
-        body.beneficiary     = beneficiary;
-      }
-
-      const btn = document.getElementById('return-carnet-confirm');
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-      try {
-        const res = await api.cpd.returnCarnet(autoId, body);
-
-        if (delivery === 'ARAMAX') {
-          btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Redirecting to payment…';
-          try {
-            const pay = await api.cpd.telrInitReturn(res.return_id);
-            if (pay?.redirect_url) {
-              closeModal();
-              window.location.href = pay.redirect_url;
-            } else {
-              toast('Payment gateway did not return a redirect URL', 'error');
-              btn.disabled = false;
-              btn.innerHTML = '<i class="fa-solid fa-rotate-left"></i> Submit Return';
-            }
-          } catch (pe) {
-            console.error('telrInitReturn error:', pe);
-            toast(`Payment initiation failed: ${pe.message}`, 'error');
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-rotate-left"></i> Submit Return';
-          }
-        } else {
-          closeModal();
-          toast('Carnet return request submitted successfully', 'success');
-          document.getElementById('btn-return-carnet-header')?.setAttribute('disabled', 'true');
-          document.getElementById('btn-return-carnet-footer')?.setAttribute('disabled', 'true');
-        }
-      } catch (e) {
-        toast(e.message || 'Failed to submit return request', 'error');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-rotate-left"></i> Submit Return';
-      }
-    };
-  };
+  const openReturnCarnetModal = () => openCPDReturnModal(autoId, () => {
+    document.getElementById('btn-return-carnet-header')?.setAttribute('disabled', 'true');
+    document.getElementById('btn-return-carnet-footer')?.setAttribute('disabled', 'true');
+  });
 
   document.getElementById('btn-return-carnet-header')?.addEventListener('click', openReturnCarnetModal);
   document.getElementById('btn-return-carnet-footer')?.addEventListener('click', openReturnCarnetModal);
@@ -3653,7 +4148,6 @@ async function renderPublicIDLView(autoId) {
       <div class="rv-identity-rows">
         ${idRow('fa-regular fa-user',         'Full Name',           [r.first_name, r.last_name].filter(Boolean).map(esc).join(' '))}
         ${idRow('fa-regular fa-id-card',      'Emirates ID',         esc(r.emirates_id))}
-        ${idRow('fa-regular fa-calendar',     'Date of Birth',       r.dob ? formatDate(r.dob) : '—')}
         ${idRow('fa-solid fa-flag',           'Nationality',         esc(r.nationality))}
         ${idRow('fa-solid fa-venus-mars',     'Gender',              esc(r.sex))}
         ${idRow('fa-solid fa-mobile-screen',  'Mobile Number',       esc(r.mobile_no))}
@@ -3669,6 +4163,7 @@ async function renderPublicIDLView(autoId) {
     <div class="rv-section">
       <div class="rv-section-title" style="margin-bottom:12px">Additional Information</div>
       <div class="rv-extra-rows">
+        <div class="rv-extra-row"><span class="rv-extra-label">Date of Birth</span><span class="rv-extra-value">${r.dob ? formatDate(r.dob) : '—'}</span></div>
         <div class="rv-extra-row"><span class="rv-extra-label">Place of Birth</span><span class="rv-extra-value">${esc(r.place_of_birth) || '—'}</span></div>
         <div class="rv-extra-row"><span class="rv-extra-label">UAE Permanent Place of Residence</span><span class="rv-extra-value">${esc(r.emirate_name ?? r.emirate) || '—'}</span></div>
         <div class="rv-extra-row"><span class="rv-extra-label">Additional Phone Number</span><span class="rv-extra-value">${esc(r.additional_mobile_no) || '—'}</span></div>

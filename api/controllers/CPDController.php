@@ -132,16 +132,19 @@ class CPDController
                     COALESCE(cru.nationality_id,       cu.nationality_id)       AS nationality_id,
                     COALESCE(cru.city,                 cu.city)                 AS city,
                     COALESCE(cru.dob,                  cu.dob)                  AS dob,
+                    cru.sex, cru.license_no, cru.license_expiry,
                     COALESCE(cru.emirates_id,          cu.emirates_id)          AS emirates_id,
                     COALESCE(cru.passport_no,          cu.passport_no)          AS passport_no,
                     COALESCE(cru.home_country_address, cu.home_country_address) AS home_country_address,
                     COALESCE(cru.uae_address,          cu.uae_address)          AS uae_address,
-                    COALESCE(cru.po_box,               cu.po_box)               AS po_box
+                    COALESCE(cru.po_box,               cu.po_box)               AS po_box,
+                    n.nationality
              FROM mn_cpd_requests r
              LEFT JOIN mn_cpd_statuses     s   ON s.carnet_status_id = r.request_status
              LEFT JOIN mn_users            u   ON u.user_id          = r.belonging_user_id
              LEFT JOIN mn_cpd_request_user cru ON cru.request_auto_id = r.auto_id
              LEFT JOIN mn_cpd_users        cu  ON cu.user_id          = r.belonging_user_id
+             LEFT JOIN mn_nationalities    n   ON n.nationality_id   = COALESCE(cru.nationality_id, cu.nationality_id)
              WHERE r.auto_id=?",
             [$params['id']],
         );
@@ -556,7 +559,9 @@ class CPDController
     {
         Validator::make($body)
             ->required('vehicle_make','vehicle_model','registration_no','chassis_no','manuf_year',
-                       'first_name','last_name','mobile_no','email')
+                       'mulkiya_no','radio','spare_tyre',
+                       'first_name','mobile_no','email',
+                       'passport_no','license_no','license_expiry','sex')
             ->validate();
 
         $userId = Auth::id();
@@ -605,19 +610,24 @@ class CPDController
         try {
             $id = $this->db->insert(
                 "INSERT INTO mn_cpd_requests
-                 (request_id, request_category, belonging_user_id,
+                 (request_id, request_category, usage_type, belonging_user_id,
                   vehicle_make, vehicle_model, registration_no, chassis_no, engine_no,
                   manuf_year, color, body_type, no_of_cylinders, horse_power,
                   net_weight, vehicle_value, mulkiya_no, vehicle_registered_in,
                   upholstery, no_of_seats, radio, spare_tyre,
-                  extra_owner1_name, extra_owner2_name,
+                  extra_owner1_name, extra_owner1_eid, extra_owner1_passport,
+                  extra_owner2_name, extra_owner2_eid, extra_owner2_passport,
                   additional_remarks, others1, others2,
-                  uae_refree1, uae_refree2, destination_refree1, destination_refree2,
-                  guarantee_amount, booking_fee, extra_fees, vat_amount, total_amount,
+                  uae_refree1, uae_refree1_mobile, uae_refree2, uae_refree2_mobile,
+                  destination_refree1, destination_refree1_mobile,
+                  destination_refree2, destination_refree2_mobile,
+                  delivery_option, delivery_address,
+                  guarantee_amount, booking_fee, processing_fee, extra_fees, vat_amount, total_amount,
                   method_of_payment, booking_channel, request_status, parent_request_id, requested_datetime)
-                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ONLINE',1,?,NOW())",
+                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ONLINE',1,?,NOW())",
                 [
                     $parentAutoId ? 'RENEW' : 'NORMAL',
+                    $body['usage_type']           ?? 'PERSONAL',
                     $userId,
                     $body['vehicle_make'],
                     $body['vehicle_model'],
@@ -637,17 +647,28 @@ class CPDController
                     $body['no_of_seats']          ?? 0,
                     $body['radio']                ?? '',
                     $body['spare_tyre']           ?? '',
-                    $body['extra_owner1_name']    ?? '',
-                    $body['extra_owner2_name']    ?? '',
+                    $body['extra_owner1_name']     ?? '',
+                    $body['extra_owner1_eid']      ?? '',
+                    $body['extra_owner1_passport'] ?? '',
+                    $body['extra_owner2_name']     ?? '',
+                    $body['extra_owner2_eid']      ?? '',
+                    $body['extra_owner2_passport'] ?? '',
                     $body['additional_remarks']   ?? '',
                     $body['others1']              ?? '',
                     $body['others2']              ?? '',
-                    $body['uae_refree1']          ?? '',
-                    $body['uae_refree2']          ?? '',
-                    $body['destination_refree1']  ?? '',
-                    $body['destination_refree2']  ?? '',
+                    $body['uae_refree1']              ?? '',
+                    $body['uae_refree1_mobile']       ?? '',
+                    $body['uae_refree2']              ?? '',
+                    $body['uae_refree2_mobile']       ?? '',
+                    $body['destination_refree1']        ?? '',
+                    $body['destination_refree1_mobile'] ?? '',
+                    $body['destination_refree2']        ?? '',
+                    $body['destination_refree2_mobile'] ?? '',
+                    $body['delivery_option']      ?? 'home_delivery',
+                    $body['delivery_address']     ?? '',
                     $body['guarantee_amount']     ?? 0,
                     $body['booking_fee']          ?? 0,
+                    $body['processing_fee']       ?? 0,
                     $body['extra_fees']           ?? 0,
                     $body['vat_amount']           ?? 0,
                     $body['total_amount']         ?? 0,
@@ -669,12 +690,12 @@ class CPDController
                 "INSERT INTO mn_cpd_request_user
                  (user_id, request_auto_id, title, first_name, last_name,
                   nationality_id, city, uae_address, po_box,
-                  emirates_id, passport_no, registered_date)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,CURDATE())",
+                  emirates_id, passport_no, dob, sex, license_no, license_expiry, registered_date)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURDATE())",
                 [
                     $userId,
                     $id,
-                    $body['title']           ?? null,
+                    '',
                     $body['first_name'],
                     $body['last_name'],
                     $body['nationality']     ?? null,
@@ -683,6 +704,10 @@ class CPDController
                     $body['po_box']          ?? '',
                     $body['emirates_id']     ?? '',
                     $body['passport_no']     ?? '',
+                    $body['dob']             ?: null,
+                    $body['sex']             ?? null,
+                    $body['license_no']      ?? '',
+                    $body['license_expiry']  ?: null,
                 ],
             );
 
@@ -734,9 +759,14 @@ class CPDController
                         r.body_type, r.manuf_year, r.color, r.net_weight, r.chassis_no,
                         r.engine_no, r.horse_power, r.no_of_cylinders, r.upholstery,
                         r.no_of_seats, r.radio, r.spare_tyre, r.mulkiya_no,
-                        r.registration_no, r.extra_owner1_name, r.extra_owner2_name,
+                        r.registration_no,
+                        r.extra_owner1_name, r.extra_owner1_eid, r.extra_owner1_passport,
+                        r.extra_owner2_name, r.extra_owner2_eid, r.extra_owner2_passport,
                         r.additional_remarks, r.others1, r.others2,
-                        r.uae_refree1, r.uae_refree2, r.destination_refree1, r.destination_refree2,
+                        r.uae_refree1, r.uae_refree1_mobile, r.uae_refree2, r.uae_refree2_mobile,
+                        r.destination_refree1, r.destination_refree1_mobile,
+                        r.destination_refree2, r.destination_refree2_mobile,
+                        r.delivery_option, r.delivery_address,
                         cu.nationality_id, cu.city, cu.po_box, cu.passport_no,
                         cu.home_country_address, cu.uae_address
                  FROM mn_cpd_requests r
@@ -782,17 +812,22 @@ class CPDController
         try {
             $id = $this->db->insert(
                 "INSERT INTO mn_cpd_requests
-                 (request_id, request_category, belonging_user_id,
+                 (request_id, request_category, usage_type, belonging_user_id,
                   vehicle_make, vehicle_model, registration_no, chassis_no, engine_no,
                   manuf_year, color, body_type, no_of_cylinders, horse_power,
                   net_weight, vehicle_value, mulkiya_no,
-                  extra_owner1_name, extra_owner2_name,
+                  extra_owner1_name, extra_owner1_eid, extra_owner1_passport,
+                  extra_owner2_name, extra_owner2_eid, extra_owner2_passport,
+                  uae_refree1, uae_refree1_mobile, uae_refree2, uae_refree2_mobile,
+                  destination_refree1, destination_refree1_mobile,
+                  destination_refree2, destination_refree2_mobile,
                   guarantee_amount, booking_fee, extra_fees, vat_amount, total_amount,
                   method_of_payment, booking_channel, request_status,
                   current_queue_position, requested_datetime)
-                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WALKIN','NEW',?,NOW())",
+                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WALKIN','NEW',?,NOW())",
                 [
                     $body['request_category']   ?? 'NORMAL',
+                    $body['usage_type']         ?? 'PERSONAL',
                     $userId,
                     $body['vehicle_make'],
                     $body['vehicle_model'],
@@ -807,8 +842,20 @@ class CPDController
                     $body['net_weight']         ?? 0,
                     $body['vehicle_value']      ?? 0,
                     $body['mulkiya_no']         ?? '',
-                    $body['extra_owner1_name']  ?? '',
-                    $body['extra_owner2_name']  ?? '',
+                    $body['extra_owner1_name']     ?? '',
+                    $body['extra_owner1_eid']      ?? '',
+                    $body['extra_owner1_passport'] ?? '',
+                    $body['extra_owner2_name']     ?? '',
+                    $body['extra_owner2_eid']      ?? '',
+                    $body['extra_owner2_passport'] ?? '',
+                    $body['uae_refree1']              ?? '',
+                    $body['uae_refree1_mobile']       ?? '',
+                    $body['uae_refree2']              ?? '',
+                    $body['uae_refree2_mobile']       ?? '',
+                    $body['destination_refree1']        ?? '',
+                    $body['destination_refree1_mobile'] ?? '',
+                    $body['destination_refree2']        ?? '',
+                    $body['destination_refree2_mobile'] ?? '',
                     $body['guarantee_amount']   ?? 0,
                     $body['booking_fee']        ?? 0,
                     $body['extra_fees']         ?? 0,
@@ -1185,7 +1232,7 @@ class CPDController
         if ($carnetNo === '') Response::error('Carnet number is required', 422);
 
         $row = $this->db->queryOne(
-            "SELECT r.auto_id, r.request_id, r.request_status, r.requested_datetime,
+            "SELECT r.auto_id, r.request_id, r.request_status, r.requested_datetime, r.usage_type,
                     r.vehicle_make, r.vehicle_model, r.registration_no, r.chassis_no, r.engine_no,
                     r.manuf_year, r.color, r.body_type, r.no_of_cylinders, r.horse_power,
                     r.net_weight, r.vehicle_value, r.mulkiya_no, r.vehicle_registered_in,
@@ -1193,6 +1240,7 @@ class CPDController
                     r.extra_owner1_name, r.extra_owner2_name,
                     ru.title, ru.first_name, ru.last_name, ru.nationality_id, ru.city,
                     ru.uae_address, ru.po_box, ru.emirates_id, ru.passport_no,
+                    ru.dob, ru.sex, ru.license_no, ru.license_expiry,
                     u.mobile_no, u.email,
                     c.carnet_no, c.is_damaged
              FROM mn_cpd_requests r
@@ -1221,6 +1269,41 @@ class CPDController
         );
 
         Response::success($row);
+    }
+
+    /**
+     * GET /api/cpd/my-issued-carnets
+     * All of the caller's own issued Carnets, with return/renewal status —
+     * powers the public Renew/Return list screens.
+     */
+    public function myIssuedCarnets(array $params, array $body, array $query): void
+    {
+        $userId = Auth::id();
+
+        $rows = $this->db->query(
+            "SELECT t.auto_id, t.request_id, t.request_status, t.requested_datetime,
+                    t.vehicle_make, t.vehicle_model, t.registration_no, t.chassis_no,
+                    t.total_amount, t.carnet_no,
+                    (SELECT return_id FROM mn_cpd_carnet_returns WHERE request_id = t.auto_id LIMIT 1) AS return_id,
+                    (SELECT added_datetime FROM mn_cpd_carnet_returns WHERE request_id = t.auto_id LIMIT 1) AS return_added_datetime,
+                    (SELECT confirmed_by FROM mn_cpd_carnet_returns WHERE request_id = t.auto_id LIMIT 1) AS return_confirmed_by,
+                    (SELECT request_id FROM mn_cpd_requests WHERE parent_request_id = t.auto_id LIMIT 1) AS renewal_request_id
+             FROM (
+                 SELECT r.auto_id, r.request_id, r.request_status, r.requested_datetime,
+                        r.vehicle_make, r.vehicle_model, r.registration_no, r.chassis_no,
+                        r.total_amount, c.carnet_no,
+                        ROW_NUMBER() OVER (PARTITION BY r.auto_id ORDER BY ic.carnet_issue_id DESC) AS rn
+                 FROM mn_cpd_requests r
+                 JOIN mn_cpd_issued_carnets ic ON ic.request_id = r.auto_id
+                 JOIN mn_cpd_carnets c         ON c.carnet_id   = ic.carnet_id
+                 WHERE r.belonging_user_id = ? AND r.request_status = 3
+             ) t
+             WHERE t.rn = 1
+             ORDER BY t.auto_id DESC",
+            [$userId],
+        );
+
+        Response::success($rows);
     }
 
     public function returnCarnet(array $params, array $body, array $query): void
@@ -1486,7 +1569,8 @@ class CPDController
     public function guaranteeRules(array $params, array $body, array $query): void
     {
         $groups = $this->db->query(
-            'SELECT group_code, group_label, fixed_amount, special_note
+            'SELECT group_code, group_label, fixed_amount, fixed_amount_uae_national,
+                    motorcycle_flat_amount, special_note
              FROM mn_cpd_guarantee_groups ORDER BY sort_order',
         );
 
@@ -1516,6 +1600,7 @@ class CPDController
             'country_map'       => $countryMap,
             'booking_fees'      => $bookingFees,
             'extra_driver_fee'  => Config::CPD_EXTRA_DRIVER_FEE,
+            'delivery_fee'      => Config::CPD_DELIVERY_FEE,
         ]);
     }
 
@@ -1749,6 +1834,8 @@ class CPDController
             'cpd_mulkiya_back'      => 'Traffic File Back',
             'cpd_emirates_id_front' => 'Emirates ID Front',
             'cpd_emirates_id_back'  => 'Emirates ID Back',
+            'cpd_dl_front'          => 'Driving License Front',
+            'cpd_dl_back'           => 'Driving License Back',
             'cpd_passport'          => 'Passport Photo',
             'cpd_owner_visa'        => 'Visa Page',
             'cpd_trade_license'     => 'Trade License',
@@ -2214,6 +2301,8 @@ class CPDController
             'traffic_back'   => 'cpd_mulkiya_back',
             'eid_front'      => 'cpd_emirates_id_front',
             'eid_back'       => 'cpd_emirates_id_back',
+            'dl_front'       => 'cpd_dl_front',
+            'dl_back'        => 'cpd_dl_back',
             'passport_photo' => 'cpd_passport',
             'visa_page'      => 'cpd_owner_visa',
             'trade_license'  => 'cpd_trade_license',

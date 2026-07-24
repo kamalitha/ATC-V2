@@ -38,6 +38,9 @@
             </button>
           </div>
         </div>
+        <div style="text-align:right;margin:-8px 0 12px">
+          <a href="#" id="link-forgot-password" style="font-size:.82rem;color:var(--accent)">Forgot password?</a>
+        </div>
         <div id="login-error" class="login-error hidden"></div>
         <button type="submit" class="login-btn" id="login-btn">
           <span class="btn-text">Login</span>
@@ -49,6 +52,27 @@
         <button type="button" id="btn-uae-pass" class="btn-uae-pass">
           <span>Sign in with UAE Pass</span>
         </button>
+      </form>
+
+      <form id="forgot-password-form" class="hidden" novalidate>
+        <p style="font-size:.85rem;color:var(--text-muted);margin:0 0 16px">
+          Enter the email address you use to sign in. We'll send a new password to it.
+        </p>
+        <div class="login-input-group">
+          <label for="forgot-password-email">Email</label>
+          <input id="forgot-password-email" type="email" autocomplete="email" required placeholder="you@example.com" />
+        </div>
+        <div id="forgot-password-error" class="login-error hidden"></div>
+        <div id="forgot-password-success" class="login-error hidden" style="color:var(--success,#16a34a);background:rgba(22,163,74,.08);border-color:rgba(22,163,74,.3)"></div>
+        <button type="submit" class="login-btn" id="forgot-password-btn">
+          <span class="btn-text">Send New Password</span>
+          <span class="btn-spinner hidden"><i class="fa-solid fa-spinner fa-spin"></i></span>
+        </button>
+        <div style="text-align:center;margin-top:14px">
+          <a href="#" id="link-back-to-login" style="font-size:.82rem;color:var(--accent)">
+            <i class="fa-solid fa-arrow-left"></i> Back to login
+          </a>
+        </div>
       </form>
     </div>
   </section>

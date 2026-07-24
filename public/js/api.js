@@ -87,6 +87,7 @@ const api = {
     login:  (creds)  => request('POST', '/auth/login',  { body: creds }),
     logout: ()       => request('POST', '/auth/logout'),
     me:     ()       => request('GET',  '/auth/me'),
+    forgotPassword: (email) => request('POST', '/auth/forgot-password', { body: { email } }),
   },
 
   // Users
@@ -153,6 +154,7 @@ const api = {
     searchByEid:    (eid)    => request('GET',  '/cpd/search-by-eid', { params: { eid } }),
     getByRef:       (ref)    => request('GET',  '/cpd/search-by-ref',   { params: { ref } }),
     searchOwnByCarnet: (carnetNo) => request('GET', '/cpd/search-own-by-carnet', { params: { carnet_no: carnetNo } }),
+    myIssuedCarnets:   ()         => request('GET', '/cpd/my-issued-carnets'),
     searchClaims:   (carnetNo) => request('GET',  '/cpd/claims/search',        { params: { carnet_no: carnetNo } }),
     addClaim:             (fd)                   => requestUpload('/cpd/claims', fd),
     getClaims:            (requestId)            => request('GET', `/cpd/requests/${requestId}/claims`),

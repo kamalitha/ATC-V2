@@ -351,12 +351,28 @@ export async function renderCPDNew() {
               <input name="city" placeholder="City" />
             </div>
             <div class="field">
-              <label>Extra Driver 1 Name</label>
+              <label>Extra Driver 1 Full Name</label>
               <input name="extra_owner1_name" placeholder="Full name" />
             </div>
             <div class="field">
-              <label>Extra Driver 2 Name</label>
+              <label>Extra Driver 1 Emirates ID</label>
+              <input name="extra_owner1_eid" placeholder="784-XXXX-XXXXXXX-X" />
+            </div>
+            <div class="field">
+              <label>Extra Driver 1 Passport Number</label>
+              <input name="extra_owner1_passport" placeholder="Passport number" />
+            </div>
+            <div class="field">
+              <label>Extra Driver 2 Full Name</label>
               <input name="extra_owner2_name" placeholder="Full name" />
+            </div>
+            <div class="field">
+              <label>Extra Driver 2 Emirates ID</label>
+              <input name="extra_owner2_eid" placeholder="784-XXXX-XXXXXXX-X" />
+            </div>
+            <div class="field">
+              <label>Extra Driver 2 Passport Number</label>
+              <input name="extra_owner2_passport" placeholder="Passport number" />
             </div>
           </div>
         </div>
@@ -365,7 +381,7 @@ export async function renderCPDNew() {
       <div class="section-card">
         <div class="section-card-header">Vehicle Information</div>
         <div class="section-card-body">
-          <div class="pub-identity-card">
+          <div class="pub-identity-card cpd-officer-form-card">
             <div class="pub-identity-rows">
 
               <div class="pub-identity-row">
@@ -515,26 +531,59 @@ export async function renderCPDNew() {
 
               <div class="pub-identity-row">
                 <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
-                <span class="pub-id-label">Reference 1 (UAE)</span>
-                <input name="uae_refree1" class="pub-id-inline-input" placeholder="Full name and phone number" />
+                <span class="pub-id-label">Reference 1 in UAE Full Name</span>
+                <input name="uae_refree1" class="pub-id-inline-input" placeholder="Full name" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+                <span class="pub-id-label">Reference 1 in UAE Mobile Number</span>
+                <input name="uae_refree1_mobile" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
               </div>
 
               <div class="pub-identity-row">
                 <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
-                <span class="pub-id-label">Reference 2 (UAE)</span>
-                <input name="uae_refree2" class="pub-id-inline-input" placeholder="Full name and phone number" />
+                <span class="pub-id-label">Reference 2 in UAE Full Name</span>
+                <input name="uae_refree2" class="pub-id-inline-input" placeholder="Full name" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+                <span class="pub-id-label">Reference 2 in UAE Mobile Number</span>
+                <input name="uae_refree2_mobile" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
               </div>
 
               <div class="pub-identity-row">
                 <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
-                <span class="pub-id-label">Reference 1 (Destination)</span>
-                <input name="destination_refree1" class="pub-id-inline-input" placeholder="Full name and phone number" />
+                <span class="pub-id-label">Reference 1 in Destination Full Name</span>
+                <input name="destination_refree1" class="pub-id-inline-input" placeholder="Full name" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+                <span class="pub-id-label">Reference 1 in Destination Mobile Number</span>
+                <input name="destination_refree1_mobile" class="pub-id-inline-input" placeholder="Mobile number" />
               </div>
 
               <div class="pub-identity-row">
                 <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
-                <span class="pub-id-label">Reference 2 (Destination)</span>
-                <input name="destination_refree2" class="pub-id-inline-input" placeholder="Full name and phone number" />
+                <span class="pub-id-label">Reference 2 in Destination Full Name</span>
+                <input name="destination_refree2" class="pub-id-inline-input" placeholder="Full name" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+                <span class="pub-id-label">Reference 2 in Destination Mobile Number</span>
+                <input name="destination_refree2_mobile" class="pub-id-inline-input" placeholder="Mobile number" />
+              </div>
+
+              <div class="pub-identity-row">
+                <span class="pub-id-icon"><i class="fa-solid fa-briefcase"></i></span>
+                <span class="pub-id-label">Usage Type</span>
+                <select name="usage_type" id="cpd-new-usage-type" class="pub-id-inline-select">
+                  <option value="PERSONAL" selected>Personal Use</option>
+                  <option value="COMPANY">Company Use</option>
+                </select>
               </div>
 
             </div>
@@ -606,9 +655,12 @@ export async function renderCPDNew() {
             ${officerCpdDocZone('eid_front',      'Emirates ID Front')}
             ${officerCpdDocZone('eid_back',       'Emirates ID Back')}
             ${officerCpdDocZone('passport_photo', 'Passport Size Photo')}
-            ${officerCpdDocZone('visa_page',      'Visa Page of Owner')}
-            ${officerCpdDocZone('trade_license',  'Trade License')}
-            ${officerCpdDocZone('noc',            'NOC from Company Owner')}
+            <div id="cpd-new-corporate-docs" style="display:none">
+              ${officerCpdDocZone('visa_page',      'Visa Page of Owner')}
+              ${officerCpdDocZone('trade_license',  'Trade License')}
+              ${officerCpdDocZone('noc',            'NOC from Company Owner')}
+            </div>
+            <!-- corporate-docs shown/hidden via #cpd-new-usage-type change; 'contents' keeps grid layout intact when visible -->
           </div>
         </div>
       </div>
@@ -685,6 +737,9 @@ export async function renderCPDNew() {
     const manufYear     = document.querySelector('[name="manuf_year"]')?.value ?? '';
     const tier = cpdGetTier(bodyType);
     const band = cpdGetBand(manufYear);
+    const isMotorcycle  = bodyType === 'Motor Cycle';
+    const nationalityVal = document.querySelector('[name="nationality"]')?.value ?? '';
+    const isUaeNational  = nationalities.find(n => String(n.nationality_id) === String(nationalityVal))?.nationality === 'United Arab Emirates';
 
     const groupAmounts = {};
     selectedNames.forEach((name, idx) => {
@@ -692,8 +747,15 @@ export async function renderCPDNew() {
       const grpCode = mapping?.group_code ?? 'DEFAULT';
       const grp     = _groups[grpCode];
       let amount = 0;
-      if (grp?.fixed_amount != null) amount = +grp.fixed_amount;
-      else { const br = (_rates[grpCode] ?? [])[band]; amount = br ? br[tier] : 0; }
+      if (isMotorcycle && grp?.motorcycle_flat_amount != null) {
+        amount = +grp.motorcycle_flat_amount;
+      } else if (grp?.fixed_amount != null) {
+        amount = (isUaeNational && grp?.fixed_amount_uae_national != null)
+          ? +grp.fixed_amount_uae_national
+          : +grp.fixed_amount;
+      } else {
+        const br = (_rates[grpCode] ?? [])[band]; amount = br ? br[tier] : 0;
+      }
       if (!groupAmounts[grpCode] || amount > groupAmounts[grpCode]) groupAmounts[grpCode] = amount;
     });
 
@@ -724,6 +786,7 @@ export async function renderCPDNew() {
     cb.addEventListener('change', recalcGuarantee));
   document.querySelector('[name="body_type"]')?.addEventListener('change', recalcGuarantee);
   document.querySelector('[name="manuf_year"]')?.addEventListener('change', recalcGuarantee);
+  document.querySelector('[name="nationality"]')?.addEventListener('change', recalcGuarantee);
   document.querySelector('[name="extra_owner1_name"]')?.addEventListener('input', recalcGuarantee);
   document.querySelector('[name="extra_owner2_name"]')?.addEventListener('input', recalcGuarantee);
 
@@ -746,6 +809,12 @@ export async function renderCPDNew() {
       </div>
     </div>`;
   }
+
+  // Toggle corporate-only documents when Usage Type changes
+  document.getElementById('cpd-new-usage-type')?.addEventListener('change', e => {
+    const corpDocs = document.getElementById('cpd-new-corporate-docs');
+    if (corpDocs) corpDocs.style.display = e.target.value === 'COMPANY' ? 'contents' : 'none';
+  });
 
   // Bind document upload zones
   document.querySelectorAll('.doc-upload-zone[id^="officer-cpd-zone-"]').forEach(zone => {
@@ -866,14 +935,22 @@ export async function renderCPDNew() {
       set('mulkiya_no',            d.mulkiya_no);
       set('registration_no',       d.registration_no);
       set('extra_owner1_name',     d.extra_owner1_name);
+      set('extra_owner1_eid',      d.extra_owner1_eid);
+      set('extra_owner1_passport', d.extra_owner1_passport);
       set('extra_owner2_name',     d.extra_owner2_name);
+      set('extra_owner2_eid',      d.extra_owner2_eid);
+      set('extra_owner2_passport', d.extra_owner2_passport);
       set('additional_remarks',    d.additional_remarks);
       set('others1',               d.others1);
       set('others2',               d.others2);
-      set('uae_refree1',           d.uae_refree1);
-      set('uae_refree2',           d.uae_refree2);
-      set('destination_refree1',   d.destination_refree1);
-      set('destination_refree2',   d.destination_refree2);
+      set('uae_refree1',                  d.uae_refree1);
+      set('uae_refree1_mobile',           d.uae_refree1_mobile);
+      set('uae_refree2',                  d.uae_refree2);
+      set('uae_refree2_mobile',           d.uae_refree2_mobile);
+      set('destination_refree1',          d.destination_refree1);
+      set('destination_refree1_mobile',   d.destination_refree1_mobile);
+      set('destination_refree2',          d.destination_refree2);
+      set('destination_refree2_mobile',   d.destination_refree2_mobile);
 
       const hasVehicle = d.vehicle_make || d.chassis_no;
       status.innerHTML = `<span style="color:var(--success)">
@@ -1002,6 +1079,9 @@ export async function renderCPDDetail(param) {
       <div class="section-card-body">
         <div class="detail-grid">
           ${detail('Full Name',         `${r.first_name} ${r.last_name}`)}
+          ${detail('Date of Birth',     r.dob ? formatDate(r.dob) : '—')}
+          ${detail('Nationality',       r.nationality || '—')}
+          ${detail('Gender',            r.sex || '—')}
           ${detail('Email',             r.email)}
           ${detail('Mobile',            r.mobile_no)}
           ${detail('Emirates ID',       r.emirates_id)}
@@ -1009,8 +1089,12 @@ export async function renderCPDDetail(param) {
           ${detail('PO Box',            r.po_box)}
           ${detail('City',              r.city)}
           ${detail('UAE Address',       r.uae_address)}
-          ${detail('Extra Driver 1',    r.extra_owner1_name || '—')}
-          ${detail('Extra Driver 2',    r.extra_owner2_name || '—')}
+          ${detail('Extra Driver 1 Full Name',       r.extra_owner1_name     || '—')}
+          ${detail('Extra Driver 1 Emirates ID',     r.extra_owner1_eid      || '—')}
+          ${detail('Extra Driver 1 Passport Number', r.extra_owner1_passport || '—')}
+          ${detail('Extra Driver 2 Full Name',       r.extra_owner2_name     || '—')}
+          ${detail('Extra Driver 2 Emirates ID',     r.extra_owner2_eid      || '—')}
+          ${detail('Extra Driver 2 Passport Number', r.extra_owner2_passport || '—')}
         </div>
       </div>
     </div>
@@ -1019,9 +1103,12 @@ export async function renderCPDDetail(param) {
       <div class="section-card-header">Vehicle</div>
       <div class="section-card-body">
         <div class="detail-grid">
+          ${detail('Licence Number',    r.license_no || '—')}
+          ${detail('Licence Expiry',    r.license_expiry ? formatDate(r.license_expiry) : '—')}
+          ${detail('Plate No',          r.registration_no)}
           ${detail('Make',              r.vehicle_make)}
           ${detail('Model',             r.vehicle_model)}
-          ${detail('Plate No',          r.registration_no)}
+          ${detail('Registered In',     r.vehicle_registered_in || '—')}
           ${detail('Chassis No',        r.chassis_no)}
           ${detail('Engine No',         r.engine_no)}
           ${detail('Year',              r.manuf_year)}
@@ -1037,17 +1124,35 @@ export async function renderCPDDetail(param) {
           ${detail('No of Seats',       r.no_of_seats || '—')}
           ${detail('Radio',             r.radio       || '—')}
           ${detail('Spare Tyre',        r.spare_tyre  || '—')}
+          ${detail('Usage Type',        r.usage_type === 'COMPANY' ? 'Company Use' : 'Personal Use')}
         </div>
         ${r.additional_remarks || r.others1 || r.others2 || r.uae_refree1 || r.destination_refree1 || r.uae_refree2 || r.destination_refree2 ? `
         <div class="detail-grid" style="margin-top:12px">
-          ${r.additional_remarks  ? detail('Additional Remarks',                        r.additional_remarks)  : ''}
-          ${r.others1             ? detail('Other Particulars / Extra Items (1)',        r.others1)             : ''}
-          ${r.others2             ? detail('Other Particulars / Extra Items (2)',        r.others2)             : ''}
-          ${r.uae_refree1         ? detail('Reference 1 (UAE) Name / Contact',           r.uae_refree1)         : ''}
-          ${r.destination_refree1 ? detail('Reference 1 (Destination) Name / Contact',  r.destination_refree1) : ''}
-          ${r.uae_refree2         ? detail('Reference 2 (UAE) Name / Contact',           r.uae_refree2)         : ''}
-          ${r.destination_refree2 ? detail('Reference 2 (Destination) Name / Contact',  r.destination_refree2) : ''}
+          ${r.additional_remarks  ? detail('Additional Remarks',                 r.additional_remarks)  : ''}
+          ${r.others1             ? detail('Other Particulars / Extra Items (1)', r.others1)             : ''}
+          ${r.others2             ? detail('Other Particulars / Extra Items (2)', r.others2)             : ''}
+          ${r.uae_refree1         ? detail('Reference 1 in UAE Full Name',        r.uae_refree1)         : ''}
+          ${r.uae_refree1_mobile  ? detail('Reference 1 in UAE Mobile Number',    r.uae_refree1_mobile)  : ''}
+          ${r.uae_refree2         ? detail('Reference 2 in UAE Full Name',        r.uae_refree2)         : ''}
+          ${r.uae_refree2_mobile  ? detail('Reference 2 in UAE Mobile Number',    r.uae_refree2_mobile)  : ''}
+          ${r.destination_refree1        ? detail('Reference 1 in Destination Full Name',     r.destination_refree1)        : ''}
+          ${r.destination_refree1_mobile ? detail('Reference 1 in Destination Mobile Number', r.destination_refree1_mobile) : ''}
+          ${r.destination_refree2        ? detail('Reference 2 in Destination Full Name',     r.destination_refree2)        : ''}
+          ${r.destination_refree2_mobile ? detail('Reference 2 in Destination Mobile Number', r.destination_refree2_mobile) : ''}
         </div>` : ''}
+      </div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-card-header">Delivery / Pick-up</div>
+      <div class="section-card-body">
+        <div class="detail-grid">
+          ${detail('Delivery Method', r.delivery_option === 'home_delivery' ? 'Home Delivery'
+              : r.delivery_option === 'pick_from_dubai_office' ? 'Collection — Dubai Office'
+              : r.delivery_option === 'pick_from_abudhabi_office' ? 'Collection — Abu Dhabi Office'
+              : (r.delivery_option || '—'))}
+          ${r.delivery_option === 'home_delivery' ? detail('Delivery Address', r.delivery_address || '—') : ''}
+        </div>
       </div>
     </div>
 
@@ -1067,6 +1172,7 @@ export async function renderCPDDetail(param) {
           ${detail('Category',       r.request_category)}
           ${detail('Guarantee',      formatCurrency(r.guarantee_amount))}
           ${detail('Booking Fee',    formatCurrency(r.booking_fee))}
+          ${detail('Extra Fees',     formatCurrency(r.extra_fees))}
           ${detail('VAT',            formatCurrency(r.vat_amount))}
           ${detail('Total',          formatCurrency(r.total_amount))}
           ${detail('Submitted',      formatDateTime(r.requested_datetime))}
@@ -2794,16 +2900,25 @@ export async function renderCPDRenew() {
     }
     const ids   = checked.map(cb=>cb.value);
     const names = ids.map(id=>countries.find(c=>String(c.nationality_id)===id)?.nationality??'');
-    const tier  = getTier(form.querySelector('[name="body_type"]')?.value);
+    const bodyType = form.querySelector('[name="body_type"]')?.value;
+    const tier  = getTier(bodyType);
     const band  = getBand(form.querySelector('[name="manuf_year"]')?.value);
+    const isMotorcycle  = bodyType === 'Motor Cycle';
+    const nationalityVal = form.querySelector('[name="nationality"]')?.value ?? '';
+    const isUaeNational  = nationalities.find(n => String(n.nationality_id) === String(nationalityVal))?.nationality === 'United Arab Emirates';
     const ga = {};
     names.forEach((name,i)=>{
       const m = _countryMap[`id:${ids[i]}`] ?? _countryMap[name.toLowerCase()];
       const gc = m?.group_code ?? 'DEFAULT';
       const g  = _groups[gc];
       let amt  = 0;
-      if (g?.fixed_amount!=null) amt=+g.fixed_amount;
-      else { const br=(_rates[gc]??[])[band]; amt=br?br[tier]:0; }
+      if (isMotorcycle && g?.motorcycle_flat_amount != null) {
+        amt = +g.motorcycle_flat_amount;
+      } else if (g?.fixed_amount != null) {
+        amt = (isUaeNational && g?.fixed_amount_uae_national != null) ? +g.fixed_amount_uae_national : +g.fixed_amount;
+      } else {
+        const br=(_rates[gc]??[])[band]; amt=br?br[tier]:0;
+      }
       if (!ga[gc]||amt>ga[gc]) ga[gc]=amt;
     });
     const gFee = Math.max(0,...Object.values(ga));
@@ -2824,6 +2939,7 @@ export async function renderCPDRenew() {
   document.querySelectorAll('#cpd-renew-form input[name="countries"]').forEach(cb=>cb.addEventListener('change',recalcRenew));
   document.querySelector('#cpd-renew-form [name="body_type"]')?.addEventListener('change',recalcRenew);
   document.querySelector('#cpd-renew-form [name="manuf_year"]')?.addEventListener('change',recalcRenew);
+  document.querySelector('#cpd-renew-form [name="nationality"]')?.addEventListener('change',recalcRenew);
   document.querySelector('#cpd-renew-form [name="extra_owner1_name"]')?.addEventListener('input',recalcRenew);
   document.querySelector('#cpd-renew-form [name="extra_owner2_name"]')?.addEventListener('input',recalcRenew);
 

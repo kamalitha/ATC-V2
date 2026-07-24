@@ -6,7 +6,7 @@ import { renderCPDRequests, renderCPDNew, renderCPDRenew, renderCPDDetail, rende
 import { renderUsers }       from './pages/users.js';
 import { renderReports }     from './pages/reports.js';
 import { renderProfile }     from './pages/profile.js';
-import { renderPublicApplyIDL, renderPublicApplyCPD, renderPublicHistory, renderPaymentResult, renderPublicCPDReturn, renderPublicCPDRenewSearch } from './pages/public.js';
+import { renderPublicApplyIDL, renderPublicApplyCPD, renderPublicHistory, renderPaymentResult, renderPublicCPDReturn, renderPublicCPDRenewSearch, renderPublicSelectService } from './pages/public.js';
 import { renderSupportTickets, renderPublicSupportTickets } from './pages/support.js';
 
 // ── Global JS error logging ───────────────────────────────────────────────────
@@ -94,6 +94,7 @@ const CRUMBS = {
   'public-apply-cpd': [{ label: 'Apply for CPD' }],
   'public-cpd-return': [{ label: 'Return your CPD' }],
   'public-cpd-renew': [{ label: 'Renew your CPD' }],
+  'public-select-service': [{ label: 'Select Service' }],
   'public-history':        [{ label: 'My History' }],
   'payment-success':       [{ label: 'Payment Successful' }],
   'payment-declined':      [{ label: 'Payment Declined' }],
@@ -158,6 +159,7 @@ const ROUTES = {
   'public-apply-cpd': (param) => renderPublicApplyCPD(param),
   'public-cpd-return': () => renderPublicCPDReturn(),
   'public-cpd-renew': () => renderPublicCPDRenewSearch(),
+  'public-select-service': () => renderPublicSelectService(),
   'public-history':   () => renderPublicHistory(),
   'payment-success':  () => renderPaymentResult('success'),
   'payment-declined': () => renderPaymentResult('declined'),
@@ -466,7 +468,11 @@ export async function refreshBadges() {
 }
 
 // ── Auth flow ─────────────────────────────────────────────────────────────────
-function showLogin() { document.getElementById('login-screen').classList.remove('hidden'); document.getElementById('app-shell').classList.add('hidden'); }
+function showLogin() {
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('app-shell').classList.add('hidden');
+  showLoginForm();
+}
 function showApp()   { document.getElementById('login-screen').classList.add('hidden');    document.getElementById('app-shell').classList.remove('hidden'); }
 
 function populateUserInfo(user) {
@@ -507,12 +513,52 @@ async function handleLogin(e) {
     setToken(data.csrf_token);
     populateUserInfo(data);
     showApp();
-    navigate(defaultRoute(data.role_name));
+    navigate(data.role_name === 'public' ? 'public-select-service' : defaultRoute(data.role_name));
     refreshBadges();
   } catch (err) {
     errEl.textContent = err.message ?? 'Login failed';
     errEl.classList.remove('hidden');
     document.getElementById('login-password').value = '';
+  } finally {
+    btn.disabled = false;
+    btn.querySelector('.btn-text').classList.remove('hidden');
+    btn.querySelector('.btn-spinner').classList.add('hidden');
+  }
+}
+
+function showForgotPassword() {
+  document.getElementById('login-form').classList.add('hidden');
+  document.getElementById('forgot-password-form').classList.remove('hidden');
+  document.getElementById('forgot-password-error').classList.add('hidden');
+  document.getElementById('forgot-password-success').classList.add('hidden');
+  document.getElementById('forgot-password-email').value = '';
+}
+
+function showLoginForm() {
+  document.getElementById('forgot-password-form').classList.add('hidden');
+  document.getElementById('login-form').classList.remove('hidden');
+}
+
+async function handleForgotPassword(e) {
+  e.preventDefault();
+  const btn     = document.getElementById('forgot-password-btn');
+  const errEl   = document.getElementById('forgot-password-error');
+  const okEl    = document.getElementById('forgot-password-success');
+  const email   = document.getElementById('forgot-password-email').value.trim();
+
+  btn.disabled = true;
+  btn.querySelector('.btn-text').classList.add('hidden');
+  btn.querySelector('.btn-spinner').classList.remove('hidden');
+  errEl.classList.add('hidden');
+  okEl.classList.add('hidden');
+
+  try {
+    await api.auth.forgotPassword(email);
+    okEl.textContent = 'A new password has been sent to your email address.';
+    okEl.classList.remove('hidden');
+  } catch (err) {
+    errEl.textContent = err.message ?? 'Could not process your request';
+    errEl.classList.remove('hidden');
   } finally {
     btn.disabled = false;
     btn.querySelector('.btn-text').classList.remove('hidden');
@@ -535,6 +581,9 @@ async function boot() {
   startClock();
 
   document.getElementById('login-form').addEventListener('submit', handleLogin);
+  document.getElementById('forgot-password-form').addEventListener('submit', handleForgotPassword);
+  document.getElementById('link-forgot-password')?.addEventListener('click', e => { e.preventDefault(); showForgotPassword(); });
+  document.getElementById('link-back-to-login')?.addEventListener('click', e => { e.preventDefault(); showLoginForm(); });
 
   // UAE Pass — placeholder: alert until OAuth is configured
   document.getElementById('btn-uae-pass')?.addEventListener('click', () => {

@@ -1,5 +1,5 @@
 // pages/profile.js
-import api from '../api.js';
+import api, { setToken } from '../api.js';
 import { toast } from '../app.js';
 import { formatDate, formatDateTime } from '../components/table.js';
 
@@ -8,6 +8,7 @@ export async function renderProfile() {
   content.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
 
   const user = await api.auth.me();
+  setToken(user.csrf_token);
 
   const initials = `${user.first_name?.[0]??''}${user.last_name?.[0]??''}`.toUpperCase();
   const activebadge = user.is_active
@@ -82,10 +83,8 @@ export async function renderProfile() {
         <div class="section-card-header">Change Password</div>
         <div class="section-card-body">
           <form id="pwd-form" novalidate>
-            <div class="field"><label>Current Password *</label>
-              <input id="p-current" type="password" required placeholder="••••••••" /></div>
             <div class="field"><label>New Password *</label>
-              <input id="p-new" type="password" required placeholder="Min 8 characters" /></div>
+              <input id="p-new" type="password" required placeholder="Enter new password" /></div>
             <div class="field"><label>Confirm New Password *</label>
               <input id="p-confirm" type="password" required placeholder="Repeat new password" /></div>
             <div id="pwd-error" class="form-error hidden"></div>
@@ -133,11 +132,6 @@ export async function renderProfile() {
     const confirm = document.getElementById('p-confirm').value;
     errEl.classList.add('hidden');
 
-    if (newPwd.length < 8) {
-      errEl.textContent = 'New password must be at least 8 characters';
-      errEl.classList.remove('hidden');
-      return;
-    }
     if (newPwd !== confirm) {
       errEl.textContent = 'Passwords do not match';
       errEl.classList.remove('hidden');
@@ -150,8 +144,7 @@ export async function renderProfile() {
 
     try {
       await api.put('/auth/change-password', {
-        current_password: document.getElementById('p-current').value,
-        new_password:     newPwd,
+        new_password: newPwd,
       });
       toast('Password changed successfully', 'success');
       e.target.reset();

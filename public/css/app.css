@@ -1832,6 +1832,55 @@ table.dataTable .badge {
   font-size: .84rem;
 }
 .pub-identity-row:last-child { border-bottom: none; }
+
+/* Side-by-side (2-column) row layout, used by CPD's Identity/Vehicle steps */
+.pub-identity-rows-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.pub-identity-rows-2col .pub-identity-row {
+  grid-template-columns: 24px 130px 1fr auto;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+.pub-identity-rows-2col .pub-identity-row:nth-child(2n) { border-right: none; }
+.pub-identity-rows-2col .pub-identity-row:last-child,
+.pub-identity-rows-2col .pub-identity-row:nth-last-child(2):nth-child(odd) {
+  border-bottom: none;
+}
+@media (max-width: 720px) {
+  .pub-identity-rows-2col { grid-template-columns: 1fr; }
+  .pub-identity-rows-2col .pub-identity-row { border-right: none; border-bottom: 1px solid var(--border); }
+  .pub-identity-rows-2col .pub-identity-row:last-child { border-bottom: none; }
+}
+
+/* Grouped column layout: first N rows fill the left column, next N fill the
+   right column (e.g. Extra Driver 1 vs Extra Driver 2, Reference 1 vs Reference 2) */
+.pub-identity-rows-bycol-3,
+.pub-identity-rows-bycol-4 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.pub-identity-rows-bycol-3 { grid-auto-flow: column; grid-template-rows: repeat(3, auto); }
+.pub-identity-rows-bycol-4 { grid-auto-flow: column; grid-template-rows: repeat(4, auto); }
+.pub-identity-rows-bycol-3 .pub-identity-row,
+.pub-identity-rows-bycol-4 .pub-identity-row {
+  grid-template-columns: 24px 130px 1fr auto;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+.pub-identity-rows-bycol-3 .pub-identity-row:nth-child(3),
+.pub-identity-rows-bycol-3 .pub-identity-row:nth-child(6) { border-bottom: none; }
+.pub-identity-rows-bycol-3 .pub-identity-row:nth-child(n+4) { border-right: none; }
+.pub-identity-rows-bycol-4 .pub-identity-row:nth-child(4),
+.pub-identity-rows-bycol-4 .pub-identity-row:nth-child(8) { border-bottom: none; }
+.pub-identity-rows-bycol-4 .pub-identity-row:nth-child(n+5) { border-right: none; }
+@media (max-width: 720px) {
+  .pub-identity-rows-bycol-3, .pub-identity-rows-bycol-4 { grid-template-columns: 1fr; grid-auto-flow: row; grid-template-rows: none; }
+  .pub-identity-rows-bycol-3 .pub-identity-row, .pub-identity-rows-bycol-4 .pub-identity-row { border-right: none; border-bottom: 1px solid var(--border); }
+  .pub-identity-rows-bycol-3 .pub-identity-row:last-child, .pub-identity-rows-bycol-4 .pub-identity-row:last-child { border-bottom: none; }
+}
+
 .pub-id-icon { color: var(--text-muted); font-size: .9rem; text-align: center; }
 .pub-id-label { color: var(--text-muted); font-size: .8rem; }
 .pub-id-value { color: var(--text-primary); font-weight: 600; }
@@ -1846,6 +1895,12 @@ table.dataTable .badge {
   color: var(--text-primary);
   transition: border-color .15s;
 }
+
+/* CPD officer forms (New/Renew) — match the font sizing of the .field-based
+   sections on the same screen instead of the smaller public-wizard sizing. */
+.cpd-officer-form-card .pub-id-label { font-size: 1rem; font-weight: 500; color: var(--text-secondary); }
+.cpd-officer-form-card .pub-id-inline-input,
+.cpd-officer-form-card .pub-id-inline-select { font-size: 1rem; }
 .pub-id-inline-input:focus {
   outline: none;
   border-color: var(--accent);
@@ -1882,6 +1937,19 @@ table.dataTable .badge {
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 4px;
+}
+
+/* Apply IDL wizard — match every section's field font/size to the
+   "Your Identity Information" card (.pub-id-label / .pub-id-inline-input). */
+#idl-wizard-form .field label {
+  font-size: .8rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+#idl-wizard-form .field input,
+#idl-wizard-form .field select,
+#idl-wizard-form .field textarea {
+  font-size: .84rem;
 }
 
 /* ── Input icon wrapper ──────────────────────────────────────────────────── */

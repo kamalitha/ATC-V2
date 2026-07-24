@@ -23,7 +23,7 @@ final class Config
     public const CPD_EXTRA_DRIVER_FEE   = 50.00;
     public const DELIVERY_FEE  = 15.75;   // delivery surcharge when send_to_address / home_delivery
     public const CPD_PENALTY           = 150.00;
-    public const CPD_DELIVERY_FEE = 30.00;
+    public const CPD_DELIVERY_FEE = 25.00;
 
     /** Directory where IDL appointment document uploads are stored (relative to API root) */
     public const UPLOADS_DIR    = 'appointment-requests';
@@ -39,6 +39,11 @@ final class Config
     public const TELR_STORE_ID  = '15870';
     public const TELR_AUTH_KEY  = 'SjKmt-Wz8D@Z5nkR';
     public const TELR_CURRENCY  = 'aed';
+
+    // ── Mailjet (transactional email) ────────────────────────────────────────
+    public const MJ_API_KEY  = '4b357e06d6c0bd7489f2afa8029224c5';
+    public const MJ_SECRET   = '45dc5df60ab1b4c6ae55137a8a347d45';
+    public const MJ_RESET_PASSWORD_TEMPLATE = 4360118;
     /** Resolve a config value from ENV first, then fall back to constant */
     public static function env(string $key, mixed $default = null): mixed
     {
