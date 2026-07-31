@@ -1296,7 +1296,11 @@ async function handleIssue(id, param) {
         <div class="field"><label>IDL Number</label>
           <input value="Auto-generated on issue" disabled /></div>
         <div class="field"><label>Booklet Number *</label>
-          <select id="issue-booklet"><option value="">Loading booklets…</option></select></div>
+          <input id="issue-booklet" list="issue-booklet-list" autocomplete="off" disabled
+            placeholder="Loading booklets…" />
+          <datalist id="issue-booklet-list"></datalist>
+          <div class="field-error" id="err-issue-booklet"></div>
+        </div>
       </div>`,
     footer: `<button class="btn btn-ghost" onclick="closeModalGlobal()">
                <i class="fa-solid fa-xmark"></i> Cancel
@@ -1306,21 +1310,28 @@ async function handleIssue(id, param) {
              </button>`,
   });
 
-  const bookletSelect = document.getElementById('issue-booklet');
+  const bookletInput = document.getElementById('issue-booklet');
+  const bookletList  = document.getElementById('issue-booklet-list');
+  const bookletErr   = document.getElementById('err-issue-booklet');
+  let available = [];
   try {
     const booklets = await api.idl.booklets();
-    const available = booklets.filter(b => !Number(b.is_used) && Number(b.is_active));
-    bookletSelect.innerHTML = available.length
-      ? `<option value="">Select booklet…</option>` +
-        available.map(b => `<option value="${esc(b.booklet_no)}">${esc(b.booklet_no)}</option>`).join('')
-      : `<option value="">No booklets available in stock</option>`;
+    available = booklets.filter(b => !Number(b.is_used) && Number(b.is_active));
+    bookletList.innerHTML = available.map(b => `<option value="${esc(b.booklet_no)}"></option>`).join('');
+    bookletInput.placeholder = available.length ? 'Type to search booklet number…' : 'No booklets available in stock';
+    bookletInput.disabled = available.length === 0;
   } catch {
-    bookletSelect.innerHTML = `<option value="">Failed to load booklet stock</option>`;
+    bookletInput.placeholder = 'Failed to load booklet stock';
   }
 
   document.getElementById('confirm-issue').onclick = async () => {
-    const idl_booklet_no = bookletSelect.value;
-    if (!idl_booklet_no) return toast('Select a booklet number', 'error');
+    bookletErr.textContent = '';
+    const idl_booklet_no = bookletInput.value.trim();
+    if (!idl_booklet_no) { bookletErr.textContent = 'Select a booklet number'; return; }
+    if (!available.some(b => b.booklet_no === idl_booklet_no)) {
+      bookletErr.textContent = 'Select a valid, available booklet number from the list';
+      return;
+    }
     const res = await api.idl.issue(id, { idl_booklet_no });
     closeModal();
     toast(`IDL issued successfully — IDL No: ${res.idl_no}`, 'success');
