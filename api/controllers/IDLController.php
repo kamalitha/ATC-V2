@@ -60,6 +60,15 @@ class IDLController
             Response::notFound('Document not found');
         }
 
+        // Any logged-in user could otherwise fetch any other customer's documents
+        // just by guessing an auto_id — restrict to staff or the request's own owner.
+        $user    = Auth::user();
+        $ownerId = (int)$this->db->scalar('SELECT belonging_user_id FROM mn_idl_requests WHERE auto_id=?', [$autoId]);
+        $isOwner = $ownerId > 0 && $ownerId === (int)($user['user_id'] ?? 0);
+        if (($user['role_name'] ?? '') !== 'idl_officer' && !$isOwner) {
+            Response::forbidden('Access denied');
+        }
+
         $filePath = API_ROOT . DIRECTORY_SEPARATOR
                   . Config::UPLOADS_DIR . DIRECTORY_SEPARATOR
                   . $autoId . DIRECTORY_SEPARATOR
@@ -1171,14 +1180,13 @@ class IDLController
     {
         Response::success([
             'idl_amount'    => Config::IDL_AMOUNT,
-            'admin_fee'     => Config::IDL_ADMIN_FEE,
             'delivery_fee'  => Config::DELIVERY_FEE,
         ]);
     }
 
     /**
-     * IDL Fee + Administration Fee + (Delivery Fee when delivered) + VAT 5% on
-     * (IDL Fee + Delivery Fee) — the Administration Fee is VAT-exempt.
+     * IDL Fee (administration fee already folded in) + (Delivery Fee when
+     * delivered) + VAT 5% on (IDL Fee + Delivery Fee).
      */
     private function calcIdlTotal(string $deliveryOption): float
     {
@@ -1186,7 +1194,7 @@ class IDLController
         $deliveryFee = $isDelivery ? Config::DELIVERY_FEE : 0.0;
         $vat         = round((Config::IDL_AMOUNT + $deliveryFee) * 0.05, 2);
 
-        return Config::IDL_AMOUNT + Config::IDL_ADMIN_FEE + $deliveryFee + $vat;
+        return Config::IDL_AMOUNT + $deliveryFee + $vat;
     }
 
     public function myRequests(array $params, array $body, array $query): void
@@ -1425,6 +1433,8 @@ class IDLController
                 'pick_from_dubai_office', 'pick_from_abudhabi_office',
             ])
             ->in('payment_method', ['CASH', 'CARD', 'ONLINE', 'CHEQUE', 'CREDIT_CARD'])
+            ->custom('expiry_date', fn($v) => ($v && strtotime($v) < strtotime(date('Y-m-d')))
+                ? 'Driving licence has expired — enter a valid, unexpired licence' : null)
             ->validate();
 
         $officerId  = Auth::id();
@@ -1595,7 +1605,9 @@ class IDLController
 
     public function update(array $params, array $body, array $query): void
     {
-        $allowed = ['delivery_option','delivery_address','payment_method','air_bill_no','officer_comments','idl_no','idl_booklet_no'];
+        // idl_no / idl_booklet_no are intentionally excluded — they're only ever set
+        // via issue() (auto-generated number + stock-picked booklet), never hand-edited.
+        $allowed = ['delivery_option','delivery_address','payment_method','air_bill_no','officer_comments'];
         $sets    = [];
         $binds   = [];
 
@@ -1685,7 +1697,7 @@ class IDLController
 
     public function issue(array $params, array $body, array $query): void
     {
-        Validator::make($body)->required('idl_no', 'idl_booklet_no')->validate();
+        Validator::make($body)->required('idl_booklet_no')->validate();
 
         // Check booklet not already used
         $used = (int)$this->db->scalar(
@@ -1694,16 +1706,248 @@ class IDLController
         );
         if ($used > 0) Response::error('Booklet number already assigned to another request', 409);
 
+        $idlNo = $this->generateIdlNo();
+
         $this->db->execute(
             "UPDATE mn_idl_requests
              SET request_status=4, idl_no=?, idl_booklet_no=?,
                  issued_date=NOW(), paid_status=1, paid_date=NOW(), processed_by=?
              WHERE auto_id=?",
-            [$body['idl_no'], $body['idl_booklet_no'], Auth::id(), $params['id']],
+            [$idlNo, $body['idl_booklet_no'], Auth::id(), $params['id']],
         );
-        $this->logEvent('ISSUE', $params['id'], $body['idl_no']);
+        $this->db->execute('UPDATE mn_idl_booklets SET is_used=1 WHERE booklet_no=?', [$body['idl_booklet_no']]);
+        $this->logEvent('ISSUE', $params['id'], $idlNo);
 
-        Response::success(null, 'IDL issued successfully');
+        Response::success(['idl_no' => $idlNo], 'IDL issued successfully');
+    }
+
+    /** Auto-generate a unique "IDL-XXXXXXX" number (7 random digits), retrying on collision. */
+    private function generateIdlNo(): string
+    {
+        do {
+            $candidate = 'IDL-' . random_int(1000000, 9999999);
+            $exists = (int)$this->db->scalar('SELECT COUNT(*) FROM mn_idl_requests WHERE idl_no=?', [$candidate]);
+        } while ($exists > 0);
+
+        return $candidate;
+    }
+
+    // ── Print AWB — Create Aramex Shipment ──────────────────────────────────────
+
+    public function printAwb(array $params, array $body, array $query): void
+    {
+        $id = (int) $params['id'];
+
+        $req = $this->db->queryOne(
+            "SELECT r.auto_id, r.request_id, r.idl_no, r.idl_booklet_no, r.delivery_address, r.request_status,
+                    iru.first_name, iru.last_name, iru.city,
+                    u.email, u.mobile_no
+             FROM mn_idl_requests r
+             JOIN  mn_idl_request_user iru ON r.auto_id            = iru.request_auto_id
+             LEFT JOIN mn_users u          ON r.belonging_user_id  = u.user_id
+             WHERE r.auto_id = ?",
+            [$id],
+        );
+        if (!$req) Response::notFound('Request not found');
+        if ((int)$req['request_status'] !== 4 || empty($req['idl_no'])) {
+            Response::error('AWB can only be printed for issued IDL requests', 422);
+        }
+
+        $refNo    = "{$req['idl_no']}/{$req['idl_booklet_no']}";
+        $fullName = trim(($req['first_name'] ?? '') . ' ' . ($req['last_name'] ?? ''));
+
+        $data = [
+            "Shipments" => [[
+                "Reference1"  => "Shipment-{$refNo}",
+                "Reference2"  => null,
+                "Reference3"  => null,
+                "Shipper" => [
+                    "Reference1"    => "Shipment-{$refNo}",
+                    "Reference2"    => null,
+                    "AccountNumber" => ARAMAX_ACCOUNT_NO,
+                    "PartyAddress"  => [
+                        "Line1"               => "Al Wuheida Street",
+                        "Line2"               => "Al Mamzar – Po Box 5078 Dubai",
+                        "Line3"               => "",
+                        "City"                => "Dubai",
+                        "StateOrProvinceCode" => "",
+                        "PostCode"            => "000000",
+                        "CountryCode"         => "AE",
+                        "Longitude"           => 0,
+                        "Latitude"            => 0,
+                        "BuildingNumber"      => null,
+                        "BuildingName"        => null,
+                        "Floor"               => null,
+                        "Apartment"           => null,
+                        "POBox"               => null,
+                        "Description"         => null,
+                    ],
+                    "Contact" => [
+                        "Department"      => null,
+                        "PersonName"      => "EMSO",
+                        "Title"           => null,
+                        "CompanyName"     => "EMSO",
+                        "PhoneNumber1"    => "+97142961122",
+                        "PhoneNumber1Ext" => "",
+                        "PhoneNumber2"    => "+97142961122",
+                        "PhoneNumber2Ext" => "",
+                        "FaxNumber"       => null,
+                        "CellPhone"       => "+97142961122",
+                        "EmailAddress"    => "",
+                        "Type"            => "",
+                    ],
+                ],
+                "Consignee" => [
+                    "Reference1"    => $fullName,
+                    "Reference2"    => null,
+                    "AccountNumber" => null,
+                    "PartyAddress"  => [
+                        "Line1"               => $req['delivery_address'] ?? '',
+                        "Line2"               => "",
+                        "Line3"               => "",
+                        "City"                => $req['city'] ?? '',
+                        "StateOrProvinceCode" => "DXB",
+                        "PostCode"            => "",
+                        "CountryCode"         => "AE",
+                        "Longitude"           => 0,
+                        "Latitude"            => 0,
+                        "BuildingNumber"      => null,
+                        "BuildingName"        => null,
+                        "Floor"               => null,
+                        "Apartment"           => null,
+                        "POBox"               => null,
+                        "Description"         => null,
+                    ],
+                    "Contact" => [
+                        "Department"      => null,
+                        "PersonName"      => $fullName,
+                        "Title"           => null,
+                        "CompanyName"     => $fullName,
+                        "PhoneNumber1"    => $req['mobile_no'] ?? '',
+                        "PhoneNumber1Ext" => "",
+                        "PhoneNumber2"    => $req['mobile_no'] ?? '',
+                        "PhoneNumber2Ext" => "",
+                        "FaxNumber"       => null,
+                        "CellPhone"       => $req['mobile_no'] ?? '',
+                        "EmailAddress"    => $req['email'] ?? '',
+                        "Type"            => "",
+                    ],
+                ],
+                "ThirdParty"             => null,
+                "ShippingDateTime"       => "/Date(" . (floor(microtime(true) * 1000)) . ")/",
+                "DueDate"                => "/Date(" . (floor(microtime(true) * 1000)) . ")/",
+                "Comments"               => null,
+                "PickupLocation"         => null,
+                "OperationsInstructions" => null,
+                "AccountingInstrcutions" => null,
+                "Details" => [
+                    "Dimensions" => [
+                        "Length" => 0, "Width" => 0, "Height" => 0, "Unit" => "CM",
+                    ],
+                    "ActualWeight"     => ["Unit" => "KG", "Value" => 0.1],
+                    "ChargeableWeight" => ["Unit" => "KG", "Value" => 0],
+                    "DescriptionOfGoods"   => $refNo,
+                    "GoodsOriginCountry"   => "AE",
+                    "NumberOfPieces"       => 1,
+                    "ProductGroup"         => "DOM",
+                    "ProductType"          => "ONP",
+                    "PaymentType"          => "P",
+                    "PaymentOptions"       => "ACCT",
+                    "CustomsValueAmount"   => ["CurrencyCode" => "AED", "Value" => 10],
+                    "CashOnDeliveryAmount" => ["CurrencyCode" => "AED", "Value" => 0],
+                    "InsuranceAmount"      => ["CurrencyCode" => "AED", "Value" => 0],
+                    "CashAdditionalAmount" => ["CurrencyCode" => "AED", "Value" => 0],
+                    "CashAdditionalAmountDescription" => null,
+                    "CollectAmount"        => ["CurrencyCode" => "AED", "Value" => 0],
+                    "Services" => "",
+                    "Items" => [[
+                        "PackageType"       => "item",
+                        "Quantity"          => 1,
+                        "Weight"            => ["Unit" => "CM", "Value" => 0],
+                        "Comments"          => $refNo,
+                        "Reference"         => $refNo,
+                        "PiecesDimensions"  => null,
+                        "CommodityCode"     => null,
+                        "GoodsDescription"  => null,
+                        "CountryOfOrigin"   => null,
+                        "CustomsValue"      => null,
+                        "ContainerNumber"   => null,
+                    ]],
+                    "DeliveryInstructions"    => null,
+                    "AdditionalProperties"    => null,
+                    "ContainsDangerousGoods"  => false,
+                ],
+                "Attachments"        => null,
+                "ForeignHAWB"        => null,
+                "TransportType "     => 0,
+                "PickupGUID"         => null,
+                "Number"             => null,
+                "ScheduledDelivery"  => null,
+            ]],
+            "LabelInfo"  => ["ReportID" => 9729, "ReportType" => "URL"],
+            "ClientInfo" => [
+                "UserName"           => ARAMAX_USERNAME,
+                "Password"           => ARAMAX_PASSWORD,
+                "Version"            => "v1",
+                "AccountNumber"      => ARAMAX_ACCOUNT_NO,
+                "AccountPin"         => ARAMAX_ACCOUNT_PIN,
+                "AccountEntity"      => "DXB",
+                "AccountCountryCode" => "AE",
+                "Source"             => 24,
+                "PreferredLanguageCode" => null,
+            ],
+            "Transaction" => null,
+        ];
+
+        $ch = curl_init(ARAMAX_CREATE_SHIPMENT_URL);
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => json_encode($data),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+            CURLOPT_TIMEOUT        => 30,
+        ]);
+        $jsonResponse = curl_exec($ch);
+        $httpCode     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError    = curl_error($ch);
+        curl_close($ch);
+
+        if ($curlError) {
+            Logger::error("Aramex cURL error: {$curlError}");
+            Response::serverError("Aramex connection failed: {$curlError}");
+        }
+
+        $result = json_decode($jsonResponse, true);
+
+        // Check for Aramex-level errors
+        if (!empty($result['HasErrors']) && $result['HasErrors'] === true) {
+            $notifications = $result['Notifications'] ?? [];
+            $message = implode('; ', array_column($notifications, 'Message'));
+            Logger::error("Aramex error for IDL request {$id}: {$message}");
+            Response::error("Aramex error: {$message}", 422);
+        }
+
+        // Extract shipment number and label URL
+        $shipment  = $result['Shipments'][0] ?? [];
+        $airBillNo = $shipment['ID'] ?? ($shipment['Number'] ?? '');
+        $labelUrl  = $result['ShipmentLabel']['LabelURL'] ?? '';
+
+        // Save air bill number back to the request
+        if ($airBillNo) {
+            $this->db->execute(
+                'UPDATE mn_idl_requests SET air_bill_no = ? WHERE auto_id = ?',
+                [$airBillNo, $id],
+            );
+        }
+
+        Logger::info("Aramex AWB created for IDL request {$id}: airBillNo={$airBillNo}");
+        Response::success([
+            'air_bill_no' => $airBillNo,
+            'label_url'   => $labelUrl,
+            'raw'         => $result,
+        ], 'AWB created successfully');
     }
 
     public function markDispatched(array $params, array $body, array $query): void
@@ -1796,16 +2040,12 @@ class IDLController
      * GET /api/idl/requests/{id}/print
      * Streams a print-ready PDF of the issued IDL (physical booklet overlay).
      * Ported from the legacy application/views/idl/print-idl.phtml — restricted
-     * to idl_officer, and only once the request has been issued (status 4).
+     * to idl_officer or the owning customer, and only once the request has been issued (status 4).
      */
     public function printIdl(array $params, array $body, array $query): void
     {
         $autoId = (int)$params['id'];
         $user   = Auth::user();
-
-        if (($user['role_name'] ?? '') !== 'idl_officer') {
-            Response::forbidden('Access denied');
-        }
 
         $r = $this->db->queryOne(
             "SELECT r.*, iru.*,
@@ -1818,6 +2058,11 @@ class IDLController
             [$autoId],
         );
         if ($r === null) Response::notFound('IDL request not found');
+
+        $isOwner = (int)($r['belonging_user_id'] ?? 0) === (int)($user['user_id'] ?? 0);
+        if (($user['role_name'] ?? '') !== 'idl_officer' && !$isOwner) {
+            Response::forbidden('Access denied');
+        }
         if ((int)$r['request_status'] !== 4) {
             Response::error('IDL can only be printed once it has been issued', 409);
         }
@@ -1988,7 +2233,7 @@ class IDLController
     public function booklets(array $params, array $body, array $query): void
     {
         $data = $this->db->query(
-            'SELECT booklet_id, booklet_no, serial_no, is_used, added_date FROM mn_idl_booklets ORDER BY serial_no',
+            'SELECT booklet_id, booklet_no, serial_no, is_used, is_active, added_date FROM mn_idl_booklets ORDER BY serial_no',
         );
         Response::success($data);
     }

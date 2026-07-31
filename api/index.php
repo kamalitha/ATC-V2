@@ -69,6 +69,8 @@ $r->post('/api/auth/login',          [AuthController::class,'login']);
 $r->post('/api/auth/logout',         [AuthController::class,'logout']);
 $r->get('/api/auth/me',              [AuthController::class,'me']);
 $r->post('/api/auth/forgot-password',[AuthController::class,'forgotPassword']);
+$r->get('/api/auth/captcha',         [AuthController::class,'captcha']);
+$r->post('/api/auth/register',       [AuthController::class,'register']);
 $r->put('/api/auth/profile',         [AuthController::class,'updateProfile'],   auth:true);
 $r->put('/api/auth/change-password', [AuthController::class,'changeOwnPassword'],auth:true);
 // Users
@@ -124,6 +126,7 @@ $r->post('/api/idl/requests/{id}/cancel',   [IDLController::class,'cancel'],    
 $r->post('/api/idl/requests/{id}/cancel-own',[IDLController::class,'cancelOwn'],    auth:true);
 $r->post('/api/idl/requests/{id}/void',     [IDLController::class,'voidRequest'],   auth:true);
 $r->get('/api/idl/requests/{id}/print',     [IDLController::class,'printIdl'],      auth:true);
+$r->post('/api/idl/requests/{id}/print-awb',[IDLController::class,'printAwb'],      auth:true);
 $r->get('/api/idl/nationalities',           [IDLController::class,'nationalities'], auth:true);
 $r->get('/api/idl/dl-types',                [IDLController::class,'dlTypes'],       auth:true);
 $r->get('/api/idl/emirates',                [IDLController::class,'emiratesLookup'],auth:true);

@@ -306,17 +306,33 @@ export function statusBadge(status) {
   return `<span class="badge badge-${cls}">${label}</span>`;
 }
 
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// The API returns naive "YYYY-MM-DD HH:MM:SS" strings that are already UAE local
+// time (the DB session is forced to Asia/Dubai — see api/core/Database.php).
+// Parsing via `new Date(str)` would reinterpret those digits in the BROWSER's own
+// timezone and silently shift the displayed time, so parse the components directly
+// instead of ever constructing a timezone-sensitive Date object.
+function parseNaiveTimestamp(str) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/.exec(str);
+  if (!m) return null;
+  const [, y, mo, d, h = '00', mi = '00'] = m;
+  return { y: +y, mo: +mo, d: +d, h: +h, mi: +mi };
+}
+
 export function formatDate(str) {
   if (!str) return '—';
-  const d = new Date(str);
-  return isNaN(d) ? str : d.toLocaleDateString('en-AE', { day: '2-digit', month: 'short', year: 'numeric' });
+  const p = parseNaiveTimestamp(str);
+  return p ? `${String(p.d).padStart(2,'0')} ${MONTHS[p.mo - 1]} ${p.y}` : str;
 }
 
 export function formatDateTime(str) {
   if (!str) return '—';
-  const d = new Date(str);
-  return isNaN(d) ? str
-    : d.toLocaleString('en-AE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const p = parseNaiveTimestamp(str);
+  if (!p) return str;
+  const h12  = p.h % 12 || 12;
+  const ampm = p.h < 12 ? 'AM' : 'PM';
+  return `${String(p.d).padStart(2,'0')} ${MONTHS[p.mo - 1]} ${p.y}, ${String(h12).padStart(2,'0')}:${String(p.mi).padStart(2,'0')} ${ampm}`;
 }
 
 export function formatCurrency(val) {

@@ -125,7 +125,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   background: linear-gradient(90deg, #FF2E00, #CC934C);
   color: #fff; font-weight: 600;
   letter-spacing: 1px; font-size: 0.95rem;
-  transition: 0.2s; border-radius: 0;
+  transition: 0.2s; border-radius: 12px;
   display: flex; align-items: center; justify-content: center; gap: 8px;
 }
 .login-btn:hover:not(:disabled) { transform: scale(1.02); box-shadow: 0 0 15px #FF2E00; }
@@ -140,12 +140,18 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 }
 
 .btn-uae-pass {
+  /* No fixed height — with both width and height pinned, aspect-ratio has
+     nothing left to resolve, so at any container width other than exactly
+     253px the SVG (native ratio 253:50) got letterboxed by background-size:
+     contain, leaving empty margins that made the button look narrower than
+     .login-btn even though their boxes were the same width. Letting
+     aspect-ratio compute the height from width:100% keeps the box's ratio
+     identical to the image's, so it fills edge-to-edge. */
   width: 100%; aspect-ratio: 253 / 50; cursor: pointer;
   background-color: transparent; border: none; padding: 0;
   background-image: url('../images/uae-pass/login-with/Active.svg');
   background-size: contain; background-repeat: no-repeat; background-position: center;
   transition: transform .1s;
-  height: 50px;
 }
 .btn-uae-pass:hover:not(:disabled)  { background-image: url('../images/uae-pass/login-with/Focus.svg'); transform: scale(1.01); }
 .btn-uae-pass:active:not(:disabled) { background-image: url('../images/uae-pass/login-with/Pressed.svg'); transform: scale(0.99); }
@@ -153,6 +159,27 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   background-image: url('../images/uae-pass/login-with/Disabled.svg');
   cursor: default;
 }
+
+/* Registration screen uses the "Sign up with" variant of the same button */
+#btn-uae-pass-signup { aspect-ratio: 270 / 50; background-image: url('../images/uae-pass/sign-up-with/Active.svg'); }
+#btn-uae-pass-signup:hover:not(:disabled)  { background-image: url('../images/uae-pass/sign-up-with/Focus.svg'); }
+#btn-uae-pass-signup:active:not(:disabled) { background-image: url('../images/uae-pass/sign-up-with/Pressed.svg'); }
+#btn-uae-pass-signup:disabled { background-image: url('../images/uae-pass/sign-up-with/Disabled.svg'); }
+
+/* ── Registration captcha ───────────────────────────────────────────────── */
+.register-captcha-row { display: flex; align-items: center; gap: 10px; }
+.register-captcha-img {
+  height: 50px; flex: 1; border-radius: 6px; border: 1px solid rgba(255,255,255,.12);
+  object-fit: cover;
+}
+.register-captcha-refresh {
+  width: 40px; height: 40px; flex-shrink: 0; cursor: pointer;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+  border-radius: 6px; color: #ccc; font-size: .9rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+}
+.register-captcha-refresh:hover { background: rgba(255,255,255,.12); }
 
 /* ── "We will be requesting…" UAE PASS widget (public wizard first step) ──── */
 .pub-uaepass-widget {
@@ -2462,7 +2489,11 @@ table.dataTable .badge {
   flex-shrink: 0;
 }
 .rv-id-label {
-  flex: 0 0 180px;
+  /* Matches .rv-extra-label's width so the VALUE columns of both row types
+     line up too, not just the labels — .rv-identity-row has a 28px icon +
+     12px gap before its label that .rv-extra-row's 40px left padding
+     replaces, so equal label widths here is what makes the two line up. */
+  flex: 0 0 260px;
   font-size: .85rem;
   color: var(--text-muted);
   font-weight: 500;
@@ -2477,7 +2508,10 @@ table.dataTable .badge {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 0;
+  /* Left-align with .rv-identity-row's label column (28px icon + 12px gap) —
+     .rv-extra-row has no icon of its own, so without this its labels sit
+     ~40px to the left of the identity rows shown right above it. */
+  padding: 10px 0 10px 40px;
   border-bottom: 1px solid var(--bg-base);
 }
 .rv-extra-row:last-child { border-bottom: none; }
@@ -2609,8 +2643,8 @@ table.dataTable .badge {
 @media (max-width: 700px) {
   .rv-docs-grid { grid-template-columns: repeat(3, 1fr); }
   .rv-delivery-grid { grid-template-columns: 1fr; }
-  .rv-id-label { flex: 0 0 130px; }
-  .rv-extra-label { flex: 0 0 180px; }
+  .rv-id-label { flex: 0 0 150px; }
+  .rv-extra-label { flex: 0 0 150px; }
 }
 
 /* ── Responsive: collapse sidebar on small screens ───────────────────────── */

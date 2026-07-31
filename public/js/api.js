@@ -88,6 +88,8 @@ const api = {
     logout: ()       => request('POST', '/auth/logout'),
     me:     ()       => request('GET',  '/auth/me'),
     forgotPassword: (email) => request('POST', '/auth/forgot-password', { body: { email } }),
+    register:    (b) => request('POST', '/auth/register', { body: b }),
+    captchaUrl:  ()   => `${API_BASE}/auth/captcha?t=${Date.now()}`,
   },
 
   // Users
@@ -124,6 +126,8 @@ const api = {
     searchByEid:    (eid) => request('GET',  `/idl/search-by-eid?eid=${encodeURIComponent(eid)}`),
     getDocuments:   (id)=> request('GET',  `/idl/requests/${id}/documents`),
     printUrl:       (id)=> `${window.location.origin}${API_BASE}/idl/requests/${id}/print`,
+    booklets:       ()  => request('GET',  '/idl/booklets'),
+    printAwb:       (id)=> request('POST', `/idl/requests/${id}/print-awb`, { body: {} }),
     cancelOwn:      (id)=> request('POST', `/idl/requests/${id}/cancel-own`),
     salesReport:    (p) => request('GET',  '/idl/sales-report',  { params: p }),
     aramexReport:   (p) => request('GET',  '/idl/aramex-report', { params: p }),

@@ -160,7 +160,7 @@ const ROUTES = {
   'public-cpd-return': () => renderPublicCPDReturn(),
   'public-cpd-renew': () => renderPublicCPDRenewSearch(),
   'public-select-service': () => renderPublicSelectService(),
-  'public-history':   () => renderPublicHistory(),
+  'public-history':   (param) => renderPublicHistory((typeof param === 'object' && param?.tab) ? param.tab : 'idl'),
   'payment-success':  () => renderPaymentResult('success'),
   'payment-declined': () => renderPaymentResult('declined'),
   'payment-cancelled':() => renderPaymentResult('cancelled'),
@@ -536,7 +536,72 @@ function showForgotPassword() {
 
 function showLoginForm() {
   document.getElementById('forgot-password-form').classList.add('hidden');
+  document.getElementById('register-form').classList.add('hidden');
   document.getElementById('login-form').classList.remove('hidden');
+}
+
+function loadCaptcha() {
+  document.getElementById('register-captcha-img').src = api.auth.captchaUrl();
+}
+
+function showRegisterForm() {
+  document.getElementById('login-form').classList.add('hidden');
+  document.getElementById('register-form').classList.remove('hidden');
+  document.getElementById('register-error').classList.add('hidden');
+  document.getElementById('register-full-name').value = '';
+  document.getElementById('register-emirates-id').value = '';
+  document.getElementById('register-mobile').value = '';
+  document.getElementById('register-email').value = '';
+  document.getElementById('register-password').value = '';
+  document.getElementById('register-confirm-password').value = '';
+  document.getElementById('register-captcha').value = '';
+  loadCaptcha();
+}
+
+async function handleRegister(e) {
+  e.preventDefault();
+  const btn      = document.getElementById('register-btn');
+  const errEl    = document.getElementById('register-error');
+  const password = document.getElementById('register-password').value;
+  const confirm  = document.getElementById('register-confirm-password').value;
+
+  errEl.classList.add('hidden');
+
+  if (password !== confirm) {
+    errEl.textContent = 'Passwords do not match';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const body = {
+    full_name:        document.getElementById('register-full-name').value.trim(),
+    emirates_id:      document.getElementById('register-emirates-id').value.trim(),
+    mobile_no:        document.getElementById('register-mobile').value.trim(),
+    email:            document.getElementById('register-email').value.trim(),
+    password,
+    confirm_password: confirm,
+    captcha:          document.getElementById('register-captcha').value.trim(),
+  };
+
+  btn.disabled = true;
+  btn.querySelector('.btn-text').classList.add('hidden');
+  btn.querySelector('.btn-spinner').classList.remove('hidden');
+
+  try {
+    await api.auth.register(body);
+    toast('Account created successfully. You can now log in.', 'success');
+    showLoginForm();
+    document.getElementById('login-username').value = body.email;
+  } catch (err) {
+    errEl.textContent = err.message ?? 'Registration failed';
+    errEl.classList.remove('hidden');
+    loadCaptcha(); // captcha is one-time-use — always refresh after a failed attempt
+    document.getElementById('register-captcha').value = '';
+  } finally {
+    btn.disabled = false;
+    btn.querySelector('.btn-text').classList.remove('hidden');
+    btn.querySelector('.btn-spinner').classList.add('hidden');
+  }
 }
 
 async function handleForgotPassword(e) {
@@ -585,11 +650,10 @@ async function boot() {
   document.getElementById('link-forgot-password')?.addEventListener('click', e => { e.preventDefault(); showForgotPassword(); });
   document.getElementById('link-back-to-login')?.addEventListener('click', e => { e.preventDefault(); showLoginForm(); });
 
-  // Register — placeholder: no self-registration flow exists yet
-  document.getElementById('link-register')?.addEventListener('click', e => {
-    e.preventDefault();
-    alert('Registration is coming soon.');
-  });
+  document.getElementById('register-form').addEventListener('submit', handleRegister);
+  document.getElementById('link-register')?.addEventListener('click', e => { e.preventDefault(); showRegisterForm(); });
+  document.getElementById('link-back-to-login-from-register')?.addEventListener('click', e => { e.preventDefault(); showLoginForm(); });
+  document.getElementById('register-captcha-refresh')?.addEventListener('click', loadCaptcha);
   document.getElementById('modal-close').addEventListener('click', closeModal);
   document.getElementById('modal-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
   document.querySelector('.toggle-pwd').addEventListener('click', () => {

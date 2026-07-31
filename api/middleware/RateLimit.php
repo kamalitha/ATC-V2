@@ -62,4 +62,10 @@ class RateLimit
         $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
         return 'forgot-password:' . hash('xxh3', $ip);
     }
+
+    public static function registerKey(): string
+    {
+        $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        return 'register:' . hash('xxh3', $ip);
+    }
 }

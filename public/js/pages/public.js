@@ -82,6 +82,42 @@ const STEP_REQUIRED = {
   review:   [],
 };
 
+// ── Delivery areas (Dubai & Abu Dhabi for now — more emirates to follow) ────────
+const DELIVERY_AREAS = [
+  'Al Barsha (1, 2, 3, South)', 'Al Quoz (1, 2, 3, 4, Industrial Areas)', 'Al Satwa',
+  'Al Safa (1 & 2)', 'Al Wasl', 'Jumeirah (1, 2, 3)', 'Umm Suqeim (1, 2, 3)',
+  'Dubai Marina', 'Jumeirah Beach Residence (JBR)', 'Bluewaters Island', 'Palm Jumeirah',
+  'Dubai Harbour', 'Dubai Internet City', 'Dubai Media City', 'Dubai Knowledge Park',
+  'Barsha Heights (Tecom)', 'The Greens', 'The Views', 'Emirates Hills', 'The Lakes',
+  'The Meadows', 'The Springs', 'Jumeirah Islands', 'Jumeirah Park',
+  'Jumeirah Village Circle (JVC)', 'Jumeirah Village Triangle (JVT)', 'Dubai Hills Estate',
+  'Arabian Ranches (1, 2, 3)', 'DAMAC Hills', 'DAMAC Hills 2', 'Motor City',
+  'Dubai Sports City', 'Studio City', 'Tilal Al Ghaf', 'Town Square', 'Mudon', 'Remraam',
+  'Mira', 'Mira Oasis', 'Villanova', 'The Villa', 'Falcon City', 'Nad Al Sheba',
+  'Nad Al Hamar', 'Ras Al Khor', 'Dubai Creek Harbour', 'Dubai Festival City',
+  'Al Warqa (1–5)', 'Mirdif', 'Mushrif', 'Al Mizhar (1 & 2)', 'Al Khawaneej',
+  'Al Twar (1–4)', 'Muhaisnah (1–4)', 'Al Qusais (1–3)', 'Al Nahda Dubai', 'Hor Al Anz',
+  'Abu Hail', 'Al Mamzar', 'Deira', 'Port Saeed', 'Al Rigga', 'Naif', 'Al Ras',
+  'Baniyas Square', 'Bur Dubai', 'Oud Metha', 'Karama', 'Zabeel', 'DIFC', 'Downtown Dubai',
+  'Business Bay', 'City Walk', 'Al Jaddaf', 'Sheikh Zayed Road', 'Meydan',
+  'Dubai Design District (d3)', 'Dubai South', 'Expo City Dubai',
+  'Dubai Investment Park (DIP 1 & 2)', 'Green Community', 'Jebel Ali', 'Jebel Ali Village',
+  'JAFZA', 'Al Furjan', 'Discovery Gardens', 'The Gardens', 'Ibn Battuta Area',
+  'Dubai Silicon Oasis', 'Academic City', 'International City (Clusters)', 'Liwan',
+  'Dubai Land', 'Living Legends', 'Majan', 'Arjan', 'Dubai Science Park', 'Al Sufouh',
+  'Umm Ramool', 'Al Garhoud', 'Al Awir', 'Warsan', 'Wadi Al Safa', 'Saih Shuaib',
+  'Madinat Hind', 'Al Zahiyah', 'Al Markaziyah', 'Al Khalidiyah', 'Al Bateen',
+  'Al Mushrif', 'Al Manhal', 'Al Nahyan', 'Al Reem Island', 'Al Maryah Island',
+  'Saadiyat Island', 'Yas Island', 'Jubail Island', 'Al Raha Beach', 'Al Raha Gardens',
+  'Al Muneera', 'Al Bandar', 'Al Zeina', 'Al Reef', 'Masdar City', 'Khalifa City A',
+  'Khalifa City B', 'Shakhbout City', 'Mohammed Bin Zayed City (MBZ)', 'Mussafah',
+  'ICAD (Industrial City)', 'Rabdan', 'Bain Al Jessrain', 'Al Maqtaa', 'Al Shahama',
+  'Al Bahia', 'Al Falah', 'Al Shamkha', 'Al Wathba', 'Madinat Zayed', 'Corniche',
+  'Mina Zayed', 'Tourist Club Area (TCA)', 'Al Danah', 'Electra Street', 'Hamdan Street',
+  'Airport Road', 'Defence Road', 'Corniche Road', 'Marina Village', 'Marina Mall Area',
+  'Hudayriyat Island', 'Al Hudayriat', 'Al Gurm', 'Al Raha Golf Gardens', 'Al Ain City',
+];
+
 // ── Apply for IDL (wizard) ─────────────────────────────────────────────────────
 export async function renderPublicApplyIDL(param = null) {
   const content = document.getElementById('page-content');
@@ -94,9 +130,8 @@ export async function renderPublicApplyIDL(param = null) {
     api.idl.config(),
   ]);
 
-  const BASE_AMOUNT  = Number(idlCfg.idl_amount  ?? 160.00);
-  const ADMIN_FEE    = Number(idlCfg.admin_fee    ?? 10.00);
-  const DELIVERY_FEE = Number(idlCfg.delivery_fee ?? 15.75);
+  const BASE_AMOUNT  = Number(idlCfg.idl_amount  ?? 170.00);
+  const DELIVERY_FEE = Number(idlCfg.delivery_fee ?? 15.00);
 
   // Fetch last IDL request for this user to pre-populate fields
   let lastRequest = null;
@@ -276,6 +311,7 @@ export async function renderPublicApplyIDL(param = null) {
                 : `<input name="dob" type="date" value="${dobValue}" />`}
               <i class="fa-regular fa-calendar pub-input-icon-right"></i>
             </div>
+            <div class="field-error" id="err-dob"></div>
           </div>
 
           <div class="field"><label>Place of Birth *</label>
@@ -557,23 +593,24 @@ export async function renderPublicApplyIDL(param = null) {
           <div class="del-address-grid">
 
             <div class="field del-addr-third">
-              <label>Building / Villa / Floor #</label>
+              <label>Building / Villa / Floor # *</label>
               <input name="del_building" id="del-building" placeholder="E.g. Villa 12, Floor 3" />
+              <div class="field-error" id="err-del_building"></div>
             </div>
 
             <div class="field del-addr-half">
-              <label>Street / Road</label>
+              <label>Street / Road *</label>
               <input name="del_street" id="del-street" placeholder="E.g. Sheikh Zayed Road" />
+              <div class="field-error" id="err-del_street"></div>
             </div>
 
             <div class="field del-addr-third">
-              <label>Area</label>
-              <div class="pub-input-icon-wrap">
-                <select name="del_area" id="del-area">
-                  <option value="">Select area</option>
-                </select>
-                <i class="fa-solid fa-chevron-down pub-input-icon-right"></i>
-              </div>
+              <label>Area <span style="color:var(--text-muted);font-weight:400">(Optional)</span></label>
+              <input name="del_area" id="del-area" list="del-area-list" autocomplete="off"
+                placeholder="Type to search, or enter your own" />
+              <datalist id="del-area-list">
+                ${DELIVERY_AREAS.map(a => `<option value="${a}"></option>`).join('')}
+              </datalist>
               <div class="field-error" id="err-del_area"></div>
             </div>
 
@@ -635,7 +672,7 @@ export async function renderPublicApplyIDL(param = null) {
     const isHome      = formData.delivery_option === 'home_delivery';
     const deliveryFee = isHome ? DELIVERY_FEE : 0;
     const vatAmount   = Math.round((BASE_AMOUNT + deliveryFee) * 0.05 * 100) / 100;
-    const totalPayable = BASE_AMOUNT + ADMIN_FEE + deliveryFee + vatAmount;
+    const totalPayable = BASE_AMOUNT + deliveryFee + vatAmount;
     const aed         = n => 'AED ' + Number(n).toFixed(2);
     const natLabel    = nationalities.find(n => String(n.nationality_id) === String(formData.nationality))?.nationality ?? formData.nationality ?? '—';
     const emirLabel   = emirates.find(e => String(e.emirate_id) === String(formData.emirate))?.emirate ?? formData.emirate ?? '—';
@@ -792,7 +829,6 @@ export async function renderPublicApplyIDL(param = null) {
         <div class="rv-section-title" style="margin-bottom:12px">Fee Breakdown</div>
         <div class="rv-extra-rows">
           <div class="rv-extra-row"><span class="rv-extra-label">IDL Fee</span><span class="rv-extra-value">${aed(BASE_AMOUNT)}</span></div>
-          <div class="rv-extra-row"><span class="rv-extra-label">Administration Fee</span><span class="rv-extra-value">${aed(ADMIN_FEE)}</span></div>
           ${isHome ? `<div class="rv-extra-row"><span class="rv-extra-label">Delivery Fee</span><span class="rv-extra-value">${aed(deliveryFee)}</span></div>` : ''}
           <div class="rv-extra-row"><span class="rv-extra-label">VAT 5%</span><span class="rv-extra-value">${aed(vatAmount)}</span></div>
           <div class="rv-extra-row"><span class="rv-extra-label" style="font-weight:700;color:var(--text-primary)">Total Payable</span><span class="rv-extra-value" style="font-weight:700;color:var(--accent);font-size:1rem">${aed(totalPayable)}</span></div>
@@ -1410,13 +1446,53 @@ export async function renderPublicApplyIDL(param = null) {
       if (emailEl?.value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailEl.value)) {
         setErr('email', 'Enter a valid email address'); ok = false;
       }
+
+      const nameEl = document.querySelector('[name="full_name"]');
+      if (nameEl && nameEl.type !== 'hidden' && nameEl.value?.trim() && !/^[A-Za-z\s]+$/.test(nameEl.value.trim())) {
+        setErr('full_name', 'Name should only contain letters'); ok = false;
+      }
+
+      const eidEl = document.querySelector('[name="emirates_id"]');
+      if (eidEl && eidEl.type !== 'hidden' && eidEl.value?.trim() && !/^784-?\d{4}-?\d{7}-?\d$/.test(eidEl.value.trim())) {
+        setErr('emirates_id', 'Enter a valid Emirates ID (784-XXXX-XXXXXXX-X)'); ok = false;
+      }
+
+      const mobileEl = document.querySelector('[name="mobile_no"]');
+      if (mobileEl && mobileEl.type !== 'hidden' && mobileEl.value?.trim()) {
+        const digits = mobileEl.value.replace(/\D/g, '');
+        if (![10, 13, 14].includes(digits.length)) {
+          setErr('mobile_no', 'Enter a valid phone number'); ok = false;
+        }
+      }
+
+      const dobEl = document.querySelector('[name="dob"]');
+      if (dobEl && dobEl.type !== 'hidden' && dobEl.value) {
+        const eighteenYearsAgo = new Date();
+        eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+        if (new Date(dobEl.value) > eighteenYearsAgo) {
+          setErr('dob', 'You must be at least 18 years old'); ok = false;
+        }
+      }
     }
 
     if (key === 'licence') {
+      const licenseNoEl = document.querySelector('[name="license_no"]');
+      if (licenseNoEl?.value?.trim() && !/^\d+$/.test(licenseNoEl.value.trim())) {
+        setErr('license_no', 'Licence number should only contain numbers'); ok = false;
+      }
+
       const issuedVal = document.querySelector('[name="issued_date"]')?.value;
       const expiryVal = document.querySelector('[name="expiry_date"]')?.value;
+      if (issuedVal && new Date(issuedVal) > new Date(new Date().toDateString())) {
+        setErr('issued_date', 'Issue date cannot be in the future');
+        ok = false;
+      }
       if (issuedVal && expiryVal && new Date(expiryVal) <= new Date(issuedVal)) {
         setErr('expiry_date', 'Expiry date must be after issue date');
+        ok = false;
+      }
+      if (expiryVal && new Date(expiryVal) < new Date(new Date().toDateString())) {
+        setErr('expiry_date', 'Driving licence has expired — enter a valid, unexpired licence');
         ok = false;
       }
       // Vehicle categories
@@ -1448,6 +1524,11 @@ export async function renderPublicApplyIDL(param = null) {
       if (isHome) {
         const emirate = document.getElementById('del-emirate')?.value;
         if (!emirate) { setErr('del_emirate', 'Emirate is required'); ok = false; }
+        // Area is intentionally left optional — every other delivery address field is mandatory.
+        const building = document.getElementById('del-building')?.value.trim();
+        if (!building) { setErr('del_building', 'Building / Villa / Floor # is required'); ok = false; }
+        const street = document.getElementById('del-street')?.value.trim();
+        if (!street) { setErr('del_street', 'Street / Road is required'); ok = false; }
       }
     }
 
@@ -1505,10 +1586,12 @@ export async function renderPublicApplyIDL(param = null) {
         }
       }
       if (hasFiles) {
-        try {
-          await api.upload(`/idl/requests/${res.auto_id}/documents`, fd);
-        } catch {
-          toast('Documents could not be uploaded — please contact support', 'error');
+        const uploadResult = await api.upload(`/idl/requests/${res.auto_id}/documents`, fd);
+        // A 200 response can still carry per-slot failures (oversized file, bad MIME,
+        // disk write error, …) — treat any of those the same as a hard failure so we
+        // never proceed to payment with documents silently missing.
+        if (uploadResult.errors && Object.keys(uploadResult.errors).length) {
+          throw new Error('Some documents could not be uploaded — please go back and re-check them before paying.');
         }
       }
 
@@ -3377,6 +3460,10 @@ export async function renderPublicHistory(defaultTab = 'idl') {
                   <button class="btn btn-ghost btn-sm view-idl-btn" data-id="${r.auto_id}">
                     <i class="fa-solid fa-eye"></i> View
                   </button>
+                  ${Number(r.request_status) === 4 ? `
+                  <button class="btn btn-primary btn-sm view-idp-btn" data-id="${r.auto_id}">
+                    <i class="fa-solid fa-file-pdf"></i> View IDP
+                  </button>` : ''}
                   ${r.paid_status != 1 ? `
                   <button class="btn btn-primary btn-sm repay-idl-btn" data-id="${r.auto_id}">
                     <i class="fa-solid fa-credit-card"></i> Repay
@@ -3395,6 +3482,11 @@ export async function renderPublicHistory(defaultTab = 'idl') {
     // Bind View buttons
     idlEl.querySelectorAll('.view-idl-btn').forEach(btn => {
       btn.addEventListener('click', () => renderPublicIDLView(Number(btn.dataset.id)));
+    });
+
+    // Bind View IDP buttons — opens the print-ready PDF in a new tab
+    idlEl.querySelectorAll('.view-idp-btn').forEach(btn => {
+      btn.addEventListener('click', () => openIdlPreviewModal(btn.dataset.id));
     });
 
     // Bind Repay buttons
@@ -3491,6 +3583,17 @@ function emptyState(icon, title, subtitle) {
         <p style="color:var(--text-muted);font-size:.9rem">${subtitle}</p>
       </div>
     </div>`;
+}
+
+// ── Approved IDL preview — inline iframe, no download option (client requirement) ──
+function openIdlPreviewModal(autoId) {
+  const previewUrl = `${api.idl.printUrl(autoId)}#toolbar=0&navpanes=0`;
+  openModal({
+    title: 'IDL Preview',
+    size: 'lg',
+    body: `<iframe src="${previewUrl}" style="width:100%;height:75vh;border:0;border-radius:var(--radius)"></iframe>`,
+    footer: `<button class="btn btn-ghost" onclick="closeModalGlobal()">Close</button>`,
+  });
 }
 
 // ── Shared "Return Carnet" modal (used by the CPD detail view and the Return list) ──
@@ -3999,8 +4102,8 @@ async function renderPublicCPDView(autoId) {
       </div>
     </div>` : ''}`;
 
-  document.getElementById('btn-back-cpd-history').addEventListener('click', () => renderPublicHistory('cpd'));
-  document.getElementById('btn-back-cpd-footer')?.addEventListener('click', () => renderPublicHistory('cpd'));
+  document.getElementById('btn-back-cpd-history').addEventListener('click', () => navigate('public-history', { tab: 'cpd' }));
+  document.getElementById('btn-back-cpd-footer')?.addEventListener('click', () => navigate('public-history', { tab: 'cpd' }));
 
   // Return Carnet handler (status=3 only)
   const openReturnCarnetModal = () => openCPDReturnModal(autoId, () => {
@@ -4211,6 +4314,10 @@ async function renderPublicIDLView(autoId) {
         </p>
       </div>
       <div class="page-actions">
+        ${Number(r.request_status) === 4 ? `
+        <button class="btn btn-primary btn-sm" id="btn-view-idp">
+          <i class="fa-solid fa-file-pdf"></i> View IDP
+        </button>` : ''}
         <button class="btn btn-ghost btn-sm" id="btn-back-history">
           <i class="fa-solid fa-arrow-left"></i> Back to History
         </button>
@@ -4300,7 +4407,8 @@ async function renderPublicIDLView(autoId) {
       </div>
     </div>`;
 
-  document.getElementById('btn-back-history').addEventListener('click', () => renderPublicHistory());
+  document.getElementById('btn-back-history').addEventListener('click', () => navigate('public-history'));
+  document.getElementById('btn-view-idp')?.addEventListener('click', () => openIdlPreviewModal(autoId));
 
   document.querySelectorAll('.rv-doc-thumb-clickable').forEach(thumbEl => {
     thumbEl.addEventListener('click', () => {

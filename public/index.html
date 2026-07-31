@@ -73,6 +73,56 @@
           </a>
         </div>
       </form>
+
+      <form id="register-form" class="hidden" novalidate>
+        <button type="button" id="btn-uae-pass-signup" class="btn-uae-pass" style="margin-bottom:16px" aria-label="Sign up with UAE PASS"></button>
+        <div class="login-divider"><span>or</span></div>
+
+        <div class="login-input-group">
+          <label for="register-full-name">Full Name *</label>
+          <input id="register-full-name" type="text" required placeholder="Enter your full name" />
+        </div>
+        <div class="login-input-group">
+          <label for="register-emirates-id">Emirates ID *</label>
+          <input id="register-emirates-id" type="text" required placeholder="784-XXXX-XXXXXXX-X" />
+        </div>
+        <div class="login-input-group">
+          <label for="register-mobile">Mobile No *</label>
+          <input id="register-mobile" type="text" required placeholder="+971 50 xxx xxxx" />
+        </div>
+        <div class="login-input-group">
+          <label for="register-email">Email (Username) *</label>
+          <input id="register-email" type="email" autocomplete="email" required placeholder="you@example.com" />
+        </div>
+        <div class="login-input-group">
+          <label for="register-password">Password *</label>
+          <input id="register-password" type="password" autocomplete="new-password" required placeholder="••••••••" />
+        </div>
+        <div class="login-input-group">
+          <label for="register-confirm-password">Confirm Password *</label>
+          <input id="register-confirm-password" type="password" autocomplete="new-password" required placeholder="••••••••" />
+        </div>
+        <div class="login-input-group">
+          <label for="register-captcha">Captcha *</label>
+          <div class="register-captcha-row">
+            <img id="register-captcha-img" class="register-captcha-img" alt="Captcha" />
+            <button type="button" id="register-captcha-refresh" class="register-captcha-refresh" aria-label="Refresh captcha">
+              <i class="fa-solid fa-rotate"></i>
+            </button>
+          </div>
+          <input id="register-captcha" type="text" required placeholder="Enter the code shown above" style="margin-top:8px" />
+        </div>
+        <div id="register-error" class="login-error hidden"></div>
+        <button type="submit" class="login-btn" id="register-btn">
+          <span class="btn-text">Submit</span>
+          <span class="btn-spinner hidden"><i class="fa-solid fa-spinner fa-spin"></i></span>
+        </button>
+        <div style="text-align:center;margin-top:14px">
+          <a href="#" id="link-back-to-login-from-register" style="font-size:.82rem;color:var(--accent)">
+            <i class="fa-solid fa-arrow-left"></i> Back to login
+          </a>
+        </div>
+      </form>
     </div>
   </section>
 </div>

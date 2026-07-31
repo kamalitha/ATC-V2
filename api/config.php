@@ -18,10 +18,9 @@ final class Config
     public const FRONTEND_URL = 'http://v2.eservices.local';
     public const TIMEZONE     = 'Asia/Dubai';
 
-    public const IDL_AMOUNT             = 160.00;
-    public const IDL_ADMIN_FEE           = 10.00;  // administration fee added on top of the IDL fee
+    public const IDL_AMOUNT             = 170.00; // administration fee folded directly into the IDL fee
     public const CPD_EXTRA_DRIVER_FEE   = 50.00;
-    public const DELIVERY_FEE  = 15.75;   // delivery surcharge when send_to_address / home_delivery
+    public const DELIVERY_FEE  = 15.00;   // delivery surcharge when send_to_address / home_delivery
     public const CPD_PENALTY           = 150.00;
     public const CPD_DELIVERY_FEE = 25.00;
 
@@ -67,7 +66,7 @@ final class Config
 }
 
 // ── Aramex Shipment API ───────────────────────────────────────────────────────
-define("ARAMAX_CREATE_SHIPMENT_URL","https://ws.sbx.aramex.net/ShippingAPI.V2/Shipping/Service_1_0.svc/json/CreateShipments");
+define("ARAMAX_CREATE_SHIPMENT_URL","https://ws.uat.aramex.net/ShippingAPI.V2/Shipping/Service_1_0.svc/json/CreateShipments");
 define("ARAMAX_USERNAME","testingapi@aramex.com");
 define("ARAMAX_PASSWORD","R123456789\$r");
 define("ARAMAX_ACCOUNT_NO","45796");

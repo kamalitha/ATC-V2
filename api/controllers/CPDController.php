@@ -1064,9 +1064,9 @@ class CPDController
     {
         $returnId = (int) $params['id'];
 
-        // Get the return request to find the cpd request_id
+        // Get the return request to find the cpd request_id and the carnet being returned
         $ret = $this->db->queryOne(
-            'SELECT return_id, request_id FROM mn_cpd_carnet_returns WHERE return_id = ?',
+            'SELECT return_id, request_id, carnet_id FROM mn_cpd_carnet_returns WHERE return_id = ?',
             [$returnId],
         );
         if (!$ret) Response::notFound('Return request not found');
@@ -1080,13 +1080,31 @@ class CPDController
             Response::error('Return Guarantee is not updated. Please contact Finance office.', 422);
         }
 
-        $this->db->execute(
-            "UPDATE mn_cpd_carnet_returns
-             SET confirmed_by = 1, confirmed_datetime = ?
-             WHERE return_id = ?",
-            [date('Y-m-d H:i:s'), $returnId],
-        );
+        $this->db->beginTransaction();
+        try {
+            $this->db->execute(
+                "UPDATE mn_cpd_carnet_returns
+                 SET confirmed_by = 1, confirmed_datetime = ?
+                 WHERE return_id = ?",
+                [date('Y-m-d H:i:s'), $returnId],
+            );
+            // Reflect the confirmed return on the request itself — otherwise officers
+            // have no list where a confirmed return is visible at all (it drops out of
+            // the pending-returns queue with nowhere else to appear). Note: the carnet's
+            // is_used flag is intentionally left untouched — once issued, a carnet stays
+            // marked used permanently and is never freed for reissue, even after return.
+            // request_status is an FK into mn_cpd_statuses — 4 = 'Returned'.
+            $this->db->execute(
+                'UPDATE mn_cpd_requests SET request_status=4 WHERE auto_id=?',
+                [$ret['request_id']],
+            );
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            $this->db->rollback();
+            Response::serverError('Approval failed: ' . $e->getMessage());
+        }
 
+        $this->logEvent('RETURN', $ret['request_id']);
         Response::success(null, 'Return request approved successfully');
     }
 

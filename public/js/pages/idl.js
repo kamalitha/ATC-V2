@@ -508,18 +508,17 @@ export async function renderIDLNew() {
   const deliveryField  = document.getElementById('delivery-address-field');
   const deliveryInput  = document.getElementById('delivery_address');
 
-  const BASE_AMOUNT   = Number(idlCfg.idl_amount  ?? 160.00);
-  const ADMIN_FEE     = Number(idlCfg.admin_fee    ?? 10.00);
-  const DELIVERY_FEE  = Number(idlCfg.delivery_fee ?? 15.75);
+  const BASE_AMOUNT   = Number(idlCfg.idl_amount  ?? 170.00);
+  const DELIVERY_FEE  = Number(idlCfg.delivery_fee ?? 15.00);
   const totalDisplay  = document.getElementById('total-fees-display');
 
   function updateTotal() {
     const isSend      = deliverySelect.value === 'send_to_address';
     const deliveryFee = isSend ? DELIVERY_FEE : 0;
     const vat         = Math.round((BASE_AMOUNT + deliveryFee) * 0.05 * 100) / 100;
-    const total       = BASE_AMOUNT + ADMIN_FEE + deliveryFee + vat;
+    const total       = BASE_AMOUNT + deliveryFee + vat;
     if (totalDisplay) {
-      totalDisplay.value = `AED ${total.toFixed(2)} (IDL ${BASE_AMOUNT.toFixed(2)} + Admin ${ADMIN_FEE.toFixed(2)}${isSend ? ` + Delivery ${DELIVERY_FEE.toFixed(2)}` : ''} + VAT ${vat.toFixed(2)})`;
+      totalDisplay.value = `AED ${total.toFixed(2)} (IDL ${BASE_AMOUNT.toFixed(2)}${isSend ? ` + Delivery ${DELIVERY_FEE.toFixed(2)}` : ''} + VAT ${vat.toFixed(2)})`;
     }
   }
 
@@ -803,6 +802,9 @@ export async function renderIDLDetail(param) {
 
   const status   = parseInt(r.request_status);
   const canEdit  = status === 1 || status === 2; // Not Paid / Processing
+  // Air Waybill No must be enterable at status 4 (Approved, awaiting dispatch) —
+  // otherwise the Dispatch button can never succeed since the field starts empty.
+  const canEditAwb = canEdit || status === 4;
 
   const CAT_LABELS   = { A:'Motorcycle', B:'Car', C:'Heavy Vehicle', D:'Bus', E:'Car with Heavy Trailer' };
   const CAT_ICONS    = { A:'fa-motorcycle', B:'fa-car', C:'fa-truck', D:'fa-bus', E:'fa-trailer' };
@@ -821,6 +823,7 @@ export async function renderIDLDetail(param) {
       <div class="page-title-block">
         <h1 class="page-title">${r.request_id}</h1>
         <p class="page-subtitle">
+          <span class="subtitle-item">Type: <span class="badge badge-default">${esc(r.request_type ?? '—')}</span></span>
           <span class="subtitle-item">Payment: ${r.paid_status == 1
             ? '<span class="badge badge-success">Paid</span>'
             : '<span class="badge badge-warning">Unpaid</span>'}</span>
@@ -836,7 +839,6 @@ export async function renderIDLDetail(param) {
         <span class="rv-section-title">Personal Information</span>
       </div>
       <div class="rv-identity-rows">
-        ${identityRow('fa-solid fa-tag',           'Request Type',         r.request_type)}
         ${identityRow('fa-regular fa-user',        'Full Name',           [r.first_name, r.last_name].filter(Boolean).join(' '))}
         ${identityRow('fa-regular fa-id-card',     'Emirates ID',         r.emirates_id)}
         ${identityRow('fa-solid fa-flag',          'Nationality',         r.nationality)}
@@ -888,13 +890,25 @@ export async function renderIDLDetail(param) {
     <div class="rv-section">
       <div class="rv-section-title" style="margin-bottom:12px">Documents Attached</div>
       <div class="doc-upload-grid">
-        ${docUpload('dl_front',    'Drivers License Front Image')}
-        ${docUpload('dl_back',     'Drivers License Back Image')}
-        ${docUpload('eid_front',   'Emirates ID Front Image')}
-        ${docUpload('eid_back',    'Emirates ID Back Image')}
-        ${docUpload('passport_photo', 'Passport Size Photo')}
+        ${docUpload('dl_front',    'Drivers License Front Image', !canEdit)}
+        ${docUpload('dl_back',     'Drivers License Back Image', !canEdit)}
+        ${docUpload('eid_front',   'Emirates ID Front Image', !canEdit)}
+        ${docUpload('eid_back',    'Emirates ID Back Image', !canEdit)}
+        ${docUpload('passport_photo', 'Passport Size Photo', !canEdit)}
+        ${docUpload('signature',   'Signature', !canEdit)}
       </div>
       <div id="doc-upload-error" class="form-error hidden" style="margin-top:8px"></div>
+    </div>
+
+    <!-- Document viewer lightbox -->
+    <div id="idl-lightbox" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);
+      z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:12px">
+      <button id="idl-lightbox-close" style="position:absolute;top:16px;right:20px;background:none;
+        border:none;color:#fff;font-size:1.8rem;cursor:pointer;line-height:1">&times;</button>
+      <img id="idl-lightbox-img" src="" alt=""
+        style="max-width:92vw;max-height:86vh;object-fit:contain;border-radius:6px;box-shadow:0 4px 40px rgba(0,0,0,.5)" />
+      <span id="idl-lightbox-label"
+        style="color:rgba(255,255,255,.7);font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em"></span>
     </div>
 
     <!-- ── 4. Delivery Options ──────────────────────────────────────────── -->
@@ -936,17 +950,17 @@ export async function renderIDLDetail(param) {
           <div class="field">
             <label>IDL No</label>
             <input id="proc-idl-no" value="${esc(r.idl_no ?? '')}"
-              placeholder="IDL number" ${canEdit ? '' : 'readonly'} />
+              placeholder="Auto-generated when issued" readonly />
           </div>
           <div class="field">
             <label>IDL Booklet Number</label>
             <input id="proc-booklet" value="${esc(r.idl_booklet_no ?? '')}"
-              placeholder="Booklet reference" ${canEdit ? '' : 'readonly'} />
+              placeholder="Assigned when issued" readonly />
           </div>
           <div class="field">
             <label>Air Waybill No</label>
             <input id="proc-awb" value="${esc(r.air_bill_no ?? '')}"
-              placeholder="Airway bill number" ${canEdit ? '' : 'readonly'} />
+              placeholder="Airway bill number" ${canEditAwb ? '' : 'readonly'} />
           </div>
           ${currentUser?.role_name !== 'idl_cpd_cashier' ? `
           <div class="field field-full">
@@ -959,7 +973,7 @@ export async function renderIDLDetail(param) {
         <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
           ${status === 1 ? `
           <button class="btn btn-success btn-sm" data-action="approve">
-            <i class="fa-solid fa-circle-dollar-to-slot"></i> Accept Payment</button>
+            <i class="fa-solid fa-circle-dollar-to-slot"></i> Approved</button>
           ${currentUser?.role_name === 'idl_cpd_cashier' ? `
           <button class="btn btn-info btn-sm" data-action="print-receipt">
             <i class="fa-solid fa-print"></i> Print Receipt</button>` : ''}
@@ -978,7 +992,10 @@ export async function renderIDLDetail(param) {
             <i class="fa-solid fa-truck"></i> Mark Dispatched</button>` : ''}
           ${status === 4 && currentUser?.role_name === 'idl_officer' ? `
           <button class="btn btn-ghost btn-sm" data-action="print">
-            <i class="fa-solid fa-print"></i> Print</button>` : ''}
+            <i class="fa-solid fa-print"></i> Print IDL</button>` : ''}
+          ${status === 4 && r.idl_no && currentUser?.role_name === 'idl_officer' ? `
+          <button class="btn btn-ghost btn-sm" data-action="print-awb">
+            <i class="fa-solid fa-truck-fast"></i> Print AWB</button>` : ''}
           ${(status === 4 || status === 5) && currentUser?.role_name === 'idl_officer' ? `
           <button class="btn btn-danger btn-sm" data-action="void">
             <i class="fa-solid fa-ban"></i> Void</button>` : ''}
@@ -994,6 +1011,7 @@ export async function renderIDLDetail(param) {
   content.querySelector('.page-actions').addEventListener('click', handleIDLAction);
   content.querySelector('.rv-section:last-child').addEventListener('click', handleIDLAction);
   initDocUploads();
+  initIdlLightbox();
   loadExistingDocs(id);
 
   function handleIDLAction(e) {
@@ -1008,7 +1026,31 @@ export async function renderIDLDetail(param) {
     if (action === 'save-proc')     handleSaveProc(id).catch(() => {});
     if (action === 'print-receipt') handlePrintReceipt(id, r);
     if (action === 'print')         window.open(api.idl.printUrl(id), '_blank');
+    if (action === 'print-awb')     handlePrintAwb(id, param);
     if (action === 'void')          handleVoid(id, param);
+  }
+}
+
+async function handlePrintAwb(id, param) {
+  const btn = document.querySelector('[data-action="print-awb"]');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating AWB…'; }
+
+  try {
+    const res = await api.idl.printAwb(id);
+
+    if (res.label_url) {
+      window.open(res.label_url, '_blank');
+      toast(`AWB created — ${res.air_bill_no}`, 'success');
+    } else if (res.air_bill_no) {
+      toast(`AWB created — ${res.air_bill_no}. No label URL returned.`, 'success');
+    } else {
+      toast('AWB created but no tracking number returned', 'warning');
+    }
+
+    renderIDLDetail(param);
+  } catch (e) {
+    toast(e.message || 'Failed to create AWB', 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-truck-fast"></i> Print AWB'; }
   }
 }
 
@@ -1067,13 +1109,12 @@ async function handleSaveProc(id) {
     }
 
     // ── 2. Save text fields ───────────────────────────────────────────────
-    const idlNo    = document.getElementById('proc-idl-no')?.value.trim()    ?? '';
-    const booklet  = document.getElementById('proc-booklet')?.value.trim()   ?? '';
+    // idl_no / idl_booklet_no are read-only here — they're only ever set via
+    // the Issue IDL action (auto-generated number + stock-picked booklet).
     const awb      = document.getElementById('proc-awb')?.value.trim()       ?? '';
     const comments = document.getElementById('proc-comments')?.value.trim()  ?? '';
 
     await api.put(`/idl/requests/${id}`, {
-      idl_no: idlNo, idl_booklet_no: booklet,
       air_bill_no: awb, officer_comments: comments,
     });
 
@@ -1247,19 +1288,15 @@ function handleReject(id, param) {
   };
 }
 
-function handleIssue(id, param) {
-  // Pre-fill from the Process Application inputs if already entered
-  const prefillNo  = document.getElementById('proc-idl-no')?.value.trim()  ?? '';
-  const prefillBkl = document.getElementById('proc-booklet')?.value.trim() ?? '';
-
+async function handleIssue(id, param) {
   openModal({
     title: 'Issue IDL',
     body: `
       <div class="form-grid">
-        <div class="field"><label>IDL Number *</label>
-          <input id="issue-idl-no" placeholder="IDL-XXXXXXX" value="${esc(prefillNo)}" /></div>
+        <div class="field"><label>IDL Number</label>
+          <input value="Auto-generated on issue" disabled /></div>
         <div class="field"><label>Booklet Number *</label>
-          <input id="issue-booklet" placeholder="Booklet reference" value="${esc(prefillBkl)}" /></div>
+          <select id="issue-booklet"><option value="">Loading booklets…</option></select></div>
       </div>`,
     footer: `<button class="btn btn-ghost" onclick="closeModalGlobal()">
                <i class="fa-solid fa-xmark"></i> Cancel
@@ -1268,13 +1305,25 @@ function handleIssue(id, param) {
                <i class="fa-solid fa-circle-check"></i> Issue IDL
              </button>`,
   });
+
+  const bookletSelect = document.getElementById('issue-booklet');
+  try {
+    const booklets = await api.idl.booklets();
+    const available = booklets.filter(b => !Number(b.is_used) && Number(b.is_active));
+    bookletSelect.innerHTML = available.length
+      ? `<option value="">Select booklet…</option>` +
+        available.map(b => `<option value="${esc(b.booklet_no)}">${esc(b.booklet_no)}</option>`).join('')
+      : `<option value="">No booklets available in stock</option>`;
+  } catch {
+    bookletSelect.innerHTML = `<option value="">Failed to load booklet stock</option>`;
+  }
+
   document.getElementById('confirm-issue').onclick = async () => {
-    const idl_no         = document.getElementById('issue-idl-no').value.trim();
-    const idl_booklet_no = document.getElementById('issue-booklet').value.trim();
-    if (!idl_no || !idl_booklet_no) return toast('All fields required', 'error');
-    await api.idl.issue(id, { idl_no, idl_booklet_no });
+    const idl_booklet_no = bookletSelect.value;
+    if (!idl_booklet_no) return toast('Select a booklet number', 'error');
+    const res = await api.idl.issue(id, { idl_booklet_no });
     closeModal();
-    toast('IDL issued successfully', 'success');
+    toast(`IDL issued successfully — IDL No: ${res.idl_no}`, 'success');
     renderIDLDetail(param);
   };
 }
@@ -1287,7 +1336,24 @@ function identityRow(icon, label, value) {
   return `<div class="rv-identity-row"><span class="rv-id-icon"><i class="${icon}"></i></span><span class="rv-id-label">${label}</span><span class="rv-id-value">${value || '—'}</span></div>`;
 }
 
-function docUpload(key, label) {
+function docUpload(key, label, readOnly = false) {
+  if (readOnly) {
+    // Read-only view of an already-submitted document — no upload input, click opens a lightbox.
+    return `
+      <div class="doc-upload-item">
+        <div class="doc-upload-label">${label}</div>
+        <div class="doc-upload-zone doc-view-only" data-key="${key}" id="doc-zone-${key}" style="cursor:default">
+          <div class="doc-upload-placeholder">
+            <i class="fa-solid fa-file-circle-question"></i>
+            <span>Not submitted</span>
+          </div>
+          <div class="doc-upload-preview" style="display:none">
+            <img class="doc-preview-img" style="cursor:zoom-in" title="Click to view full size" />
+            <span class="doc-preview-name"></span>
+          </div>
+        </div>
+      </div>`;
+  }
   return `
     <div class="doc-upload-item">
       <div class="doc-upload-label">${label} *</div>
@@ -1326,10 +1392,9 @@ async function loadExistingDocs(id) {
   }
 
   Object.entries(docs).forEach(([slot, url]) => {
-    const input   = document.querySelector(`input[data-doc="${slot}"]`);
-    if (!input) return;
-
-    const zone    = input.closest('.doc-upload-zone');
+    // Look up by zone id directly rather than via the upload <input> — read-only
+    // zones (already-submitted documents) don't render one at all.
+    const zone    = document.getElementById(`doc-zone-${slot}`);
     const holder  = zone?.querySelector('.doc-upload-placeholder');
     const preview = zone?.querySelector('.doc-upload-preview');
     const img     = zone?.querySelector('.doc-preview-img');
@@ -1338,11 +1403,33 @@ async function loadExistingDocs(id) {
     if (!zone || !preview || !img) return;
 
     // Serve the image through the API (auth cookie included automatically)
-    img.src = `${window.location.origin}${API_BASE}/idl/requests/${id}/documents/${url.split('/').pop()}`;
-    name.textContent = url.split('/').pop();
+    const fullUrl = `${window.location.origin}${API_BASE}/idl/requests/${id}/documents/${url.split('/').pop()}`;
+    img.src = fullUrl;
+    if (name) name.textContent = url.split('/').pop();
     if (holder)  holder.style.display  = 'none';
     preview.style.display = 'flex';
+
+    if (zone.classList.contains('doc-view-only')) {
+      zone.style.cursor = 'zoom-in';
+      zone.addEventListener('click', () => openIdlLightbox(fullUrl, name?.textContent ?? ''));
+    }
   });
+}
+
+function openIdlLightbox(src, label) {
+  const lightbox = document.getElementById('idl-lightbox');
+  if (!lightbox) return;
+  document.getElementById('idl-lightbox-img').src = src;
+  document.getElementById('idl-lightbox-label').textContent = label;
+  lightbox.style.display = 'flex';
+}
+
+function initIdlLightbox() {
+  const lightbox = document.getElementById('idl-lightbox');
+  if (!lightbox) return;
+  const close = () => { lightbox.style.display = 'none'; };
+  document.getElementById('idl-lightbox-close')?.addEventListener('click', close);
+  lightbox.addEventListener('click', e => { if (e.target === lightbox) close(); });
 }
 
 function initDocUploads() {

@@ -87,7 +87,7 @@ export function renderCPDRequests(param = null) {
           { value: '2',          label: 'Processing' },
           { value: 'Confirmed',  label: 'Confirmed' },
           { value: '3',          label: 'Issued' },
-          { value: 'Returned',   label: 'Returned' },
+          { value: '4',          label: 'Returned' },
           { value: 'Cancelled',  label: 'Cancelled' },
           { value: '8',          label: 'Sent for Corrections' },
         ]},
@@ -1403,23 +1403,28 @@ export async function renderCPDDetail(param) {
     });
   }
 
-  // Return request approve button
-  const returnApproveBtn = document.getElementById('return-approve-btn');
-  if (returnApproveBtn) {
+  // Return request approve button — rendered twice (top + bottom action bars share
+  // the same actionsHtml), so bind every match, not just the first (getElementById
+  // would only ever wire up the top copy, leaving the bottom one inert).
+  document.querySelectorAll('#return-approve-btn').forEach(returnApproveBtn => {
     returnApproveBtn.addEventListener('click', async () => {
-      returnApproveBtn.disabled = true;
-      returnApproveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+      document.querySelectorAll('#return-approve-btn').forEach(btn => {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+      });
       try {
         await api.cpd.approveReturnRequest(returnApproveBtn.dataset.returnId);
         toast('Return request approved', 'success');
         navigate('cpd-return-requests');
       } catch (e) {
         toast(e.message || 'Approval failed', 'error');
-        returnApproveBtn.disabled = false;
-        returnApproveBtn.innerHTML = '<i class="fa-solid fa-check"></i> Approve';
+        document.querySelectorAll('#return-approve-btn').forEach(btn => {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-check"></i> Approve';
+        });
       }
     });
-  }
+  });
 
   // Lightbox — open on doc thumbnail click
   const lightbox      = document.getElementById('cpd-lightbox');
