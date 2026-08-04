@@ -5,6 +5,11 @@ class IDLController
 {
     private Database $db;
 
+    // Shared default print overlay coordinates — used both as the printIdl() fallback
+    // when an officer has no saved calibration yet, and as the pre-fill for the print
+    // margins screen the first time an officer opens it.
+    private const DEFAULT_PRINT_COORDINATES = '{"top_atc_string":{"x":"90","y":"34"},"issued_date":{"x":"74","y":"42"},"qr_code":{"x":"88","y":"46"},"last_name":{"x":"47","y":"86"},"first_name":{"x":"47","y":"93"},"place_of_birth":{"x":"47","y":"100"},"dob":{"x":"47","y":"107"},"city":{"x":"47","y":"113"},"sex":{"x":"47","y":"121"},"nationality":{"x":"62","y":"121"},"idl_no":{"x":"47","y":"127"},"license_no":{"x":"47","y":"136"},"center_image":{"x":"84","y":"103"},"class_A_tick":{"x":"130","y":"86"},"class_B_tick":{"x":"130","y":"91"},"class_C_tick":{"x":"130","y":"97"},"class_D_tick":{"x":"130","y":"103"},"class_E_tick_1":{"x":"130","y":"91"},"class_E_tick_2":{"x":"130","y":"108"}}';
+
     public function __construct()
     {
         $this->db = Database::getInstance();
@@ -61,11 +66,15 @@ class IDLController
         }
 
         // Any logged-in user could otherwise fetch any other customer's documents
-        // just by guessing an auto_id — restrict to staff or the request's own owner.
-        $user    = Auth::user();
-        $ownerId = (int)$this->db->scalar('SELECT belonging_user_id FROM mn_idl_requests WHERE auto_id=?', [$autoId]);
-        $isOwner = $ownerId > 0 && $ownerId === (int)($user['user_id'] ?? 0);
-        if (($user['role_name'] ?? '') !== 'idl_officer' && !$isOwner) {
+        // just by guessing an auto_id — restrict to staff with IDL module access
+        // (idl_officer, cashier, walk-in, distributor branch, etc.) or the request's
+        // own owner. A single hardcoded role here would lock out every other staff
+        // role that also needs to view application documents.
+        $user     = Auth::user();
+        $ownerId  = (int)$this->db->scalar('SELECT belonging_user_id FROM mn_idl_requests WHERE auto_id=?', [$autoId]);
+        $isOwner  = $ownerId > 0 && $ownerId === (int)($user['user_id'] ?? 0);
+        $isStaff  = in_array('idl', $user['modules'] ?? [], true);
+        if (!$isStaff && !$isOwner) {
             Response::forbidden('Access denied');
         }
 
@@ -980,10 +989,14 @@ class IDLController
 
         // Status 3 = authorised/paid
         if ((int)$status === 3) {
+            // Online payment is confirmed here — the request has already been paid for,
+            // so it should move straight to Processing (2) rather than sitting at status 1
+            // ("Not Paid"), which would otherwise force an officer through a redundant
+            // "accept payment" step for money that's already been collected via Telr.
             $this->db->execute(
                 "UPDATE mn_idl_requests
-                 SET paid_status=1, paid_date=NOW(), order_ref_no=?
-                 WHERE auto_id=?",
+                 SET paid_status=1, paid_date=NOW(), order_ref_no=?, request_status=2
+                 WHERE auto_id=? AND request_status=1",
                 [$telrRef ?? $orderRef, (int)$autoId],
             );
 
@@ -1523,7 +1536,7 @@ class IDLController
                     $totalAmount,
                     $paidStatus,
                     $body['payment_method'],
-                    'OFFICER',
+                    $publicRole ? 'WEB' : 'OFFICER',
                     $queuePosition,
                 ],
             );
@@ -1656,7 +1669,9 @@ class IDLController
         } else {
             // IDL Officer / Cashier approves paid request → status 4
             // Also update idl_no, idl_booklet_no, air_bill_no if provided
-            $sets   = ['request_status=4', 'processed_by=?'];
+            // issued_date must be set here too — printIdl() relies on it for every
+            // status-4 request, and this is a separate path to status 4 from issue().
+            $sets   = ['request_status=4', 'issued_date=NOW()', 'processed_by=?'];
             $binds  = [Auth::id()];
 
             if (!empty($body['idl_no'])) {
@@ -2040,7 +2055,8 @@ class IDLController
      * GET /api/idl/requests/{id}/print
      * Streams a print-ready PDF of the issued IDL (physical booklet overlay).
      * Ported from the legacy application/views/idl/print-idl.phtml — restricted
-     * to idl_officer or the owning customer, and only once the request has been issued (status 4).
+     * to staff with IDL module access or the owning customer, and only once the
+     * request has been issued (status 4).
      */
     public function printIdl(array $params, array $body, array $query): void
     {
@@ -2060,7 +2076,8 @@ class IDLController
         if ($r === null) Response::notFound('IDL request not found');
 
         $isOwner = (int)($r['belonging_user_id'] ?? 0) === (int)($user['user_id'] ?? 0);
-        if (($user['role_name'] ?? '') !== 'idl_officer' && !$isOwner) {
+        $isStaff = in_array('idl', $user['modules'] ?? [], true);
+        if (!$isStaff && !$isOwner) {
             Response::forbidden('Access denied');
         }
         if ((int)$r['request_status'] !== 4) {
@@ -2076,8 +2093,7 @@ class IDLController
 
         // ── Per-officer print calibration (falls back to the shared default template) ──
         $margins = $this->db->queryOne('SELECT * FROM mn_idl_user_margins WHERE user_id=?', [$user['user_id']]);
-        $defaultCoordinates = '{"top_atc_string":{"x":"90","y":"34"},"issued_date":{"x":"74","y":"42"},"qr_code":{"x":"88","y":"46"},"last_name":{"x":"47","y":"86"},"first_name":{"x":"47","y":"93"},"place_of_birth":{"x":"47","y":"100"},"dob":{"x":"47","y":"107"},"city":{"x":"47","y":"113"},"sex":{"x":"47","y":"121"},"nationality":{"x":"62","y":"121"},"idl_no":{"x":"47","y":"127"},"license_no":{"x":"47","y":"136"},"center_image":{"x":"84","y":"103"},"class_A_tick":{"x":"130","y":"86"},"class_B_tick":{"x":"130","y":"91"},"class_C_tick":{"x":"130","y":"97"},"class_D_tick":{"x":"130","y":"103"},"class_E_tick_1":{"x":"130","y":"91"},"class_E_tick_2":{"x":"130","y":"108"}}';
-        $coordinates = json_decode($margins['component_coordinates'] ?? $defaultCoordinates);
+        $coordinates = json_decode($margins['component_coordinates'] ?? self::DEFAULT_PRINT_COORDINATES);
         $x_px = (float)($margins['left_margin'] ?? 0) * 1.333333;
         $y_px = (float)($margins['top_margin'] ?? 0) * 1.333333;
 
@@ -2123,7 +2139,11 @@ class IDLController
         $fromName   = $r['request_type'] === 'RTA' ? 'RTA' : 'ATCUAE ONLINE';
         $segments[] = ['html' => $fromName, 'x' => $coordinates->top_atc_string->x + $x_px, 'y' => $coordinates->top_atc_string->y + $y_px];
 
-        $issuedBasis = $r['request_type'] === 'RTA' ? $r['requested_datetime'] : $r['idl_issued_date'];
+        // issued_date should always be set once request_status reaches 4, but older
+        // records approved before that was consistently enforced can still have it
+        // NULL — fall back to the request date rather than crashing on strtotime(null).
+        $issuedBasis = ($r['request_type'] === 'RTA' ? $r['requested_datetime'] : $r['idl_issued_date'])
+            ?? $r['requested_datetime'] ?? date('Y-m-d');
         $dateText    = 'FROM ' . date('Y-m-d', strtotime($issuedBasis)) . ' To ' . date('Y-m-d', strtotime($issuedBasis . ' + 365 day'));
         $segments[]  = ['html' => $dateText, 'x' => $coordinates->issued_date->x + $x_px, 'y' => $coordinates->issued_date->y + $y_px];
 
@@ -2164,6 +2184,64 @@ class IDLController
 
         $pdf->Output(($r['idl_no'] ?: $r['request_id']) . '.pdf', 'I');
         exit;
+    }
+
+    /**
+     * GET /api/idl/print-margins
+     * Returns the current staff member's saved print calibration (left/top margin
+     * plus per-component x/y overlay coordinates), or the shared defaults if they
+     * haven't saved one of their own yet — shown on the "adjust margins" screen
+     * before printing an issued IDL.
+     */
+    public function getPrintMargins(array $params, array $body, array $query): void
+    {
+        $userId  = Auth::id();
+        $margins = $this->db->queryOne('SELECT * FROM mn_idl_user_margins WHERE user_id=?', [$userId]);
+
+        Response::success([
+            'left_margin'            => $margins['left_margin'] ?? '0.00',
+            'top_margin'             => $margins['top_margin'] ?? '0.00',
+            'component_coordinates'  => json_decode($margins['component_coordinates'] ?? self::DEFAULT_PRINT_COORDINATES, true),
+        ]);
+    }
+
+    /**
+     * POST /api/idl/print-margins
+     * Saves the current staff member's print calibration — upserted per user_id.
+     */
+    public function savePrintMargins(array $params, array $body, array $query): void
+    {
+        Validator::make($body)->required('left_margin', 'top_margin', 'component_coordinates')->validate();
+        if (!is_array($body['component_coordinates'])) {
+            Response::error('component_coordinates must be an object', 422);
+        }
+        // printIdl() expects every one of these keys to be present with x/y — a
+        // partial payload would silently break that officer's printing until fixed.
+        $requiredKeys = ['top_atc_string','issued_date','qr_code','last_name','first_name',
+            'place_of_birth','dob','city','sex','nationality','idl_no','license_no',
+            'center_image','class_A_tick','class_B_tick','class_C_tick','class_D_tick',
+            'class_E_tick_1','class_E_tick_2'];
+        foreach ($requiredKeys as $key) {
+            $coord = $body['component_coordinates'][$key] ?? null;
+            if (!is_array($coord) || !isset($coord['x']) || !isset($coord['y'])) {
+                Response::error("Missing or invalid coordinate for '{$key}'", 422);
+            }
+        }
+
+        $userId = Auth::id();
+        $coordinatesJson = json_encode($body['component_coordinates']);
+
+        $this->db->execute(
+            "INSERT INTO mn_idl_user_margins (user_id, left_margin, top_margin, component_coordinates)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                left_margin = VALUES(left_margin),
+                top_margin  = VALUES(top_margin),
+                component_coordinates = VALUES(component_coordinates)",
+            [$userId, $body['left_margin'], $body['top_margin'], $coordinatesJson],
+        );
+
+        Response::success(null, 'Print margins saved');
     }
 
     /**

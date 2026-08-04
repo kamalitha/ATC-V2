@@ -320,7 +320,7 @@ class CPDController
         $returnId = (int) $params['id'];
 
         $ret = $this->db->queryOne(
-            "SELECT rr.return_id, rr.delivery_fee,
+            "SELECT rr.return_id, rr.delivery_fee, rr.penalty_amount,
                     u.first_name, u.last_name, u.email
              FROM mn_cpd_carnet_returns rr
              JOIN mn_users u ON u.user_id = rr.added_by
@@ -328,7 +328,14 @@ class CPDController
             [$returnId],
         );
         if (!$ret) Response::notFound('Return request not found');
-        if (empty($ret['delivery_fee'])) Response::error('No Aramex fee for this return', 422);
+        if (empty($ret['delivery_fee']) && empty($ret['penalty_amount'])) {
+            Response::error('No amount due for this return', 422);
+        }
+
+        $totalAmount = (float)($ret['delivery_fee'] ?? 0) + (float)($ret['penalty_amount'] ?? 0);
+        $desc = ((float)($ret['penalty_amount'] ?? 0) > 0)
+            ? 'CPD Carnet Return – Aramex Delivery Fee + Late Return Penalty'
+            : 'CPD Carnet Return – Aramex Delivery Fee';
 
         $cartId = (string)time();
 
@@ -336,11 +343,11 @@ class CPDController
             'ivp_method'   => 'create',
             'ivp_store'    => Config::TELR_STORE_ID,
             'ivp_authkey'  => Config::TELR_AUTH_KEY,
-            'ivp_amount'   => $ret['delivery_fee'],
+            'ivp_amount'   => $totalAmount,
             'ivp_currency' => Config::TELR_CURRENCY,
             'ivp_test'     => Config::TELR_TEST,
             'ivp_cart'     => $cartId,
-            'ivp_desc'     => 'CPD Carnet Return – Aramex Delivery Fee',
+            'ivp_desc'     => $desc,
             'return_auth'  => Config::telrReturnUrl(),
             'return_decl'  => Config::telrDeclineUrl(),
             'return_can'   => Config::telrCancelUrl(),
@@ -1350,11 +1357,12 @@ class CPDController
         if ($existing) Response::error('A return request has already been submitted for this carnet', 422);
 
         $issuedCarnet = $this->db->queryOne(
-            'SELECT carnet_id FROM mn_cpd_issued_carnets WHERE request_id = ? ORDER BY carnet_issue_id DESC LIMIT 1',
+            'SELECT carnet_id, issued_datetime FROM mn_cpd_issued_carnets WHERE request_id = ? ORDER BY carnet_issue_id DESC LIMIT 1',
             [$id],
         );
 
         $aramexFee = $deliveryOption === 'ARAMAX' ? Config::CPD_DELIVERY_FEE : null;
+        $penaltyAmount = $this->calcReturnPenalty($issuedCarnet['issued_datetime'] ?? null);
 
         $bankInfo = null;
         if ($paymentOption === 'BANK_DEPOSIT') {
@@ -1369,8 +1377,8 @@ class CPDController
         $returnId = $this->db->insert(
             "INSERT INTO mn_cpd_carnet_returns
              (carnet_id, request_id, remarks, delivery_method, return_payment_method,
-              delivery_fee, cus_bank_information, added_by, added_datetime, confirmed_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), 0)",
+              delivery_fee, penalty_amount, cus_bank_information, added_by, added_datetime, confirmed_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 0)",
             [
                 $issuedCarnet['carnet_id'] ?? null,
                 $id,
@@ -1378,12 +1386,21 @@ class CPDController
                 $deliveryOption,
                 $paymentOption,
                 $aramexFee,
+                $penaltyAmount,
                 $bankInfo,
                 Auth::id(),
             ],
         );
 
-        Response::created(['return_id' => $returnId], 'Return carnet request submitted successfully');
+        Response::created(['return_id' => $returnId, 'penalty_amount' => $penaltyAmount], 'Return carnet request submitted successfully');
+    }
+
+    /** A return is late (and incurs Config::CPD_PENALTY) once the carnet has been out for over 364 days. */
+    private function calcReturnPenalty(?string $issuedDatetime): float
+    {
+        if (!$issuedDatetime) return 0.0;
+        $isLate = strtotime($issuedDatetime) + (364 * 86400) < time();
+        return $isLate ? Config::CPD_PENALTY : 0.0;
     }
 
     // ── Officer: Create Return (bypasses customer ownership check) ────────────
@@ -1412,11 +1429,12 @@ class CPDController
         if ($existing) Response::error('A return request has already been submitted for this carnet', 422);
 
         $issuedCarnet = $this->db->queryOne(
-            'SELECT carnet_id FROM mn_cpd_issued_carnets WHERE request_id = ? ORDER BY carnet_issue_id DESC LIMIT 1',
+            'SELECT carnet_id, issued_datetime FROM mn_cpd_issued_carnets WHERE request_id = ? ORDER BY carnet_issue_id DESC LIMIT 1',
             [$id],
         );
 
         $aramexFee = $deliveryOption === 'ARAMAX' ? Config::CPD_DELIVERY_FEE : null;
+        $penaltyAmount = $this->calcReturnPenalty($issuedCarnet['issued_datetime'] ?? null);
 
         $bankInfo = null;
         if ($paymentOption === 'BANK_DEPOSIT') {
@@ -1431,8 +1449,8 @@ class CPDController
         $returnId = $this->db->insert(
             "INSERT INTO mn_cpd_carnet_returns
              (carnet_id, request_id, remarks, delivery_method, return_payment_method,
-              delivery_fee, cus_bank_information, added_by, added_datetime, confirmed_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), 0)",
+              delivery_fee, penalty_amount, cus_bank_information, added_by, added_datetime, confirmed_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 0)",
             [
                 $issuedCarnet['carnet_id'] ?? null,
                 $id,
@@ -1440,6 +1458,7 @@ class CPDController
                 $deliveryOption,
                 $paymentOption,
                 $aramexFee,
+                $penaltyAmount,
                 $bankInfo,
                 Auth::id(),
             ],
@@ -2138,6 +2157,277 @@ class CPDController
             'label_url'   => $labelUrl,
             'raw'         => $result,
         ], 'AWB created successfully');
+    }
+
+    // ── Print Carnet ─────────────────────────────────────────────────────────
+    // Ported from the legacy application's CPDManagementController::printCPDCarnet().
+    // Unlike IDL's print (which uses per-officer, DB-stored, user-adjustable
+    // coordinates), the CPD carnet overlay position is fixed — same static layout
+    // for every officer, every time — so there's no margins/calibration screen here.
+    private const CPD_PRINT_PARAMS = [
+        1 => [
+            'holder_address'  => ['x' => 20,  'y' => 23],
+            'expiry_date'     => ['x' => 120, 'y' => 36],
+            'registered_in'   => ['x' => 85,  'y' => 125],
+            'registration_no' => ['x' => 140, 'y' => 125],
+            'location'        => ['x' => 55,  'y' => 247],
+            'date'            => ['x' => 150, 'y' => 247],
+        ],
+        2 => [
+            'holder_address'      => ['x' => 21,  'y' => 74],
+            'expiry_date1'        => ['x' => 160, 'y' => 20],
+            'expiry_date2'        => ['x' => 160, 'y' => 75],
+            'country_string'      => ['x' => 101, 'y' => 5],
+            'registered_in'       => ['x' => 65,  'y' => 94],
+            'registration_no'     => ['x' => 138, 'y' => 94],
+            'manuf_year'          => ['x' => 80,  'y' => 98],
+            'net_weight'          => ['x' => 85,  'y' => 102],
+            'vehicle_value'       => ['x' => 75,  'y' => 106],
+            'chassis_no'          => ['x' => 60,  'y' => 111],
+            'vehicle_make_model1' => ['x' => 50,  'y' => 115],
+            'engine_no'           => ['x' => 50,  'y' => 119],
+            'vehicle_make_model2' => ['x' => 50,  'y' => 124],
+            'no_of_cylinders'     => ['x' => 65,  'y' => 128],
+            'horse_power'         => ['x' => 65,  'y' => 132],
+            'body_type'           => ['x' => 65,  'y' => 140],
+            'color'               => ['x' => 60,  'y' => 145],
+            'upholstery'          => ['x' => 60,  'y' => 149],
+            'no_of_seats'         => ['x' => 90,  'y' => 153],
+            'radio'               => ['x' => 65,  'y' => 162],
+            'spare_tyre'          => ['x' => 63,  'y' => 166],
+            'others1'             => ['x' => 62,  'y' => 170],
+            'others2'             => ['x' => 25,  'y' => 173],
+        ],
+        3 => [
+            'holder_address'      => ['x' => 21,  'y' => 187],
+            'expiry_date'         => ['x' => 160, 'y' => 187],
+            'registered_in'       => ['x' => 60,  'y' => 207],
+            'registration_no'     => ['x' => 138, 'y' => 207],
+            'manuf_year'          => ['x' => 75,  'y' => 211],
+            'net_weight'          => ['x' => 82,  'y' => 215],
+            'vehicle_value'       => ['x' => 65,  'y' => 209],
+            'chassis_no'          => ['x' => 35,  'y' => 222],
+            'vehicle_make_model1' => ['x' => 40,  'y' => 225],
+            'engine_no'           => ['x' => 48,  'y' => 230],
+            'vehicle_make_model2' => ['x' => 40,  'y' => 235],
+            'no_of_cylinders'     => ['x' => 66,  'y' => 239],
+            'horse_power'         => ['x' => 57,  'y' => 243],
+            'body_type'           => ['x' => 64,  'y' => 251],
+            'color'               => ['x' => 50,  'y' => 255],
+            'upholstery'          => ['x' => 62,  'y' => 259],
+            'country_string'      => ['x' => 101, 'y' => 210],
+            'no_of_seats'         => ['x' => 89,  'y' => 264],
+            'radio'               => ['x' => 70,  'y' => 272],
+            'spare_tyre'          => ['x' => 70,  'y' => 275],
+            'others1'             => ['x' => 62,  'y' => 280],
+            'others2'             => ['x' => 25,  'y' => 284],
+        ],
+        4 => [
+            'registered_in'       => ['x' => 60,  'y' => 95],
+            'manuf_year'          => ['x' => 80,  'y' => 99],
+            'net_weight'          => ['x' => 90,  'y' => 103],
+            'vehicle_value'       => ['x' => 60,  'y' => 105],
+            'chassis_no'          => ['x' => 50,  'y' => 111],
+            'vehicle_make_model1' => ['x' => 40,  'y' => 225],
+            'engine_no'           => ['x' => 48,  'y' => 230],
+            'vehicle_make_model2' => ['x' => 55,  'y' => 124],
+            'no_of_cylinders'     => ['x' => 60,  'y' => 128],
+            'horse_power'         => ['x' => 70,  'y' => 132],
+            'body_type'           => ['x' => 80,  'y' => 140],
+            'color'               => ['x' => 65,  'y' => 144],
+            'upholstery'          => ['x' => 80,  'y' => 149],
+            'no_of_seats'         => ['x' => 100, 'y' => 153],
+            'radio'               => ['x' => 75,  'y' => 162],
+            'spare_tyre'          => ['x' => 75,  'y' => 165],
+            'others1'             => ['x' => 62,  'y' => 170],
+            'others2'             => ['x' => 25,  'y' => 174],
+            'registration_no'     => ['x' => 150, 'y' => 97],
+        ],
+        5 => [
+            'country_string' => ['x' => 153, 'y' => 212],
+        ],
+    ];
+
+    public function printCarnet(array $params, array $body, array $query): void
+    {
+        $id   = (int) $params['id'];
+        $user = Auth::user();
+
+        $req = $this->db->queryOne(
+            "SELECT r.auto_id, r.request_status, r.belonging_user_id,
+                    r.vehicle_registered_in, r.registration_no, r.manuf_year, r.net_weight,
+                    r.vehicle_value, r.chassis_no, r.vehicle_make, r.vehicle_model, r.engine_no,
+                    r.no_of_cylinders, r.horse_power, r.body_type, r.color, r.upholstery,
+                    r.no_of_seats, r.radio, r.spare_tyre, r.others1, r.others2,
+                    r.extra_owner1_name, r.extra_owner2_name,
+                    cu.first_name, cu.last_name,
+                    u.mobile_no
+             FROM mn_cpd_requests r
+             LEFT JOIN mn_cpd_request_user cu ON cu.request_auto_id = r.auto_id
+             LEFT JOIN mn_users u             ON u.user_id          = r.belonging_user_id
+             WHERE r.auto_id = ?",
+            [$id],
+        );
+        if (!$req) Response::notFound('Request not found');
+
+        $isOwner = (int)($req['belonging_user_id'] ?? 0) === (int)($user['user_id'] ?? 0);
+        $isStaff = in_array('cpd', $user['modules'] ?? [], true);
+        if (!$isStaff && !$isOwner) {
+            Response::forbidden('Access denied');
+        }
+        if ((int)$req['request_status'] !== 3) {
+            Response::error('Carnet can only be printed once it has been issued', 409);
+        }
+
+        $p = self::CPD_PRINT_PARAMS;
+
+        $expiryDate = date('Y-m-d', strtotime('+364 day'));
+
+        $notAllowed = $this->db->query(
+            "SELECT cc.nationality FROM mn_cpd_countries cc
+             WHERE cc.nationality_id NOT IN (
+                 SELECT country_id FROM mn_cpd_request_country_list WHERE request_id = ?
+             )",
+            [$id],
+        );
+        $countryString = '';
+        foreach ($notAllowed as $row) {
+            $countryString .= strtoupper((string)$row['nationality']) . '<br />';
+        }
+
+        $holderAddress = strtoupper(trim(($req['first_name'] ?? '') . ' ' . ($req['last_name'] ?? '')))
+            . '<br />TEL: ' . ($req['mobile_no'] ?? '')
+            . '<br />' . strtoupper((string)($req['extra_owner1_name'] ?? ''))
+            . '<br />' . ($req['extra_owner2_name'] ?? '');
+
+        $locRow = $this->db->queryOne(
+            "SELECT l.location FROM mn_cpd_user_locations ul
+             JOIN mn_cpd_locations l ON l.location_id = ul.location_id
+             WHERE ul.user_id = ? LIMIT 1",
+            [$user['user_id'] ?? 0],
+        );
+        $location = $locRow['location'] ?? 'Dubai';
+
+        $vehicleMakeModel = trim(($req['vehicle_make'] ?? '') . ' ' . ($req['vehicle_model'] ?? ''));
+        $today = date('Y-m-d');
+
+        $seg = fn($html, $x, $y, $fontSize = 8) => ['html' => (string)($html ?? ''), 'x' => $x, 'y' => $y, 'font' => $fontSize];
+
+        $segments = [];
+
+        // ── Page 1 (cover) ──
+        $segments[] = $seg($holderAddress,                        $p[1]['holder_address']['x'],  $p[1]['holder_address']['y']);
+        $segments[] = $seg($expiryDate,                            $p[1]['expiry_date']['x'],     $p[1]['expiry_date']['y']);
+        $segments[] = $seg($req['vehicle_registered_in'],          $p[1]['registered_in']['x'],   $p[1]['registered_in']['y']);
+        $segments[] = $seg($req['registration_no'],                $p[1]['registration_no']['x'], $p[1]['registration_no']['y']);
+        $segments[] = $seg($location,                              $p[1]['location']['x'],        $p[1]['location']['y']);
+        $segments[] = $seg($today,                                 $p[1]['date']['x'],            $p[1]['date']['y']);
+
+        // ── Page 2 — two panels sharing one physical page (matches legacy layout) ──
+        $segments[] = ['add_page' => true];
+        $segments[] = $seg($holderAddress,                         $p[2]['holder_address']['x'],      $p[2]['holder_address']['y']);
+        $segments[] = $seg($expiryDate,                            $p[2]['expiry_date1']['x'],        $p[2]['expiry_date1']['y']);
+        $segments[] = $seg($expiryDate,                            $p[2]['expiry_date2']['x'],        $p[2]['expiry_date2']['y']);
+        $segments[] = $seg($countryString,                         $p[2]['country_string']['x'],      $p[2]['country_string']['y']);
+        $segments[] = $seg($req['vehicle_registered_in'],          $p[2]['registered_in']['x'],       $p[2]['registered_in']['y']);
+        $segments[] = $seg($req['registration_no'],                $p[2]['registration_no']['x'],     $p[2]['registration_no']['y']);
+        $segments[] = $seg($req['manuf_year'],                     $p[2]['manuf_year']['x'],          $p[2]['manuf_year']['y']);
+        $segments[] = $seg($req['net_weight'],                     $p[2]['net_weight']['x'],          $p[2]['net_weight']['y']);
+        $segments[] = $seg($req['vehicle_value'],                  $p[2]['vehicle_value']['x'],       $p[2]['vehicle_value']['y']);
+        $segments[] = $seg($req['chassis_no'],                     $p[2]['chassis_no']['x'],          $p[2]['chassis_no']['y']);
+        $segments[] = $seg($vehicleMakeModel,                      $p[2]['vehicle_make_model1']['x'], $p[2]['vehicle_make_model1']['y']);
+        $segments[] = $seg($req['engine_no'],                      $p[2]['engine_no']['x'],           $p[2]['engine_no']['y']);
+        $segments[] = $seg($vehicleMakeModel,                      $p[2]['vehicle_make_model2']['x'], $p[2]['vehicle_make_model2']['y']);
+        $segments[] = $seg($req['no_of_cylinders'],                $p[2]['no_of_cylinders']['x'],     $p[2]['no_of_cylinders']['y']);
+        $segments[] = $seg($req['horse_power'],                    $p[2]['horse_power']['x'],         $p[2]['horse_power']['y']);
+        $segments[] = $seg($req['body_type'],                      $p[2]['body_type']['x'],           $p[2]['body_type']['y']);
+        $segments[] = $seg($req['color'],                          $p[2]['color']['x'],               $p[2]['color']['y']);
+        $segments[] = $seg($req['upholstery'],                     $p[2]['upholstery']['x'],          $p[2]['upholstery']['y']);
+        $segments[] = $seg($req['no_of_seats'],                    $p[2]['no_of_seats']['x'],         $p[2]['no_of_seats']['y']);
+        $segments[] = $seg($req['radio'],                          $p[2]['radio']['x'],               $p[2]['radio']['y']);
+        $segments[] = $seg($req['spare_tyre'],                     $p[2]['spare_tyre']['x'],          $p[2]['spare_tyre']['y']);
+        $segments[] = $seg($req['others1'],                        $p[2]['others1']['x'],             $p[2]['others1']['y']);
+        $segments[] = $seg($req['others2'],                        $p[2]['others2']['x'],             $p[2]['others2']['y']);
+
+        $segments[] = $seg($holderAddress,                         $p[3]['holder_address']['x'],      $p[3]['holder_address']['y']);
+        $segments[] = $seg($expiryDate,                            $p[3]['expiry_date']['x'],         $p[3]['expiry_date']['y']);
+        $segments[] = $seg($req['vehicle_registered_in'],          $p[3]['registered_in']['x'],       $p[3]['registered_in']['y']);
+        $segments[] = $seg($req['registration_no'],                $p[3]['registration_no']['x'],     $p[3]['registration_no']['y']);
+        $segments[] = $seg($req['manuf_year'],                     $p[3]['manuf_year']['x'],          $p[3]['manuf_year']['y']);
+        $segments[] = $seg($req['net_weight'],                     $p[3]['net_weight']['x'],          $p[3]['net_weight']['y']);
+        $segments[] = $seg($req['vehicle_value'],                  $p[3]['vehicle_value']['x'],       $p[3]['vehicle_value']['y']);
+        $segments[] = $seg($req['chassis_no'],                     $p[3]['chassis_no']['x'],          $p[3]['chassis_no']['y']);
+        $segments[] = $seg($vehicleMakeModel,                      $p[3]['vehicle_make_model1']['x'], $p[3]['vehicle_make_model1']['y']);
+        $segments[] = $seg($req['engine_no'],                      $p[3]['engine_no']['x'],           $p[3]['engine_no']['y']);
+        $segments[] = $seg($vehicleMakeModel,                      $p[3]['vehicle_make_model2']['x'], $p[3]['vehicle_make_model2']['y']);
+        $segments[] = $seg($req['no_of_cylinders'],                $p[3]['no_of_cylinders']['x'],     $p[3]['no_of_cylinders']['y']);
+        $segments[] = $seg($req['horse_power'],                    $p[3]['horse_power']['x'],         $p[3]['horse_power']['y']);
+        $segments[] = $seg($req['body_type'],                      $p[3]['body_type']['x'],           $p[3]['body_type']['y']);
+        $segments[] = $seg($req['color'],                          $p[3]['color']['x'],               $p[3]['color']['y']);
+        $segments[] = $seg($req['upholstery'],                     $p[3]['upholstery']['x'],          $p[3]['upholstery']['y']);
+        $segments[] = $seg($countryString,                         $p[3]['country_string']['x'],      $p[3]['country_string']['y']);
+        $segments[] = $seg($req['no_of_seats'],                    $p[3]['no_of_seats']['x'],         $p[3]['no_of_seats']['y']);
+        $segments[] = $seg($req['radio'],                          $p[3]['radio']['x'],               $p[3]['radio']['y']);
+        $segments[] = $seg($req['spare_tyre'],                     $p[3]['spare_tyre']['x'],          $p[3]['spare_tyre']['y']);
+        $segments[] = $seg($req['others1'],                        $p[3]['others1']['x'],             $p[3]['others1']['y']);
+        $segments[] = $seg($req['others2'],                        $p[3]['others2']['x'],             $p[3]['others2']['y']);
+
+        // ── Page 3 ──
+        $segments[] = ['add_page' => true];
+        $segments[] = $seg($req['vehicle_registered_in'],          $p[4]['registered_in']['x'],       $p[4]['registered_in']['y']);
+        $segments[] = $seg($req['manuf_year'],                     $p[4]['manuf_year']['x'],          $p[4]['manuf_year']['y']);
+        $segments[] = $seg($req['net_weight'],                     $p[4]['net_weight']['x'],          $p[4]['net_weight']['y']);
+        $segments[] = $seg($req['chassis_no'],                     $p[4]['chassis_no']['x'],          $p[4]['chassis_no']['y']);
+        $segments[] = $seg($vehicleMakeModel,                      $p[4]['vehicle_make_model1']['x'], $p[4]['vehicle_make_model1']['y']);
+        $segments[] = $seg($req['engine_no'],                      $p[4]['engine_no']['x'],           $p[4]['engine_no']['y']);
+        $segments[] = $seg($vehicleMakeModel,                      $p[4]['vehicle_make_model2']['x'], $p[4]['vehicle_make_model2']['y']);
+        $segments[] = $seg($req['no_of_cylinders'],                $p[4]['no_of_cylinders']['x'],     $p[4]['no_of_cylinders']['y']);
+        $segments[] = $seg($req['horse_power'],                    $p[4]['horse_power']['x'],         $p[4]['horse_power']['y']);
+        $segments[] = $seg($req['body_type'],                      $p[4]['body_type']['x'],           $p[4]['body_type']['y']);
+        $segments[] = $seg($req['color'],                          $p[4]['color']['x'],               $p[4]['color']['y']);
+        $segments[] = $seg($req['upholstery'],                     $p[4]['upholstery']['x'],          $p[4]['upholstery']['y']);
+        $segments[] = $seg($req['no_of_seats'],                    $p[4]['no_of_seats']['x'],         $p[4]['no_of_seats']['y']);
+        $segments[] = $seg($req['radio'],                          $p[4]['radio']['x'],               $p[4]['radio']['y']);
+        $segments[] = $seg($req['spare_tyre'],                     $p[4]['spare_tyre']['x'],          $p[4]['spare_tyre']['y']);
+        $segments[] = $seg($req['others1'],                        $p[4]['others1']['x'],             $p[4]['others1']['y']);
+        $segments[] = $seg($req['others2'],                        $p[4]['others2']['x'],             $p[4]['others2']['y']);
+        $segments[] = $seg($req['vehicle_value'],                  $p[4]['vehicle_value']['x'],       $p[4]['vehicle_value']['y']);
+        $segments[] = $seg($req['registration_no'],                $p[4]['registration_no']['x'],     $p[4]['registration_no']['y']);
+
+        // ── Page 4 ──
+        $segments[] = ['add_page' => true];
+        $segments[] = $seg($countryString,                         $p[5]['country_string']['x'],      $p[5]['country_string']['y']);
+
+        require_once API_ROOT . '/vendor/autoload.php';
+
+        $pdf = new \TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
+        $pdf->SetCreator(PDF_CREATOR);
+        $pdf->SetAuthor('');
+        $pdf->SetTitle('');
+        $pdf->SetSubject('');
+        $pdf->SetKeywords('');
+        $pdf->setPrintHeader(false);
+        $pdf->setPrintFooter(false);
+        $pdf->SetDefaultMonospacedFont(PDF_FONT_MONOSPACED);
+        $pdf->SetMargins(PDF_MARGIN_LEFT, 10, PDF_MARGIN_RIGHT);
+        $pdf->SetAutoPageBreak(true, PDF_MARGIN_BOTTOM);
+        $pdf->setImageScale(PDF_IMAGE_SCALE_RATIO);
+        $pdf->setFontSubsetting(true);
+        $pdf->SetFont('dejavusans', '', 9, '', true);
+        $pdf->AddPage();
+
+        foreach ($segments as $segment) {
+            if (!empty($segment['add_page'])) {
+                $pdf->AddPage();
+                continue;
+            }
+            $pdf->SetFontSize($segment['font'] ?? 8);
+            $pdf->writeHTMLCell(0, 0, $segment['x'], $segment['y'], $segment['html'], 0, 1, 0, true, '', false);
+        }
+
+        $this->logEvent('PRINT_CARNET', $id);
+        $pdf->Output('Carnet.pdf', 'I');
+        exit;
     }
 
     // ── Return Guarantee Cheque ───────────────────────────────────────────────

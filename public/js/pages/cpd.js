@@ -1472,6 +1472,7 @@ export async function renderCPDDetail(param) {
     if (action === 'reject')        cpdReject(id);
     if (action === 'issue-carnet')  cpdIssueCarnet(id);
     if (action === 'cancel')        cpdCancel(id);
+    if (action === 'print-carnet')  window.open(api.cpd.printCarnetUrl(id), '_blank');
     if (action === 'print-awb')     cpdPrintAWB(id);
     if (action === 'create-return') cpdOfficerCreateReturn(id);
   }
@@ -2325,6 +2326,8 @@ function buildCPDActionBtns(r, returnId = null) {
       <i class="fa-solid fa-clipboard-check"></i> Issue Carnet</button>`);
   }
   if (s === '3' && !isCheque && !isCashier && !isFinance && !returnId) {
+    btns.push(`<button class="btn btn-ghost btn-sm" data-action="print-carnet">
+      <i class="fa-solid fa-print"></i> Print Carnet</button>`);
     btns.push(`<button class="btn btn-ghost btn-sm" data-action="print-awb">
       <i class="fa-solid fa-print"></i> Print AWB</button>`);
     if (!r.carnet_return) {

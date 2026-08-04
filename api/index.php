@@ -127,6 +127,8 @@ $r->post('/api/idl/requests/{id}/cancel-own',[IDLController::class,'cancelOwn'],
 $r->post('/api/idl/requests/{id}/void',     [IDLController::class,'voidRequest'],   auth:true);
 $r->get('/api/idl/requests/{id}/print',     [IDLController::class,'printIdl'],      auth:true);
 $r->post('/api/idl/requests/{id}/print-awb',[IDLController::class,'printAwb'],      auth:true);
+$r->get('/api/idl/print-margins',           [IDLController::class,'getPrintMargins'], auth:true);
+$r->post('/api/idl/print-margins',          [IDLController::class,'savePrintMargins'],auth:true);
 $r->get('/api/idl/nationalities',           [IDLController::class,'nationalities'], auth:true);
 $r->get('/api/idl/dl-types',                [IDLController::class,'dlTypes'],       auth:true);
 $r->get('/api/idl/emirates',                [IDLController::class,'emiratesLookup'],auth:true);
@@ -144,6 +146,7 @@ $r->get('/api/cpd/requests/{id}/documents',     [CPDController::class,'getDocume
 $r->get('/api/cpd/requests/{id}/comments',      [CPDController::class,'getComments'],     auth:true);
 $r->put('/api/cpd/requests/{id}/public-update', [CPDController::class,'publicUpdate'],    auth:true);
 $r->post('/api/cpd/requests/{id}/print-awb',    [CPDController::class,'printAwb'],    auth:true);
+$r->get('/api/cpd/requests/{id}/print-carnet',  [CPDController::class,'printCarnet'], auth:true);
 $r->post('/api/cpd/requests/{id}/return-cheque',[CPDController::class,'returnCheque'],    auth:true);
 $r->get('/api/cpd/requests/{id}/return-cheque', [CPDController::class,'getReturnCheque'], auth:true);
 $r->put('/api/cpd/requests/{id}/return-cheque', [CPDController::class,'updateReturnCheque'], auth:true);

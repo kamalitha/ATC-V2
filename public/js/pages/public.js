@@ -1870,6 +1870,7 @@ export async function renderPublicApplyCPD(param = null) {
             <span class="pub-id-icon"><i class="fa-regular fa-calendar"></i></span>
             <span class="pub-id-label">Date of Birth</span>
             <input name="dob" type="date" class="pub-id-inline-input" />
+            <div class="field-error" id="err-dob" style="margin:0"></div>
           </div>
 
           <div class="pub-identity-row">
@@ -2481,18 +2482,25 @@ export async function renderPublicApplyCPD(param = null) {
             <div class="del-address-grid">
 
               <div class="field del-addr-third">
-                <label>Building / Villa / Floor #</label>
+                <label>Building / Villa / Floor # *</label>
                 <input name="del_building" id="cpd-del-building" placeholder="E.g. Villa 12, Floor 3" value="${formData.del_building || ''}" />
+                <div class="field-error" id="err-del_building"></div>
               </div>
 
               <div class="field del-addr-half">
-                <label>Street / Road</label>
+                <label>Street / Road *</label>
                 <input name="del_street" id="cpd-del-street" placeholder="E.g. Sheikh Zayed Road" value="${formData.del_street || ''}" />
+                <div class="field-error" id="err-del_street"></div>
               </div>
 
               <div class="field del-addr-third">
-                <label>Area</label>
-                <input name="del_area" id="cpd-del-area" placeholder="Area" value="${formData.del_area || ''}" />
+                <label>Area <span style="color:var(--text-muted);font-weight:400">(Optional)</span></label>
+                <input name="del_area" id="cpd-del-area" list="cpd-del-area-list" autocomplete="off"
+                  placeholder="Type to search, or enter your own" value="${formData.del_area || ''}" />
+                <datalist id="cpd-del-area-list">
+                  ${DELIVERY_AREAS.map(a => `<option value="${a}"></option>`).join('')}
+                </datalist>
+                <div class="field-error" id="err-del_area"></div>
               </div>
 
               <div class="field del-addr-half">
@@ -3147,7 +3155,37 @@ export async function renderPublicApplyCPD(param = null) {
       if (emailEl?.value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailEl.value)) {
         setErrCPD('email', 'Enter a valid email address'); ok = false;
       }
+
+      const eidEl = document.querySelector('[name="emirates_id"]');
+      if (eidEl && eidEl.type !== 'hidden' && eidEl.value?.trim() && !/^784-?\d{4}-?\d{7}-?\d$/.test(eidEl.value.trim())) {
+        setErrCPD('emirates_id', 'Enter a valid Emirates ID (784-XXXX-XXXXXXX-X)'); ok = false;
+      }
+
+      const mobileEl = document.querySelector('[name="mobile_no"]');
+      if (mobileEl && mobileEl.type !== 'hidden' && mobileEl.value?.trim()) {
+        const digits = mobileEl.value.replace(/\D/g, '');
+        if (![10, 13, 14].includes(digits.length)) {
+          setErrCPD('mobile_no', 'Enter a valid phone number'); ok = false;
+        }
+      }
+
+      const dobEl = document.querySelector('[name="dob"]');
+      if (dobEl && dobEl.type !== 'hidden' && dobEl.value) {
+        const eighteenYearsAgo = new Date();
+        eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+        if (new Date(dobEl.value) > eighteenYearsAgo) {
+          setErrCPD('dob', 'You must be at least 18 years old'); ok = false;
+        }
+      }
     }
+
+    if (key === 'vehicle') {
+      const licenseNoEl = document.querySelector('[name="license_no"]');
+      if (licenseNoEl?.value?.trim() && !/^\d+$/.test(licenseNoEl.value.trim())) {
+        setErrCPD('license_no', 'Licence number should only contain numbers'); ok = false;
+      }
+    }
+
     if (key === 'vehicle' && formData.upholstery_choice === 'Other' && !document.getElementById('cpd-upholstery-other-row')?.querySelector('input')?.value?.trim()) {
       // no dedicated error element for this nested field — surface as a generic form error
       ok = false;
@@ -3159,6 +3197,11 @@ export async function renderPublicApplyCPD(param = null) {
       if (deliveryOption === 'home_delivery') {
         const emirate = document.getElementById('cpd-del-emirate')?.value;
         if (!emirate) { setErrCPD('del_emirate', 'Emirate is required'); ok = false; }
+        // Area is intentionally left optional — every other delivery address field is mandatory.
+        const building = document.getElementById('cpd-del-building')?.value.trim();
+        if (!building) { setErrCPD('del_building', 'Building / Villa / Floor # is required'); ok = false; }
+        const street = document.getElementById('cpd-del-street')?.value.trim();
+        if (!street) { setErrCPD('del_street', 'Street / Road is required'); ok = false; }
       }
       const d1 = document.getElementById('disclaimer_1');
       if (!d1?.checked) {

@@ -1025,10 +1025,117 @@ export async function renderIDLDetail(param) {
     if (action === 'dispatch')      handleDispatch(id, param);
     if (action === 'save-proc')     handleSaveProc(id).catch(() => {});
     if (action === 'print-receipt') handlePrintReceipt(id, r);
-    if (action === 'print')         window.open(api.idl.printUrl(id), '_blank');
+    if (action === 'print')         handlePrintMargins(id);
     if (action === 'print-awb')     handlePrintAwb(id, param);
     if (action === 'void')          handleVoid(id, param);
   }
+}
+
+const PRINT_MARGIN_COMPONENTS = [
+  ['top_atc_string',  'Top ATC String'],
+  ['issued_date',     'Issued Date'],
+  ['qr_code',         'QR Code'],
+  ['last_name',       'Last Name'],
+  ['first_name',      'First Name'],
+  ['place_of_birth',  'Place of Birth'],
+  ['dob',             'Date of Birth'],
+  ['city',            'City'],
+  ['sex',             'Sex'],
+  ['nationality',     'Nationality'],
+  ['idl_no',          'IDL No'],
+  ['license_no',      'License No'],
+  ['center_image',    'Photo (Center Image)'],
+  ['class_A_tick',    'Class A Tick'],
+  ['class_B_tick',    'Class B Tick'],
+  ['class_C_tick',    'Class C Tick'],
+  ['class_D_tick',    'Class D Tick'],
+  ['class_E_tick_1',  'Class E Tick 1'],
+  ['class_E_tick_2',  'Class E Tick 2'],
+];
+
+async function handlePrintMargins(id) {
+  let margins;
+  try {
+    margins = await api.idl.getPrintMargins();
+  } catch (e) {
+    toast(e.message || 'Failed to load print margins', 'error');
+    return;
+  }
+
+  const coords = margins.component_coordinates || {};
+
+  openModal({
+    title: 'Print Margins',
+    size: 'lg',
+    body: `
+      <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:14px">
+        Adjust the print overlay position for your printer, or skip straight to printing with these values.
+      </p>
+      <div class="form-grid" style="margin-bottom:16px">
+        <div class="field"><label>Left Margin (mm)</label>
+          <input id="pm-left-margin" type="number" step="0.01" value="${esc(margins.left_margin ?? '0.00')}" /></div>
+        <div class="field"><label>Top Margin (mm)</label>
+          <input id="pm-top-margin" type="number" step="0.01" value="${esc(margins.top_margin ?? '0.00')}" /></div>
+      </div>
+      <table class="data-table" style="width:100%">
+        <thead><tr><th>Component</th><th>X</th><th>Y</th></tr></thead>
+        <tbody>
+          ${PRINT_MARGIN_COMPONENTS.map(([key, label]) => `
+            <tr>
+              <td>${label}</td>
+              <td><input id="pm-x-${key}" type="number" step="1" style="width:80px"
+                    value="${esc(coords[key]?.x ?? '0')}" /></td>
+              <td><input id="pm-y-${key}" type="number" step="1" style="width:80px"
+                    value="${esc(coords[key]?.y ?? '0')}" /></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`,
+    footer: `<button class="btn btn-ghost" onclick="closeModalGlobal()">
+               <i class="fa-solid fa-xmark"></i> Cancel
+             </button>
+             <button class="btn btn-ghost" id="pm-skip-print">
+               <i class="fa-solid fa-forward"></i> Skip &amp; Print
+             </button>
+             <button class="btn btn-success" id="pm-save-print">
+               <i class="fa-solid fa-floppy-disk"></i> Save &amp; Print
+             </button>`,
+  });
+
+  const readForm = () => {
+    const componentCoordinates = {};
+    PRINT_MARGIN_COMPONENTS.forEach(([key]) => {
+      componentCoordinates[key] = {
+        x: document.getElementById(`pm-x-${key}`).value,
+        y: document.getElementById(`pm-y-${key}`).value,
+      };
+    });
+    return {
+      left_margin: document.getElementById('pm-left-margin').value,
+      top_margin:  document.getElementById('pm-top-margin').value,
+      component_coordinates: componentCoordinates,
+    };
+  };
+
+  document.getElementById('pm-skip-print').onclick = () => {
+    closeModal();
+    window.open(api.idl.printUrl(id), '_blank');
+  };
+
+  document.getElementById('pm-save-print').onclick = async () => {
+    const btn = document.getElementById('pm-save-print');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving…';
+    try {
+      await api.idl.savePrintMargins(readForm());
+      closeModal();
+      toast('Print margins saved', 'success');
+      window.open(api.idl.printUrl(id), '_blank');
+    } catch (e) {
+      toast(e.message || 'Failed to save print margins', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save &amp; Print';
+    }
+  };
 }
 
 async function handlePrintAwb(id, param) {
