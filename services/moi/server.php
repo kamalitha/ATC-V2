@@ -41,44 +41,19 @@ if (!empty(MOI_ALLOWED_IPS)) {
 $wsdlFile = __DIR__ . '/moi_service.wsdl';
 
 // ── Serve WSDL on ?wsdl ────────────────────────────────────────────────────────
+// The .wsdl file has a placeholder <soap:address>; rewrite it to the host the
+// request actually arrived on so the same file works unmodified on localhost,
+// staging, and production instead of pointing clients at a hardcoded dev URL.
 if (isset($_GET['wsdl']) || isset($_GET['WSDL'])) {
+    $wsdlContent = file_get_contents($wsdlFile);
+    if (!empty($_SERVER['HTTP_HOST'])) {
+        $scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $selfUrl = $scheme . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['SCRIPT_NAME'];
+        $wsdlContent = preg_replace('/(<soap:address location=")[^"]*(")/', '${1}' . $selfUrl . '${2}', $wsdlContent);
+    }
     header('Content-Type: text/xml; charset=utf-8');
-    readfile($wsdlFile);
+    echo $wsdlContent;
     exit;
-}
-
-// ── SOAP Request Handler ───────────────────────────────────────────────────────
-$rawInput = file_get_contents('php://input');
-MoiLogger::request("Incoming SOAP: " . substr($rawInput, 0, 300));
-
-// Normalise the request before dispatch.
-// SoapUI (and similar tools) send either an empty <Body/> or an element with an
-// undeclared namespace prefix for zero-parameter operations.  PHP's SoapServer
-// requires a properly-namespaced operation element inside <Body>; if it is
-// missing it throws "Body without function call".  We fix it here using the
-// SOAPAction HTTP header, which clients always send correctly.
-$rawInput = normalizeSoapBody($rawInput);
-
-try {
-    ini_set('soap.wsdl_cache_enabled', '0');
-    $server = new SoapServer($wsdlFile, [
-        'encoding'     => 'UTF-8',
-        'soap_version' => SOAP_1_1,
-        'cache_wsdl'   => WSDL_CACHE_NONE,
-    ]);
-
-    $server->setObject(new MoiSoapHandler());
-    $server->handle($rawInput);
-} catch (\Throwable $e) {
-    MoiLogger::error('SoapServer fatal: ' . $e->getMessage());
-    http_response_code(500);
-    header('Content-Type: text/xml; charset=utf-8');
-    echo '<?xml version="1.0" encoding="UTF-8"?>'
-       . '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">'
-       . '<SOAP-ENV:Body><SOAP-ENV:Fault>'
-       . '<faultcode>SOAP-ENV:Server</faultcode>'
-       . '<faultstring>' . htmlspecialchars($e->getMessage()) . '</faultstring>'
-       . '</SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>';
 }
 
 // ── Request normaliser ─────────────────────────────────────────────────────────
@@ -88,6 +63,11 @@ try {
 //   (b) <enc:Op/>  — operation element with an undeclared namespace prefix
 // In both cases we fall back to the SOAPAction HTTP header to identify the
 // operation and inject <tns:OperationName xmlns:tns="urn:MOIService"/> into Body.
+//
+// Defined (and the SOAP handler class below it) before first use — SourceGuardian's
+// encoded output does not hoist top-level function/class declarations the way plain
+// PHP does, so calling them before their textual position in the file throws
+// "Class ... not found" once this script is bytecode-encoded for deployment.
 function normalizeSoapBody(string $xml): string
 {
     if ($xml === '') return $xml;
@@ -306,4 +286,38 @@ final class MoiSoapHandler
     public function GetAllNationalities(): array    { return $this->svc->getAllNationalities(); }
     public function GetPaymentBreakup(): array      { return $this->svc->getPaymentBreakup(); }
     public function GetATCBankingDetails(): array   { return $this->svc->getATCBankingDetails(); }
+}
+
+// ── SOAP Request Handler ───────────────────────────────────────────────────────
+$rawInput = file_get_contents('php://input');
+MoiLogger::request("Incoming SOAP: " . substr($rawInput, 0, 300));
+
+// Normalise the request before dispatch.
+// SoapUI (and similar tools) send either an empty <Body/> or an element with an
+// undeclared namespace prefix for zero-parameter operations.  PHP's SoapServer
+// requires a properly-namespaced operation element inside <Body>; if it is
+// missing it throws "Body without function call".  We fix it here using the
+// SOAPAction HTTP header, which clients always send correctly.
+$rawInput = normalizeSoapBody($rawInput);
+
+try {
+    ini_set('soap.wsdl_cache_enabled', '0');
+    $server = new SoapServer($wsdlFile, [
+        'encoding'     => 'UTF-8',
+        'soap_version' => SOAP_1_1,
+        'cache_wsdl'   => WSDL_CACHE_NONE,
+    ]);
+
+    $server->setObject(new MoiSoapHandler());
+    $server->handle($rawInput);
+} catch (\Throwable $e) {
+    MoiLogger::error('SoapServer fatal: ' . $e->getMessage());
+    http_response_code(500);
+    header('Content-Type: text/xml; charset=utf-8');
+    echo '<?xml version="1.0" encoding="UTF-8"?>'
+       . '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">'
+       . '<SOAP-ENV:Body><SOAP-ENV:Fault>'
+       . '<faultcode>SOAP-ENV:Server</faultcode>'
+       . '<faultstring>' . htmlspecialchars($e->getMessage()) . '</faultstring>'
+       . '</SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>';
 }
