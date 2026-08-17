@@ -28,7 +28,7 @@ final class MoiRepository
             "SELECT r.auto_id, r.request_id, r.request_status, r.paid_status,
                     r.processed_by, r.booking_channel, r.delivery_option,
                     r.air_bill_no, r.issued_date, r.belonging_user_id,
-                    u.first_name, u.last_name, u.email, u.mobile_no,
+                    u.first_name, u.last_name, mu.email, mu.mobile_no,
                     u.dob, u.place_of_birth, u.place_of_issue, u.expiry_date,
                     u.type_of_dl, u.first_idl, u.license_no, u.nationality,
                     u.address_in_uae, u.po_box, u.home_country_address,
@@ -37,6 +37,7 @@ final class MoiRepository
              FROM mn_idl_requests r
              JOIN mn_idl_request_user u ON u.request_auto_id = r.auto_id
              LEFT JOIN mn_emirates e    ON e.emirate_id       = u.emirate
+             LEFT JOIN mn_users mu      ON mu.user_id         = r.belonging_user_id
              WHERE REPLACE(u.emirates_id, '-', '') = ?
                AND r.is_active = 1
              ORDER BY r.auto_id DESC",
@@ -50,7 +51,7 @@ final class MoiRepository
             "SELECT r.auto_id, r.request_id, r.request_status, r.paid_status,
                     r.processed_by, r.booking_channel, r.delivery_option,
                     r.air_bill_no, r.issued_date, r.belonging_user_id,
-                    u.first_name, u.last_name, u.email, u.mobile_no,
+                    u.first_name, u.last_name, mu.email, mu.mobile_no,
                     u.dob, u.place_of_birth, u.place_of_issue, u.expiry_date,
                     u.type_of_dl, u.first_idl, u.license_no, u.nationality,
                     u.address_in_uae, u.po_box, u.home_country_address,
@@ -59,6 +60,7 @@ final class MoiRepository
              FROM mn_idl_requests r
              JOIN mn_idl_request_user u ON u.request_auto_id = r.auto_id
              LEFT JOIN mn_emirates e    ON e.emirate_id       = u.emirate
+             LEFT JOIN mn_users mu      ON mu.user_id         = r.belonging_user_id
              WHERE REPLACE(u.emirates_id, '-', '') = ?
                AND r.auto_id = ?
                AND r.is_active = 1",
@@ -190,7 +192,7 @@ final class MoiRepository
     public static function getAllCPDByEmiratesId(string $emiratesId): array
     {
         return MoiDB::all(
-            "SELECT r.*, u.first_name, u.last_name, u.email, u.mobile_no,
+            "SELECT r.*, u.first_name, u.last_name, mu.email, mu.mobile_no,
                     u.nationality_id, u.city, u.dob, u.home_country_address,
                     u.uae_address, u.company_name, u.po_box, u.passport_no,
                     u.emirates_id,
@@ -211,7 +213,7 @@ final class MoiRepository
     public static function getSingleCPDByRequestId(string $requestId): ?array
     {
         return MoiDB::row(
-            "SELECT r.*, u.first_name, u.last_name, u.email, u.mobile_no,
+            "SELECT r.*, u.first_name, u.last_name, mu.email, mu.mobile_no,
                     u.nationality_id, u.city, u.dob, u.home_country_address,
                     u.uae_address, u.company_name, u.po_box, u.passport_no,
                     u.emirates_id,
@@ -220,6 +222,7 @@ final class MoiRepository
                     r.airway_bill_no
              FROM mn_cpd_requests r
              JOIN mn_cpd_request_user u  ON u.request_auto_id    = r.auto_id
+             LEFT JOIN mn_users mu       ON mu.user_id            = r.belonging_user_id
              LEFT JOIN mn_nationalities n ON n.nationality_id     = u.nationality_id
              JOIN mn_cpd_statuses s      ON s.carnet_status_id    = r.request_status
              WHERE r.request_id = ?",
@@ -231,7 +234,10 @@ final class MoiRepository
     {
         return MoiDB::row(
             "SELECT r.auto_id, r.request_id, r.request_status, r.request_type,
-                    r.booking_fee_status, r.cheque_no
+                    r.booking_fee_status,
+                    (SELECT bg.cheque_no FROM mn_cpd_bank_guarantee_details bg
+                     WHERE bg.request_id = r.auto_id
+                     ORDER BY bg.guarantee_auto_id DESC LIMIT 1) AS cheque_no
              FROM mn_cpd_requests r WHERE r.auto_id = ?",
             [$autoId],
         );
@@ -252,7 +258,10 @@ final class MoiRepository
     {
         return MoiDB::row(
             "SELECT r.auto_id, r.request_id, r.request_type, r.request_status,
-                    r.booking_fee_status, r.cheque_no
+                    r.booking_fee_status,
+                    (SELECT bg.cheque_no FROM mn_cpd_bank_guarantee_details bg
+                     WHERE bg.request_id = r.auto_id
+                     ORDER BY bg.guarantee_auto_id DESC LIMIT 1) AS cheque_no
              FROM mn_cpd_requests r WHERE r.request_id = ?",
             [$appId],
         );
@@ -368,7 +377,7 @@ final class MoiRepository
     {
         return MoiDB::row(
             "SELECT ext_guarantee_auto_id, information_verified
-             FROM mn_cpd_external_guarantee
+             FROM mn_cpd_external_paid_guarantee_details
              WHERE request_auto_id = ? ORDER BY ext_guarantee_auto_id DESC LIMIT 1",
             [$autoId],
         );
@@ -377,7 +386,7 @@ final class MoiRepository
     public static function insertExternalGuaranteeDetails(string $autoId, string $paymentRef): void
     {
         MoiDB::execute(
-            "INSERT INTO mn_cpd_external_guarantee (request_auto_id, payment_ref, created_at)
+            "INSERT INTO mn_cpd_external_paid_guarantee_details (request_auto_id, payment_reference, added_datetime)
              VALUES (?, ?, NOW())",
             [$autoId, $paymentRef],
         );
@@ -406,7 +415,7 @@ final class MoiRepository
 
     public static function getAllLicenseTypes(): array
     {
-        return MoiDB::all('SELECT type_id, dl_type FROM mn_dl_types ORDER BY type_id');
+        return MoiDB::all('SELECT type_id, dl_type FROM mn_idl_dl_types ORDER BY type_id');
     }
 
     public static function getAllNationalities(): array
@@ -438,7 +447,7 @@ final class MoiRepository
 
     public static function getVATPercentage(): float
     {
-        $row = MoiDB::row('SELECT tax_percentage FROM mn_tax_rates WHERE is_active = 1 LIMIT 1');
+        $row = MoiDB::row('SELECT tax_percentage FROM mn_taxes WHERE is_active = 1 LIMIT 1');
         return (float) ($row['tax_percentage'] ?? 5.0);
     }
 

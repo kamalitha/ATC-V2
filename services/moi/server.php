@@ -56,19 +56,48 @@ if (isset($_GET['wsdl']) || isset($_GET['WSDL'])) {
     exit;
 }
 
+// ── WSDL operation list ────────────────────────────────────────────────────────
+// Used by normalizeSoapBody() to resolve the "<Operation>Request" element-naming
+// pattern some SOAP clients use (they wrap the call in an element named after the
+// WSDL <message>, which conventionally ends in "Request", rather than the WSDL
+// <operation> name itself). Cannot blindly strip a trailing "Request" from every
+// incoming element name — several real operations (CreateMOIRequest, DeleteMOIRequest,
+// CancelCPDRequest, GetFeesForCPDRequest, ...) already end in "Request" themselves,
+// so stripping unconditionally would corrupt those. Loading the real operation list
+// lets us try the exact name first and only fall back to a stripped match.
+function getWsdlOperationNames(string $wsdlFile): array
+{
+    static $cache = null;
+    if ($cache !== null) return $cache;
+
+    $cache = [];
+    $dom = new DOMDocument();
+    if (@$dom->load($wsdlFile)) {
+        foreach ($dom->getElementsByTagNameNS('http://schemas.xmlsoap.org/wsdl/', 'operation') as $opEl) {
+            $name = $opEl->getAttribute('name');
+            if ($name !== '') $cache[$name] = true;
+        }
+    }
+    return $cache;
+}
+
 // ── Request normaliser ─────────────────────────────────────────────────────────
 // Ensures the SOAP Body always contains a properly-namespaced operation element.
-// Handles two broken patterns emitted by SoapUI / similar tools:
-//   (a) <Body/>  — empty body for zero-parameter operations
-//   (b) <enc:Op/>  — operation element with an undeclared namespace prefix
-// In both cases we fall back to the SOAPAction HTTP header to identify the
-// operation and inject <tns:OperationName xmlns:tns="urn:MOIService"/> into Body.
+// Handles three broken patterns emitted by real-world clients / SoapUI:
+//   (a) <Body/>              — empty body for zero-parameter operations
+//   (b) <enc:Op/>            — operation element with an undeclared namespace prefix
+//   (c) <OpRequest/>         — client wraps the call using the WSDL <message> name
+//                              (conventionally "<Operation>Request") instead of the
+//                              <operation> name — e.g. MOI's real caller sending
+//                              <GetAllMOIRequestsRequest/> for operation "GetAllMOIRequests"
+// In all cases we fall back to the SOAPAction HTTP header to identify the operation
+// and inject <tns:OperationName xmlns:tns="urn:MOIService"/> into Body.
 //
 // Defined (and the SOAP handler class below it) before first use — SourceGuardian's
 // encoded output does not hoist top-level function/class declarations the way plain
 // PHP does, so calling them before their textual position in the file throws
 // "Class ... not found" once this script is bytecode-encoded for deployment.
-function normalizeSoapBody(string $xml): string
+function normalizeSoapBody(string $xml, string $wsdlFile): string
 {
     if ($xml === '') return $xml;
 
@@ -81,6 +110,20 @@ function normalizeSoapBody(string $xml): string
     $soapAction = strpos($rawAction, '#') !== false
         ? substr($rawAction, strrpos($rawAction, '#') + 1)
         : $rawAction;
+
+    $validOps = getWsdlOperationNames($wsdlFile);
+
+    // Resolves an incoming element/action name to a real WSDL operation name: try the
+    // exact name first, then a trailing "Request" strip, else leave it unchanged (will
+    // fail exactly as before for genuinely unrecognized operations).
+    $resolveOpName = function (string $name) use ($validOps): string {
+        if ($name === '' || isset($validOps[$name])) return $name;
+        if (str_ends_with($name, 'Request')) {
+            $stripped = substr($name, 0, -strlen('Request'));
+            if (isset($validOps[$stripped])) return $stripped;
+        }
+        return $name;
+    };
 
     $dom = new DOMDocument('1.0', 'UTF-8');
 
@@ -98,14 +141,18 @@ function normalizeSoapBody(string $xml): string
             if ($node->nodeType === XML_ELEMENT_NODE) { $firstElem = $node; break; }
         }
 
-        // Already correctly namespaced — nothing to do
-        if ($firstElem !== null && $firstElem->namespaceURI === $moiNs) return $xml;
+        // Already correctly namespaced AND a real operation name — nothing to do
+        if ($firstElem !== null && $firstElem->namespaceURI === $moiNs && isset($validOps[$firstElem->localName])) {
+            return $xml;
+        }
 
         // Determine operation name: prefer the element's local name (handles the
-        // NuSOAP/Postman pattern of <GetAllEmirates xmlns="...soap/encoding/"/>),
-        // fall back to the SOAPAction header for an empty body.
-        $opName = $firstElem !== null ? $firstElem->localName : $soapAction;
-        if (!$opName) return $xml;
+        // NuSOAP/Postman pattern of <GetAllEmirates xmlns="...soap/encoding/"/>, and
+        // the "<Operation>Request" message-name pattern), fall back to the SOAPAction
+        // header for an empty body.
+        $rawOpName = $firstElem !== null ? $firstElem->localName : $soapAction;
+        if (!$rawOpName) return $xml;
+        $opName = $resolveOpName($rawOpName);
 
         $call = $dom->createElementNS($moiNs, 'tns:' . $opName);
         if ($firstElem !== null) {
@@ -123,10 +170,11 @@ function normalizeSoapBody(string $xml): string
     // XML unparseable (e.g. undeclared namespace prefix) — rebuild minimal envelope.
     // Only zero-parameter operations trigger this path, so no parameters are lost.
     if (!$soapAction) return $xml;
+    $opName = $resolveOpName($soapAction);
     return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
          . "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"{$soapNs}\">"
          . "<SOAP-ENV:Body>"
-         . "<tns:{$soapAction} xmlns:tns=\"{$moiNs}\"/>"
+         . "<tns:{$opName} xmlns:tns=\"{$moiNs}\"/>"
          . "</SOAP-ENV:Body>"
          . "</SOAP-ENV:Envelope>";
 }
@@ -298,7 +346,7 @@ MoiLogger::request("Incoming SOAP: " . substr($rawInput, 0, 300));
 // requires a properly-namespaced operation element inside <Body>; if it is
 // missing it throws "Body without function call".  We fix it here using the
 // SOAPAction HTTP header, which clients always send correctly.
-$rawInput = normalizeSoapBody($rawInput);
+$rawInput = normalizeSoapBody($rawInput, $wsdlFile);
 
 try {
     ini_set('soap.wsdl_cache_enabled', '0');

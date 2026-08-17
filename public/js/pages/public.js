@@ -3455,11 +3455,15 @@ export async function renderPublicApplyCPD(param = null) {
       });
 
       // Supporting documents — all are mandatory (corporate docs only when Usage Type is Company).
+      // savedDocs[] is only populated by saveCPDStep() *after* this validation runs, so a file
+      // picked on this very visit to the step still only exists in the live <input> element —
+      // check both so a fresh upload isn't reported as missing.
       const requiredDocSlots = ['eid_front', 'eid_back', 'dl_front', 'dl_back', 'traffic_front', 'traffic_back', 'passport_photo'];
       if (formData.usage_type === 'COMPANY') requiredDocSlots.push('visa_page', 'trade_license', 'noc');
       let missingDocs = false;
       requiredDocSlots.forEach(slot => {
-        if (!savedDocs[slot]) {
+        const hasFile = !!savedDocs[slot] || !!document.querySelector(`input[data-cpd-doc="${slot}"]`)?.files?.[0];
+        if (!hasFile) {
           missingDocs = true;
           document.getElementById(`cpd-doc-zone-${slot}`)?.classList.add('doc-upload-zone-invalid');
         }

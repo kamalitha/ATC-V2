@@ -18,7 +18,13 @@ final class RtaDB
             self::$pdo = new PDO($dsn, RTA_DB_USER, RTA_DB_PASS, [
                 PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES   => false,
+                // Every response DTO property is typed `string` (see RtaDTOs.php) under
+                // strict_types=1, so a native-typed int/float column fetched straight
+                // from PDO is a fatal TypeError on assignment, not a coercion.
+                // STRINGIFY_FETCHES forces PDO to hand back strings for every column
+                // value regardless of the native column type.
+                PDO::ATTR_EMULATE_PREPARES   => true,
+                PDO::ATTR_STRINGIFY_FETCHES  => true,
             ]);
         }
         return self::$pdo;

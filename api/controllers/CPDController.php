@@ -559,7 +559,7 @@ class CPDController
     {
         Validator::make($body)
             ->required('vehicle_make','vehicle_model','registration_no','chassis_no','manuf_year',
-                       'mulkiya_no','radio','spare_tyre',
+                       'mulkiya_no',
                        'first_name','mobile_no','email',
                        'passport_no','license_no','license_expiry','sex')
             ->validate();
@@ -704,7 +704,7 @@ class CPDController
                     $body['po_box']          ?? '',
                     $body['emirates_id']     ?? '',
                     $body['passport_no']     ?? '',
-                    $body['dob']             ?: null,
+                    $body['dob']             ?? null,
                     $body['sex']             ?? null,
                     $body['license_no']      ?? '',
                     $body['license_expiry']  ?: null,
