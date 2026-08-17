@@ -273,7 +273,9 @@ export async function renderCPDNew() {
   ]);
 
   const UAE_STATES = ['Abu Dhabi','Dubai','Sharjah','Ajman','Umm Al Quwain','Ras Al Khaimah','Fujairah'];
-  const BODY_TYPES = ['Luxury','Station','Saloon','Motor Cycle','Truck','Coupe','Bus','Trailer','-Coupe','-Station','-Saloon','Pickup'];
+  // "Luxury" is intentionally not selectable — luxury vehicles are auto-detected
+  // from the make (see LUXURY_MAKES_CPD below) and priced accordingly.
+  const BODY_TYPES = ['Station','Saloon','Motor Cycle','Truck','Coupe','Bus','Trailer','-Coupe','-Station','-Saloon','Pickup','Caravan'];
   const COLORS     = ['White','Silver','Black','Grey','Blue','Red','Brown','Green','Other'];
   const yearOpts   = Array.from({length:41},(_,i)=>2030-i).map(y=>`<option value="${y}">${y}</option>`).join('');
 
@@ -695,11 +697,15 @@ export async function renderCPDNew() {
   (guaranteeRules.booking_fees ?? []).forEach(bf => _bookingFees.push(bf));
   const EXTRA_DRIVER_FEE = parseFloat(guaranteeRules.extra_driver_fee ?? 50);
 
-  const LUXURY_TYPES_CPD  = ['Luxury'];
-  const STATION_TYPES_CPD = ['Station','SUV','-Station','Pickup','Truck','Bus','Trailer'];
+  const STATION_TYPES_CPD = ['Station','SUV','-Station','Pickup','Truck','Bus','Trailer','Caravan'];
+  // "Luxury" is not a selectable body type — see the matching note on BODY_TYPES above.
+  const LUXURY_MAKES_CPD = [
+    'Rolls Royce', 'Bentley', 'Ferrari', 'Lamborghini', 'Maserati', 'Aston Martin',
+    'McLaren', 'Bugatti', 'Koenigsegg', 'Pagani', 'Maybach', 'W Motors', 'Bizzarrini', 'Gumpert',
+  ];
 
-  function cpdGetTier(bt) {
-    if (LUXURY_TYPES_CPD.includes(bt  ?? '')) return 'luxury';
+  function cpdGetTier(bt, make) {
+    if (LUXURY_MAKES_CPD.includes((make ?? '').trim())) return 'luxury';
     if (STATION_TYPES_CPD.includes(bt ?? '')) return 'station';
     return 'saloon';
   }
@@ -735,7 +741,8 @@ export async function renderCPDNew() {
     const selectedNames = selectedIds.map(id => countries.find(c => String(c.nationality_id) === String(id))?.nationality ?? '');
     const bodyType      = document.querySelector('[name="body_type"]')?.value ?? '';
     const manufYear     = document.querySelector('[name="manuf_year"]')?.value ?? '';
-    const tier = cpdGetTier(bodyType);
+    const vehicleMake   = document.querySelector('[name="vehicle_make"]')?.value ?? '';
+    const tier = cpdGetTier(bodyType, vehicleMake);
     const band = cpdGetBand(manufYear);
     const isMotorcycle  = bodyType === 'Motor Cycle';
     const nationalityVal = document.querySelector('[name="nationality"]')?.value ?? '';
@@ -1168,25 +1175,52 @@ export async function renderCPDDetail(param) {
     <div class="section-card">
       <div class="section-card-header">Financials</div>
       <div class="section-card-body">
-        <div class="detail-grid">
-          ${detail('Category',       r.request_category)}
-          ${detail('Guarantee',      formatCurrency(r.guarantee_amount))}
-          ${detail('Booking Fee',    formatCurrency(r.booking_fee))}
-          ${detail('Extra Fees',     formatCurrency(r.extra_fees))}
-          ${detail('VAT',            formatCurrency(r.vat_amount))}
-          ${detail('Total',          formatCurrency(r.total_amount))}
-          ${detail('Submitted',      formatDateTime(r.requested_datetime))}
+        <div class="detail-grid" style="margin-bottom:12px">
+          ${detail('Category',  r.request_category)}
+          ${detail('Submitted', formatDateTime(r.requested_datetime))}
         </div>
+      </div>
+      <div class="section-card-body" style="padding:0">
+        <table style="width:100%;border-collapse:collapse">
+          <tbody>
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted);width:50%">Payment Method</td>
+              <td style="padding:10px 16px;font-weight:500">${r.method_of_payment ? r.method_of_payment.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) : '—'}</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">Guarantee Fee</td>
+              <td style="padding:10px 16px;font-weight:500">${formatCurrency(r.guarantee_amount)}</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">Booking Fee</td>
+              <td style="padding:10px 16px;font-weight:500">${formatCurrency(r.booking_fee)}</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">Extra Fees</td>
+              <td style="padding:10px 16px;font-weight:500">${r.extra_fees != null ? formatCurrency(r.extra_fees) : 'AED 0.00'}</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">VAT (5%)</td>
+              <td style="padding:10px 16px;font-weight:500">${formatCurrency(r.vat_amount)}</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--border);background:var(--accent-dim)">
+              <td style="padding:12px 16px;font-weight:700">Total Amount</td>
+              <td style="padding:12px 16px;font-weight:700;color:var(--accent)">${formatCurrency(r.total_amount)}</td>
+            </tr>
+            ${r.order_ref_no ? `
+            <tr>
+              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">Payment Reference</td>
+              <td style="padding:10px 16px;font-weight:500;font-family:monospace">${r.order_ref_no}</td>
+            </tr>` : ''}
+          </tbody>
+        </table>
         ${r.booking_fee_status == 1 ? `
-        <div style="margin-top:12px;padding:12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:var(--radius)">
+        <div style="margin:12px 16px 16px;padding:12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:var(--radius)">
           <div style="font-size:.78rem;font-weight:700;color:var(--success,#22c55e);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">
             <i class="fa-solid fa-circle-check"></i> Payment Received
           </div>
           <div class="detail-grid">
-            ${detail('Amount Paid',    `<strong>${formatCurrency(r.total_amount)}</strong>`)}
-            ${detail('Payment Method', r.method_of_payment ? r.method_of_payment.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) : '—')}
-            ${detail('Order Ref No',   r.order_ref_no || '—')}
-            ${detail('Paid Date',      formatDateTime(r.booking_fee_paid_date))}
+            ${detail('Paid Date', formatDateTime(r.booking_fee_paid_date))}
           </div>
         </div>` : ''}
       </div>
@@ -1336,6 +1370,23 @@ export async function renderCPDDetail(param) {
               ${bankInfo.beneficiary  ? detail('Beneficiary',  bankInfo.beneficiary)  : ''}
             </div>
           </div>` : ''}
+          ${cr.deposit_slip_path ? `
+          <div style="margin-top:12px;padding:12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:var(--radius);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div>
+              <div style="font-size:.78rem;font-weight:700;color:var(--success,#22c55e);text-transform:uppercase;letter-spacing:.05em">
+                <i class="fa-solid fa-circle-check"></i> Deposit Slip Uploaded
+              </div>
+              <div style="font-size:.8rem;color:var(--text-muted);margin-top:2px">${formatDateTime(cr.deposit_slip_uploaded_datetime)}</div>
+            </div>
+            <a class="btn btn-ghost btn-sm" href="${api.cpd.depositSlipUrl(cr.return_id)}" target="_blank" rel="noopener">
+              <i class="fa-solid fa-file-arrow-down"></i> View
+            </a>
+          </div>` : cr.confirmed_by ? `
+          <div style="margin-top:12px">
+            <button class="btn btn-primary btn-sm" id="upload-deposit-slip-btn" data-return-id="${cr.return_id}">
+              <i class="fa-solid fa-upload"></i> Upload Deposit Slip
+            </button>
+          </div>` : ''}
         </div>
       </div>`;
     })() : ''}
@@ -1424,6 +1475,53 @@ export async function renderCPDDetail(param) {
         });
       }
     });
+  });
+
+  // Upload Deposit Slip — closes off an approved return
+  document.getElementById('upload-deposit-slip-btn')?.addEventListener('click', () => {
+    const returnId = document.getElementById('upload-deposit-slip-btn').dataset.returnId;
+    openModal({
+      title: 'Upload Deposit Slip',
+      body: `
+        <div class="field">
+          <label>Deposit Slip File *</label>
+          <input type="file" id="deposit-slip-file" accept=".jpg,.jpeg,.png,.pdf" />
+          <p style="font-size:.78rem;color:var(--text-muted);margin-top:6px">JPG, PNG or PDF · max 2 MB</p>
+        </div>
+        <div id="deposit-slip-error" class="form-error hidden"></div>`,
+      footer: `<button class="btn btn-ghost" onclick="closeModalGlobal()">
+                 <i class="fa-solid fa-xmark"></i> Cancel
+               </button>
+               <button class="btn btn-primary" id="confirm-deposit-slip">
+                 <i class="fa-solid fa-upload"></i> Upload
+               </button>`,
+    });
+    document.getElementById('confirm-deposit-slip').onclick = async () => {
+      const fileInput = document.getElementById('deposit-slip-file');
+      const errEl     = document.getElementById('deposit-slip-error');
+      const file      = fileInput.files[0];
+      if (!file) {
+        errEl.textContent = 'Please select a file';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      const btn = document.getElementById('confirm-deposit-slip');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading…';
+      try {
+        const fd = new FormData();
+        fd.append('deposit_slip', file);
+        await api.cpd.uploadDepositSlip(returnId, fd);
+        closeModal();
+        toast('Deposit slip uploaded', 'success');
+        renderCPDDetail(param);
+      } catch (e) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-upload"></i> Upload';
+        errEl.textContent = e.message || 'Upload failed';
+        errEl.classList.remove('hidden');
+      }
+    };
   });
 
   // Lightbox — open on doc thumbnail click
@@ -1812,6 +1910,12 @@ export function renderCPDReturnRequests() {
     {
       idKey: 'return_id',
       searchPlaceholder: 'Search by request no or applicant…',
+      filters: [
+        { key: 'status', label: 'Pending Confirmation (default)', options: [
+          { value: 'approved', label: 'Approved' },
+          { value: 'all',      label: 'All' },
+        ]},
+      ],
     },
   ).render();
 
@@ -2479,7 +2583,9 @@ export async function renderCPDRenew() {
   ]);
 
   const UAE_STATES = ['Abu Dhabi','Dubai','Sharjah','Ajman','Umm Al Quwain','Ras Al Khaimah','Fujairah'];
-  const BODY_TYPES = ['Luxury','Station','Saloon','Motor Cycle','Truck','Coupe','Bus','Trailer','-Coupe','-Station','-Saloon','Pickup'];
+  // "Luxury" is intentionally not selectable — luxury vehicles are auto-detected
+  // from the make (see LUXURY_MAKES_CPD below) and priced accordingly.
+  const BODY_TYPES = ['Station','Saloon','Motor Cycle','Truck','Coupe','Bus','Trailer','-Coupe','-Station','-Saloon','Pickup','Caravan'];
   const COLORS     = ['White','Silver','Black','Grey','Blue','Red','Brown','Green','Other'];
   const yearOpts   = Array.from({length:41},(_,i)=>2030-i).map(y=>`<option value="${y}">${y}</option>`).join('');
 
@@ -2880,9 +2986,12 @@ export async function renderCPDRenew() {
   });
   (guaranteeRules.booking_fees ?? []).forEach(bf => _bookingFees.push(bf));
 
-  const LUXURY_TYPES  = ['Luxury'];
-  const STATION_TYPES = ['Station','SUV','-Station','Pickup','Truck','Bus','Trailer'];
-  const getTier = bt => LUXURY_TYPES.includes(bt ?? '') ? 'luxury' : STATION_TYPES.includes(bt ?? '') ? 'station' : 'saloon';
+  const STATION_TYPES = ['Station','SUV','-Station','Pickup','Truck','Bus','Trailer','Caravan'];
+  const LUXURY_MAKES  = [
+    'Rolls Royce', 'Bentley', 'Ferrari', 'Lamborghini', 'Maserati', 'Aston Martin',
+    'McLaren', 'Bugatti', 'Koenigsegg', 'Pagani', 'Maybach', 'W Motors', 'Bizzarrini', 'Gumpert',
+  ];
+  const getTier = (bt, make) => LUXURY_MAKES.includes((make ?? '').trim()) ? 'luxury' : STATION_TYPES.includes(bt ?? '') ? 'station' : 'saloon';
   const getBand = y  => { const yr = parseInt(y,10); return yr <= 2000 ? 0 : yr <= 2010 ? 1 : 2; };
   const calcBookingFee = ids => {
     const s = new Set(ids.map(String)); let best = 0;
@@ -2909,7 +3018,8 @@ export async function renderCPDRenew() {
     const ids   = checked.map(cb=>cb.value);
     const names = ids.map(id=>countries.find(c=>String(c.nationality_id)===id)?.nationality??'');
     const bodyType = form.querySelector('[name="body_type"]')?.value;
-    const tier  = getTier(bodyType);
+    const vehicleMake = form.querySelector('[name="vehicle_make"]')?.value ?? '';
+    const tier  = getTier(bodyType, vehicleMake);
     const band  = getBand(form.querySelector('[name="manuf_year"]')?.value);
     const isMotorcycle  = bodyType === 'Motor Cycle';
     const nationalityVal = form.querySelector('[name="nationality"]')?.value ?? '';
@@ -3040,23 +3150,30 @@ export function renderCPDClaims() {
         <p id="claims-error" class="form-error" style="display:none;margin-top:8px"></p>
       </div>
     </div>
-    <div id="claims-result"></div>`;
+    <div id="claims-result"></div>
+
+    <div class="section-card" style="margin-top:20px">
+      <div class="section-card-header">All Claims</div>
+      <div id="claims-list-table"></div>
+    </div>`;
 
   const input  = document.getElementById('claims-carnet-input');
   const btn    = document.getElementById('claims-search-btn');
   const errEl  = document.getElementById('claims-error');
   const result = document.getElementById('claims-result');
 
-  const doSearch = async () => {
-    const carnetNo = input.value.trim();
+  const doSearch = async (carnetNoOverride) => {
+    const carnetNo = carnetNoOverride ?? input.value.trim();
     if (!carnetNo) {
       errEl.textContent = 'Please enter a Carnet No.';
       errEl.style.display = '';
       return;
     }
+    input.value = carnetNo;
     errEl.style.display = 'none';
     btn.disabled = true;
     result.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
+    result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
     try {
       const row = await api.cpd.searchClaims(carnetNo);
@@ -3071,8 +3188,32 @@ export function renderCPDClaims() {
     }
   };
 
-  btn.addEventListener('click', doSearch);
+  btn.addEventListener('click', () => doSearch());
   input.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+  // ── Browsable list — previously the only way to find a claim was to already
+  // know its carnet number and search for it individually. ──
+  const claimsTable = new DataTable(
+    document.getElementById('claims-list-table'),
+    [
+      { key: 'carnet_no',       label: 'Carnet No' },
+      { key: 'cpd_request_id',  label: 'Request No' },
+      { key: 'applicant',       label: 'Applicant', render: (_, r) => `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim() || '—' },
+      { key: 'claim_details',   label: 'Claim Details', render: v => v ? (v.length > 80 ? v.slice(0, 80) + '…' : v) : '—' },
+      { key: 'added_by_name',   label: 'Added By',   render: v => v?.trim() || '—' },
+      { key: 'added_datetime',  label: 'Added',       render: v => formatDateTime(v) },
+      { key: 'actions', label: '', width: '70px',
+        render: (_, r) => `<button class="btn btn-ghost btn-sm view-claim-btn" data-carnet="${r.carnet_no}" title="View">
+          <i class="fa-solid fa-eye"></i></button>` },
+    ],
+    params => api.cpd.listClaims(params),
+    { idKey: 'claim_id', searchPlaceholder: 'Search by carnet no, request no or applicant…' },
+  ).render();
+
+  document.getElementById('claims-list-table').addEventListener('click', e => {
+    const viewBtn = e.target.closest('.view-claim-btn');
+    if (viewBtn) doSearch(viewBtn.dataset.carnet);
+  });
 }
 
 function buildClaimsResult(r) {

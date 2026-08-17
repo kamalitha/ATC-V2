@@ -18,7 +18,12 @@ final class Config
     public const FRONTEND_URL = 'http://v2.eservices.local';
     public const TIMEZONE     = 'Asia/Dubai';
 
-    public const IDL_AMOUNT             = 170.00; // administration fee folded directly into the IDL fee
+    // IDL fee, split for the breakdown shown to EMSO online/walkin customers — VAT
+    // applies only to (base + delivery); the service fee is added after VAT, untaxed.
+    // Distributor/MOI/RTA pricing is entirely separate (services/moi, services/rta)
+    // and unaffected by these constants.
+    public const IDL_BASE_FEE    = 160.00;
+    public const IDL_SERVICE_FEE = 10.00;
     public const CPD_EXTRA_DRIVER_FEE   = 50.00;
     public const DELIVERY_FEE  = 15.00;   // delivery surcharge when send_to_address / home_delivery
     public const CPD_PENALTY           = 150.00;
@@ -43,6 +48,12 @@ final class Config
     public const MJ_API_KEY  = '4b357e06d6c0bd7489f2afa8029224c5';
     public const MJ_SECRET   = '45dc5df60ab1b4c6ae55137a8a347d45';
     public const MJ_RESET_PASSWORD_TEMPLATE = 4360118;
+    // Ported from the legacy system's IDLManagementController (same Mailjet template
+    // IDs) — unverified against the current Mailjet account, since the legacy code's
+    // own send call was commented out there and evidently never exercised in production.
+    public const MJ_IDL_PAYMENT_CONFIRMED_TEMPLATE    = 7203055;
+    public const MJ_IDL_READY_FOR_COLLECTION_TEMPLATE = 887450;
+    public const MJ_IDL_DISPATCHED_TEMPLATE           = 865908;
     /** Resolve a config value from ENV first, then fall back to constant */
     public static function env(string $key, mixed $default = null): mixed
     {

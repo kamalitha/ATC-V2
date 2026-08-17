@@ -91,6 +91,7 @@ $r->get('/api/cpd/search-by-eid',           [CPDController::class,'searchByEid']
 $r->get('/api/cpd/search-by-ref',           [CPDController::class,'searchByRef'],   auth:true);
 $r->get('/api/cpd/search-own-by-carnet',    [CPDController::class,'searchOwnByCarnet'], auth:true);
 $r->get('/api/cpd/my-issued-carnets',       [CPDController::class,'myIssuedCarnets'],   auth:true);
+$r->get('/api/cpd/claims',                  [CPDController::class,'indexClaims'],   auth:true);
 $r->get('/api/cpd/claims/search',           [CPDController::class,'searchClaims'],  auth:true);
 $r->post('/api/cpd/claims',                 [CPDController::class,'addClaim'],       auth:true);
 $r->get('/api/cpd/requests/{id}/claims',                    [CPDController::class,'getClaims'],           auth:true);
@@ -126,6 +127,7 @@ $r->post('/api/idl/requests/{id}/cancel',   [IDLController::class,'cancel'],    
 $r->post('/api/idl/requests/{id}/cancel-own',[IDLController::class,'cancelOwn'],    auth:true);
 $r->post('/api/idl/requests/{id}/void',     [IDLController::class,'voidRequest'],   auth:true);
 $r->get('/api/idl/requests/{id}/print',     [IDLController::class,'printIdl'],      auth:true);
+$r->get('/api/idl/display/{hash}',          [IDLController::class,'publicDisplay'], auth:false);
 $r->post('/api/idl/requests/{id}/print-awb',[IDLController::class,'printAwb'],      auth:true);
 $r->get('/api/idl/print-margins',           [IDLController::class,'getPrintMargins'], auth:true);
 $r->post('/api/idl/print-margins',          [IDLController::class,'savePrintMargins'],auth:true);
@@ -162,6 +164,8 @@ $r->get('/api/cpd/requests/{id}/cancel-request', [CPDController::class,'getCance
 $r->get('/api/cpd/cancellations',               [CPDController::class,'indexCancellations'], auth:true);
 $r->get('/api/cpd/return-requests',             [CPDController::class,'indexReturnRequests'],  auth:true);
 $r->post('/api/cpd/return-requests/{id}/approve',[CPDController::class,'approveReturnRequest'], auth:true);
+$r->post('/api/cpd/return-requests/{id}/deposit-slip', [CPDController::class,'uploadDepositSlip'], auth:true);
+$r->get('/api/cpd/return-requests/{id}/deposit-slip',  [CPDController::class,'serveDepositSlip'],  auth:true);
 $r->post('/api/cpd/requests/{id}/return-carnet',        [CPDController::class,'returnCarnet'],       auth:true);
 $r->post('/api/cpd/requests/{id}/officer-return',       [CPDController::class,'officerReturn'],      auth:true);
 $r->get('/api/cpd/requests/{id}/return-carnet',  [CPDController::class,'getReturnCarnet'],           auth:true);

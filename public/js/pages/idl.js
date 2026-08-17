@@ -508,7 +508,8 @@ export async function renderIDLNew() {
   const deliveryField  = document.getElementById('delivery-address-field');
   const deliveryInput  = document.getElementById('delivery_address');
 
-  const BASE_AMOUNT   = Number(idlCfg.idl_amount  ?? 170.00);
+  const BASE_AMOUNT   = Number(idlCfg.idl_amount   ?? 160.00);
+  const SERVICE_FEE   = Number(idlCfg.service_fee  ?? 10.00);
   const DELIVERY_FEE  = Number(idlCfg.delivery_fee ?? 15.00);
   const totalDisplay  = document.getElementById('total-fees-display');
 
@@ -516,9 +517,9 @@ export async function renderIDLNew() {
     const isSend      = deliverySelect.value === 'send_to_address';
     const deliveryFee = isSend ? DELIVERY_FEE : 0;
     const vat         = Math.round((BASE_AMOUNT + deliveryFee) * 0.05 * 100) / 100;
-    const total       = BASE_AMOUNT + deliveryFee + vat;
+    const total       = BASE_AMOUNT + deliveryFee + vat + SERVICE_FEE;
     if (totalDisplay) {
-      totalDisplay.value = `AED ${total.toFixed(2)} (IDL ${BASE_AMOUNT.toFixed(2)}${isSend ? ` + Delivery ${DELIVERY_FEE.toFixed(2)}` : ''} + VAT ${vat.toFixed(2)})`;
+      totalDisplay.value = `AED ${total.toFixed(2)} (Base ${BASE_AMOUNT.toFixed(2)}${isSend ? ` + Delivery ${DELIVERY_FEE.toFixed(2)}` : ''} + VAT ${vat.toFixed(2)} + Service ${SERVICE_FEE.toFixed(2)})`;
     }
   }
 
@@ -980,7 +981,7 @@ export async function renderIDLDetail(param) {
           <button class="btn btn-danger btn-sm" data-action="reject">
             <i class="fa-solid fa-ban"></i> ${currentUser?.role_name === 'idl_cpd_cashier' ? 'Cancel' : 'Reject'}</button>` : ''}
           ${status === 2 ? `
-          <button class="btn btn-success btn-sm" data-action="approve">
+          <button class="btn btn-success btn-sm" data-action="issue">
             <i class="fa-solid fa-check"></i> Approve</button>
           <button class="btn btn-danger btn-sm" data-action="reject">
             <i class="fa-solid fa-ban"></i> Reject</button>` : ''}
@@ -993,7 +994,7 @@ export async function renderIDLDetail(param) {
           ${status === 4 && currentUser?.role_name === 'idl_officer' ? `
           <button class="btn btn-ghost btn-sm" data-action="print">
             <i class="fa-solid fa-print"></i> Print IDL</button>` : ''}
-          ${status === 4 && r.idl_no && currentUser?.role_name === 'idl_officer' ? `
+          ${status === 4 && r.idl_no && currentUser?.role_name === 'idl_officer' && ['send_to_address', 'home_delivery'].includes(r.delivery_option) ? `
           <button class="btn btn-ghost btn-sm" data-action="print-awb">
             <i class="fa-solid fa-truck-fast"></i> Print AWB</button>` : ''}
           ${(status === 4 || status === 5) && currentUser?.role_name === 'idl_officer' ? `
@@ -1051,6 +1052,7 @@ const PRINT_MARGIN_COMPONENTS = [
   ['class_D_tick',    'Class D Tick'],
   ['class_E_tick_1',  'Class E Tick 1'],
   ['class_E_tick_2',  'Class E Tick 2'],
+  ['signature',       'Signature'],
 ];
 
 async function handlePrintMargins(id) {
@@ -1431,7 +1433,8 @@ async function handleIssue(id, param) {
     bookletInput.placeholder = 'Failed to load booklet stock';
   }
 
-  document.getElementById('confirm-issue').onclick = async () => {
+  const confirmBtn = document.getElementById('confirm-issue');
+  confirmBtn.onclick = async () => {
     bookletErr.textContent = '';
     const idl_booklet_no = bookletInput.value.trim();
     if (!idl_booklet_no) { bookletErr.textContent = 'Select a booklet number'; return; }
@@ -1439,7 +1442,17 @@ async function handleIssue(id, param) {
       bookletErr.textContent = 'Select a valid, available booklet number from the list';
       return;
     }
-    const res = await api.idl.issue(id, { idl_booklet_no });
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Issuing…';
+    let res;
+    try {
+      res = await api.idl.issue(id, { idl_booklet_no });
+    } catch (err) {
+      confirmBtn.disabled = false;
+      confirmBtn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Issue IDL';
+      bookletErr.textContent = err.message || 'Failed to issue IDL';
+      return;
+    }
     closeModal();
     toast(`IDL issued successfully — IDL No: ${res.idl_no}`, 'success');
     renderIDLDetail(param);
@@ -1776,6 +1789,18 @@ function buildReportPage({
 
 // ── IDL Sales Report ─────────────────────────────────────────────────────────
 
+function formatProcessingMinutes(minutes) {
+  if (minutes == null || minutes < 0) return '—';
+  const days  = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const mins  = minutes % 60;
+  const parts = [];
+  if (days)  parts.push(`${days}d`);
+  if (hours) parts.push(`${hours}h`);
+  if (mins || !parts.length) parts.push(`${mins}m`);
+  return parts.join(' ');
+}
+
 export function renderIDLSalesReport() {
   const content = document.getElementById('page-content');
 
@@ -1795,6 +1820,7 @@ export function renderIDLSalesReport() {
     { key: 'email',         label: 'Email' },
     { key: 'mobile_no',     label: 'Mobile' },
     { key: 'issued_by',     label: 'Issued By' },
+    { key: 'processing_minutes', label: 'Processing Time', render: v => formatProcessingMinutes(v) },
     { key: 'distributor_name', label: 'Distributor' },
     { key: 'branch_name',   label: 'Branch' },
   ];

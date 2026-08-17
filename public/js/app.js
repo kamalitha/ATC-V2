@@ -6,7 +6,7 @@ import { renderCPDRequests, renderCPDNew, renderCPDRenew, renderCPDDetail, rende
 import { renderUsers }       from './pages/users.js';
 import { renderReports }     from './pages/reports.js';
 import { renderProfile }     from './pages/profile.js';
-import { renderPublicApplyIDL, renderPublicApplyCPD, renderPublicHistory, renderPaymentResult, renderPublicCPDReturn, renderPublicCPDRenewSearch, renderPublicSelectService } from './pages/public.js';
+import { renderPublicApplyIDL, renderPublicApplyCPD, renderPublicHistory, renderPaymentResult, renderPublicCPDReturn, renderPublicCPDRenewSearch, renderPublicSelectService, renderPublicIdlDisplay } from './pages/public.js';
 import { renderSupportTickets, renderPublicSupportTickets } from './pages/support.js';
 
 // ── Global JS error logging ───────────────────────────────────────────────────
@@ -90,7 +90,7 @@ const CRUMBS = {
   users:         [{ label: 'Admin' }, { label: 'Users' }],
   reports:       [{ label: 'Reports' }],
   profile:       [{ label: 'Profile' }],
-  'public-apply-idl': [{ label: 'Apply for IDL' }],
+  'public-apply-idl': [{ label: 'Apply for IDP' }],
   'public-apply-cpd': [{ label: 'Apply for CPD' }],
   'public-cpd-return': [{ label: 'Return your CPD' }],
   'public-cpd-renew': [{ label: 'Renew your CPD' }],
@@ -642,6 +642,15 @@ async function handleLogout() {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 async function boot() {
+  // QR-code verification page (?display=hash) — public, no portal account needed.
+  // Checked before anything else so it never touches the login/session flow at all.
+  const displayHash = new URLSearchParams(window.location.search).get('display');
+  if (displayHash) {
+    document.getElementById('public-display-screen').classList.remove('hidden');
+    renderPublicIdlDisplay(displayHash);
+    return;
+  }
+
   initSidebar();
   startClock();
 

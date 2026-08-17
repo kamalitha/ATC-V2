@@ -8,7 +8,7 @@ class IDLController
     // Shared default print overlay coordinates — used both as the printIdl() fallback
     // when an officer has no saved calibration yet, and as the pre-fill for the print
     // margins screen the first time an officer opens it.
-    private const DEFAULT_PRINT_COORDINATES = '{"top_atc_string":{"x":"90","y":"34"},"issued_date":{"x":"74","y":"42"},"qr_code":{"x":"88","y":"46"},"last_name":{"x":"47","y":"86"},"first_name":{"x":"47","y":"93"},"place_of_birth":{"x":"47","y":"100"},"dob":{"x":"47","y":"107"},"city":{"x":"47","y":"113"},"sex":{"x":"47","y":"121"},"nationality":{"x":"62","y":"121"},"idl_no":{"x":"47","y":"127"},"license_no":{"x":"47","y":"136"},"center_image":{"x":"84","y":"103"},"class_A_tick":{"x":"130","y":"86"},"class_B_tick":{"x":"130","y":"91"},"class_C_tick":{"x":"130","y":"97"},"class_D_tick":{"x":"130","y":"103"},"class_E_tick_1":{"x":"130","y":"91"},"class_E_tick_2":{"x":"130","y":"108"}}';
+    private const DEFAULT_PRINT_COORDINATES = '{"top_atc_string":{"x":"90","y":"34"},"issued_date":{"x":"74","y":"42"},"qr_code":{"x":"88","y":"46"},"last_name":{"x":"47","y":"86"},"first_name":{"x":"47","y":"93"},"place_of_birth":{"x":"47","y":"100"},"dob":{"x":"47","y":"107"},"city":{"x":"47","y":"113"},"sex":{"x":"47","y":"121"},"nationality":{"x":"62","y":"121"},"idl_no":{"x":"47","y":"127"},"license_no":{"x":"47","y":"136"},"center_image":{"x":"84","y":"103"},"class_A_tick":{"x":"130","y":"86"},"class_B_tick":{"x":"130","y":"91"},"class_C_tick":{"x":"130","y":"97"},"class_D_tick":{"x":"130","y":"103"},"class_E_tick_1":{"x":"130","y":"91"},"class_E_tick_2":{"x":"130","y":"108"},"signature":{"x":"100","y":"140"}}';
 
     public function __construct()
     {
@@ -806,6 +806,8 @@ class IDLController
                 r.idl_no,
                 r.idl_booklet_no,
                 r.issued_date,
+                r.paid_date,
+                TIMESTAMPDIFF(MINUTE, r.paid_date, r.issued_date) AS processing_minutes,
                 r.total_amount,
                 r.request_status,
                 iru.first_name,
@@ -864,7 +866,7 @@ class IDLController
             'Request Type', 'IDL No', 'Booklet No', 'First Name', 'Last Name',
             'Nationality', 'Date of Birth', 'Sex', 'Place of Birth', 'PO Box',
             'License No', 'Issued Date', 'Amount (AED)', 'Status',
-            'Email', 'Mobile', 'Issued By', 'Distributor', 'Branch',
+            'Email', 'Mobile', 'Issued By', 'Processing Time', 'Distributor', 'Branch',
         ]);
 
         foreach ($rows as $row) {
@@ -886,12 +888,26 @@ class IDLController
                 $row['email']           ?? '',
                 $row['mobile_no']       ?? '',
                 $row['issued_by']       ?? '',
+                self::formatProcessingMinutes($row['processing_minutes'] ?? null),
                 $row['distributor_name'] ?? '',
                 $row['branch_name']     ?? '',
             ]);
         }
         fclose($out);
         exit;
+    }
+
+    private static function formatProcessingMinutes(?int $minutes): string
+    {
+        if ($minutes === null || $minutes < 0) return '';
+        $days    = intdiv($minutes, 1440);
+        $hours   = intdiv($minutes % 1440, 60);
+        $mins    = $minutes % 60;
+        $parts   = [];
+        if ($days)  $parts[] = "{$days}d";
+        if ($hours) $parts[] = "{$hours}h";
+        if ($mins || !$parts) $parts[] = "{$mins}m";
+        return implode(' ', $parts);
     }
 
     // ── Telr Payment Verification ─────────────────────────────────────────────
@@ -930,9 +946,12 @@ class IDLController
 
         // Fetch the IDL request
         $req = $this->db->queryOne(
-            "SELECT auto_id, belonging_user_id, paid_status, order_ref_no
-             FROM mn_idl_requests
-             WHERE auto_id = ? AND is_active = 1 AND telr_cart_id = ?",
+            "SELECT r.auto_id, r.belonging_user_id, r.paid_status, r.order_ref_no, r.idl_no,
+                    iru.first_name, iru.last_name, u.email
+             FROM mn_idl_requests r
+             JOIN mn_idl_request_user iru ON iru.request_auto_id = r.auto_id
+             LEFT JOIN mn_users u         ON u.user_id            = r.belonging_user_id
+             WHERE r.auto_id = ? AND r.is_active = 1 AND r.telr_cart_id = ?",
             [(int)$autoId, $cartId],
         );
 
@@ -1004,6 +1023,24 @@ class IDLController
             unset($_SESSION['telr_cart_id'], $_SESSION['telr_request_id'], $_SESSION['telr_module']);
 
             $this->logEvent('TELR_PAID', (int)$autoId, $telrRef ?? $orderRef);
+
+            // Payment-confirmation email — best-effort, doesn't block the payment itself.
+            // idl_no isn't assigned until the request is later issued by an officer, so
+            // it's normally blank here; ported as-is from the legacy var mapping.
+            if (!empty($req['email'])) {
+                try {
+                    (new MailHandler())->sendBasicMailViaMailJet(
+                        Config::MJ_IDL_PAYMENT_CONFIRMED_TEMPLATE,
+                        $req['email'],
+                        [
+                            'customer_name' => trim(($req['first_name'] ?? '') . ' ' . ($req['last_name'] ?? '')),
+                            'idl_no'        => $req['idl_no'] ?? '',
+                        ],
+                    );
+                } catch (\Throwable $e) {
+                    Logger::error('IDL payment-confirmation email failed: ' . $e->getMessage());
+                }
+            }
 
             Response::success([
                 'paid'     => true,
@@ -1192,22 +1229,23 @@ class IDLController
     public function idlConfig(array $params, array $body, array $query): void
     {
         Response::success([
-            'idl_amount'    => Config::IDL_AMOUNT,
+            'idl_amount'    => Config::IDL_BASE_FEE,
+            'service_fee'   => Config::IDL_SERVICE_FEE,
             'delivery_fee'  => Config::DELIVERY_FEE,
         ]);
     }
 
     /**
-     * IDL Fee (administration fee already folded in) + (Delivery Fee when
-     * delivered) + VAT 5% on (IDL Fee + Delivery Fee).
+     * Base Fee + (Delivery Fee when delivered) + VAT 5% on (Base Fee + Delivery Fee)
+     * + Service Fee. The service fee is added after VAT and isn't itself taxed.
      */
     private function calcIdlTotal(string $deliveryOption): float
     {
         $isDelivery  = in_array($deliveryOption, ['send_to_address', 'home_delivery'], true);
         $deliveryFee = $isDelivery ? Config::DELIVERY_FEE : 0.0;
-        $vat         = round((Config::IDL_AMOUNT + $deliveryFee) * 0.05, 2);
+        $vat         = round((Config::IDL_BASE_FEE + $deliveryFee) * 0.05, 2);
 
-        return Config::IDL_AMOUNT + $deliveryFee + $vat;
+        return Config::IDL_BASE_FEE + $deliveryFee + $vat + Config::IDL_SERVICE_FEE;
     }
 
     public function myRequests(array $params, array $body, array $query): void
@@ -1723,15 +1761,43 @@ class IDLController
 
         $idlNo = $this->generateIdlNo();
 
+        // paid_date is only backfilled via COALESCE when missing (e.g. a request that
+        // never went through an earlier payment step) — previously this unconditionally
+        // overwrote paid_date to match issued_date, which silently erased the real
+        // payment timestamp on every issuance and made processing-time reporting useless.
         $this->db->execute(
             "UPDATE mn_idl_requests
              SET request_status=4, idl_no=?, idl_booklet_no=?,
-                 issued_date=NOW(), paid_status=1, paid_date=NOW(), processed_by=?
+                 issued_date=NOW(), paid_status=1, paid_date=COALESCE(paid_date, NOW()), processed_by=?
              WHERE auto_id=?",
             [$idlNo, $body['idl_booklet_no'], Auth::id(), $params['id']],
         );
         $this->db->execute('UPDATE mn_idl_booklets SET is_used=1 WHERE booklet_no=?', [$body['idl_booklet_no']]);
         $this->logEvent('ISSUE', $params['id'], $idlNo);
+
+        // "Ready for collection" email — only for pickup orders. Home-delivery orders
+        // get their notification later, once printAwb() actually creates the shipment
+        // and there's a tracking number to include (ported from the legacy behaviour).
+        $req = $this->db->queryOne(
+            "SELECT r.delivery_option, iru.first_name, iru.last_name, u.email
+             FROM mn_idl_requests r
+             JOIN mn_idl_request_user iru ON iru.request_auto_id = r.auto_id
+             LEFT JOIN mn_users u         ON u.user_id            = r.belonging_user_id
+             WHERE r.auto_id = ?",
+            [$params['id']],
+        );
+        $isHomeDelivery = in_array($req['delivery_option'] ?? '', ['send_to_address', 'home_delivery'], true);
+        if ($req && !$isHomeDelivery && !empty($req['email'])) {
+            try {
+                (new MailHandler())->sendBasicMailViaMailJet(
+                    Config::MJ_IDL_READY_FOR_COLLECTION_TEMPLATE,
+                    $req['email'],
+                    ['firstname' => trim(($req['first_name'] ?? '') . ' ' . ($req['last_name'] ?? ''))],
+                );
+            } catch (\Throwable $e) {
+                Logger::error('IDL ready-for-collection email failed: ' . $e->getMessage());
+            }
+        }
 
         Response::success(['idl_no' => $idlNo], 'IDL issued successfully');
     }
@@ -1755,6 +1821,7 @@ class IDLController
 
         $req = $this->db->queryOne(
             "SELECT r.auto_id, r.request_id, r.idl_no, r.idl_booklet_no, r.delivery_address, r.request_status,
+                    r.delivery_option,
                     iru.first_name, iru.last_name, iru.city,
                     u.email, u.mobile_no
              FROM mn_idl_requests r
@@ -1766,6 +1833,9 @@ class IDLController
         if (!$req) Response::notFound('Request not found');
         if ((int)$req['request_status'] !== 4 || empty($req['idl_no'])) {
             Response::error('AWB can only be printed for issued IDL requests', 422);
+        }
+        if (!in_array($req['delivery_option'] ?? '', ['send_to_address', 'home_delivery'], true)) {
+            Response::error('This request is set for office pickup — no courier/AWB is involved', 422);
         }
 
         $refNo    = "{$req['idl_no']}/{$req['idl_booklet_no']}";
@@ -1914,6 +1984,8 @@ class IDLController
             "Transaction" => null,
         ];
 
+        $verboseLog = fopen('php://temp', 'w+');
+
         $ch = curl_init(ARAMAX_CREATE_SHIPMENT_URL);
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
@@ -1923,15 +1995,28 @@ class IDLController
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
             CURLOPT_TIMEOUT        => 30,
+            CURLOPT_VERBOSE        => true,
+            CURLOPT_STDERR         => $verboseLog,
         ]);
         $jsonResponse = curl_exec($ch);
         $httpCode     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErrno    = curl_errno($ch);
         $curlError    = curl_error($ch);
+        $curlInfo     = curl_getinfo($ch);
         curl_close($ch);
 
+        rewind($verboseLog);
+        $verboseText = stream_get_contents($verboseLog);
+        fclose($verboseLog);
+
         if ($curlError) {
-            Logger::error("Aramex cURL error: {$curlError}");
-            Response::serverError("Aramex connection failed: {$curlError}");
+            Logger::error("Aramex cURL error for IDL request {$id}: {$curlError}", [
+                'curl_errno' => $curlErrno,
+                'curl_error' => $curlError,
+                'curl_info'  => $curlInfo,
+                'verbose'    => $verboseText,
+            ]);
+            Response::serverError("Aramex connection failed ({$curlErrno}): {$curlError}");
         }
 
         $result = json_decode($jsonResponse, true);
@@ -1955,6 +2040,25 @@ class IDLController
                 'UPDATE mn_idl_requests SET air_bill_no = ? WHERE auto_id = ?',
                 [$airBillNo, $id],
             );
+
+            // "Dispatched" email with the tracking number — the home-delivery counterpart
+            // to issue()'s "ready for collection" email, sent once there's actually a
+            // shipment/tracking number to give the customer.
+            if (!empty($req['email'])) {
+                try {
+                    (new MailHandler())->sendBasicMailViaMailJet(
+                        Config::MJ_IDL_DISPATCHED_TEMPLATE,
+                        $req['email'],
+                        [
+                            'firstname'     => $fullName,
+                            'idl_no'        => $req['idl_no'] ?? '',
+                            'aiway_bill_no' => $airBillNo, // sic — matches the Mailjet template's variable name exactly
+                        ],
+                    );
+                } catch (\Throwable $e) {
+                    Logger::error('IDL dispatched email failed: ' . $e->getMessage());
+                }
+            }
         }
 
         Logger::info("Aramex AWB created for IDL request {$id}: airBillNo={$airBillNo}");
@@ -2093,7 +2197,13 @@ class IDLController
 
         // ── Per-officer print calibration (falls back to the shared default template) ──
         $margins = $this->db->queryOne('SELECT * FROM mn_idl_user_margins WHERE user_id=?', [$user['user_id']]);
-        $coordinates = json_decode($margins['component_coordinates'] ?? self::DEFAULT_PRINT_COORDINATES);
+        // Merge saved coordinates over the defaults so a component added after an
+        // officer last saved their calibration (e.g. 'signature') still has a
+        // usable fallback position instead of crashing on a missing property.
+        $coordinates = (object) array_merge(
+            (array) json_decode(self::DEFAULT_PRINT_COORDINATES),
+            (array) json_decode($margins['component_coordinates'] ?? 'null') ?: [],
+        );
         $x_px = (float)($margins['left_margin'] ?? 0) * 1.333333;
         $y_px = (float)($margins['top_margin'] ?? 0) * 1.333333;
 
@@ -2112,26 +2222,43 @@ class IDLController
             $printHash = md5(time() . $autoId);
             $this->db->execute('UPDATE mn_idl_requests SET print_hash=? WHERE auto_id=?', [$printHash, $autoId]);
         }
+        // Query-string form (not a /display/{hash} path) — the SPA derives its own API
+        // base path from window.location.pathname, so an extra path segment here would
+        // break that derivation. A query param on the normal entry point doesn't.
         $qrPath = "$reqDir/qrcode.png";
-        QRcode::png(Config::frontendUrl() . '/display/' . $printHash, $qrPath, '', '1.5', '5');
+        QRcode::png(Config::frontendUrl() . '/?display=' . $printHash, $qrPath, '', '1.5', '5');
 
         // ── Build the absolute-positioned overlay segments (mirrors print-idl.phtml) ──
+        // Requests created via the current public/officer wizards store letter codes
+        // (A–E, see public.js's vehicle-category tiles); older/imported records can
+        // still carry the legacy numeric dl_type ids — translate those to letters
+        // first so both generations of data tick the correct box on the booklet.
+        $legacyNumericToLetter = ['1' => 'A', '2' => 'B', '3' => 'C', '4' => 'D', '5' => 'E', '6' => 'E'];
         $dlTypes = array_map('trim', explode(',', (string)$r['type_of_dl']));
+        $dlTypes = array_unique(array_map(fn($t) => $legacyNumericToLetter[$t] ?? $t, $dlTypes));
         $tickImg = "$imagesDir/tick_black.png";
 
         $segments   = [];
         $segments[] = ['html' => '<img src="'.$passportPrint.'" />', 'x' => $coordinates->center_image->x + $x_px, 'y' => $coordinates->center_image->y + $y_px];
 
-        // Legacy numeric dl_type codes (1–5) map directly to the booklet's class A–E tick positions
         $tickMap = [
-            '1' => 'class_A_tick', '2' => 'class_B_tick', '3' => 'class_C_tick',
-            '4' => 'class_D_tick', '5' => 'class_E_tick_2',
+            'A' => 'class_A_tick', 'B' => 'class_B_tick', 'C' => 'class_C_tick',
+            'D' => 'class_D_tick', 'E' => 'class_E_tick_2',
         ];
         foreach ($tickMap as $code => $coordKey) {
-            if (in_array((string)$code, $dlTypes, true)) {
+            if (in_array($code, $dlTypes, true)) {
                 $coord      = $coordinates->$coordKey;
                 $segments[] = ['html' => '<img style="width:20px;height:20px;" src="'.$tickImg.'" />', 'x' => $coord->x + $x_px, 'y' => $coord->y + $y_px];
             }
+        }
+
+        // ── Signature — uploaded file takes priority, drawn-canvas fallback shares the same slot ──
+        $signatureSrc = null;
+        foreach (['jpg', 'jpeg', 'png'] as $ext) {
+            if (file_exists("$reqDir/signature.$ext")) { $signatureSrc = "$reqDir/signature.$ext"; break; }
+        }
+        if ($signatureSrc) {
+            $segments[] = ['html' => '<img style="width:60px;height:auto;" src="'.$signatureSrc.'" />', 'x' => $coordinates->signature->x + $x_px, 'y' => $coordinates->signature->y + $y_px];
         }
 
         $segments[] = ['html' => '<img src="'.$qrPath.'" />', 'x' => $coordinates->qr_code->x + $x_px, 'y' => $coordinates->qr_code->y];
@@ -2187,6 +2314,56 @@ class IDLController
     }
 
     /**
+     * GET /api/idl/display/{hash}
+     * Public, unauthenticated verification endpoint — the target of the QR code printed
+     * on every issued IDL. Anyone who scans it (e.g. a border or traffic officer abroad)
+     * can confirm the permit is genuine and see its validity window without a portal
+     * login. Deliberately returns only what's already printed on the booklet itself —
+     * no Emirates ID, mobile, email, or other contact/identity details.
+     */
+    public function publicDisplay(array $params, array $body, array $query): void
+    {
+        $hash = (string)($params['hash'] ?? '');
+        if ($hash === '') Response::notFound('Not found');
+
+        $r = $this->db->queryOne(
+            "SELECT r.request_type, r.idl_no, r.request_id, r.request_status, r.issued_date,
+                    iru.first_name, iru.last_name, iru.type_of_dl, iru.nationality,
+                    n.nationality AS nationality_name
+             FROM mn_idl_requests r
+             JOIN mn_idl_request_user iru ON r.auto_id = iru.request_auto_id
+             LEFT JOIN mn_nationalities n ON iru.nationality = n.nationality_id
+             WHERE r.print_hash = ?",
+            [$hash],
+        );
+        if ($r === null || (int)$r['request_status'] !== 4) {
+            Response::notFound('No valid IDL found for this code');
+        }
+
+        $issuedBasis = $r['issued_date'] ?? date('Y-m-d');
+        $validFrom   = date('Y-m-d', strtotime($issuedBasis));
+        $validTo     = date('Y-m-d', strtotime($issuedBasis . ' + 365 day'));
+
+        // Same legacy-numeric → letter translation as printIdl()'s tick logic, so the
+        // categories shown here always match what's ticked on the physical booklet.
+        $legacyNumericToLetter = ['1' => 'A', '2' => 'B', '3' => 'C', '4' => 'D', '5' => 'E', '6' => 'E'];
+        $categories = array_values(array_unique(array_map(
+            fn($t) => $legacyNumericToLetter[trim($t)] ?? trim($t),
+            explode(',', (string)$r['type_of_dl']),
+        )));
+
+        Response::success([
+            'full_name'   => trim(($r['first_name'] ?? '') . ' ' . ($r['last_name'] ?? '')),
+            'idl_no'      => $r['request_type'] === 'RTA' ? $r['request_id'] : $r['idl_no'],
+            'nationality' => $r['nationality_name'],
+            'categories'  => $categories,
+            'valid_from'  => $validFrom,
+            'valid_to'    => $validTo,
+            'is_valid'    => strtotime($validTo) >= strtotime(date('Y-m-d')),
+        ]);
+    }
+
+    /**
      * GET /api/idl/print-margins
      * Returns the current staff member's saved print calibration (left/top margin
      * plus per-component x/y overlay coordinates), or the shared defaults if they
@@ -2198,10 +2375,17 @@ class IDLController
         $userId  = Auth::id();
         $margins = $this->db->queryOne('SELECT * FROM mn_idl_user_margins WHERE user_id=?', [$userId]);
 
+        // Merge over the defaults so a component added after this officer last saved
+        // their calibration (e.g. 'signature') still shows up on the adjust-margins screen.
+        $coordinates = array_merge(
+            json_decode(self::DEFAULT_PRINT_COORDINATES, true),
+            json_decode($margins['component_coordinates'] ?? 'null', true) ?: [],
+        );
+
         Response::success([
             'left_margin'            => $margins['left_margin'] ?? '0.00',
             'top_margin'             => $margins['top_margin'] ?? '0.00',
-            'component_coordinates'  => json_decode($margins['component_coordinates'] ?? self::DEFAULT_PRINT_COORDINATES, true),
+            'component_coordinates'  => $coordinates,
         ]);
     }
 
@@ -2220,7 +2404,7 @@ class IDLController
         $requiredKeys = ['top_atc_string','issued_date','qr_code','last_name','first_name',
             'place_of_birth','dob','city','sex','nationality','idl_no','license_no',
             'center_image','class_A_tick','class_B_tick','class_C_tick','class_D_tick',
-            'class_E_tick_1','class_E_tick_2'];
+            'class_E_tick_1','class_E_tick_2','signature'];
         foreach ($requiredKeys as $key) {
             $coord = $body['component_coordinates'][$key] ?? null;
             if (!is_array($coord) || !isset($coord['x']) || !isset($coord['y'])) {

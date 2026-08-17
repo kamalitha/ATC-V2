@@ -1,10 +1,13 @@
 // pages/public.js — Public user (role 2) pages
 import api, { API_BASE, PUBLIC_BASE } from '../api.js';
 import { navigate, toast, openModal, closeModal, currentUser, confirm } from '../app.js';
-import { statusBadge, formatDate, formatDateTime } from '../components/table.js';
+import { statusBadge, formatDate, formatDateTime, formatCurrency } from '../components/table.js';
 
 // ── Shared "Continue with UAE PASS" fake-retrieval loader (demo only) ─────────
-function showUaePassLoader(onDone) {
+// UAE PASS itself isn't integrated (no real backend call — see the "Continue with
+// UAE PASS" click handler), so a Cancel button here doubles as the stand-in for a
+// user declining the document-sharing request on the real UAE PASS app.
+function showUaePassLoader(onDone, onCancel) {
   const overlay = document.createElement('div');
   overlay.className = 'pub-uaepass-loader';
   overlay.innerHTML = `
@@ -12,12 +15,20 @@ function showUaePassLoader(onDone) {
       <i class="fa-solid fa-spinner fa-spin pub-uaepass-loader-spinner"></i>
       <div class="pub-uaepass-loader-title">Loading....</div>
       <div class="pub-uaepass-loader-sub">Please wait while we retrieve your information</div>
+      <button type="button" class="btn btn-ghost pub-uaepass-loader-cancel" id="uaepass-loader-cancel">Cancel</button>
     </div>`;
   document.body.appendChild(overlay);
-  setTimeout(() => {
+
+  const timer = setTimeout(() => {
     overlay.remove();
     onDone();
   }, 5000);
+
+  overlay.querySelector('#uaepass-loader-cancel')?.addEventListener('click', () => {
+    clearTimeout(timer);
+    overlay.remove();
+    onCancel?.();
+  });
 }
 
 // ── Select Service (shown once, right after a public user logs in) ────────────
@@ -35,7 +46,7 @@ export async function renderPublicSelectService() {
       <label class="del-method-card" id="select-service-idl">
         <div class="del-method-icon-wrap"><i class="fa-solid fa-id-card"></i></div>
         <div>
-          <div class="del-method-title">International Driving Licence (IDL)</div>
+          <div class="del-method-title">International Driving Permit (IDP)</div>
           <div class="del-method-desc">Apply for or renew your International Driving Permit.</div>
         </div>
       </label>
@@ -69,54 +80,73 @@ const STEP_REQUIRED = {
     { name: 'sex',                  label: 'Gender' },
     { name: 'mobile_no',            label: 'Mobile No' },
     { name: 'email',                label: 'Email' },
-    { name: 'place_of_birth',       label: 'Place of Birth' },
-    { name: 'emirate',              label: 'UAE Permanent Place of Residence' },
   ],
   licence: [
     { name: 'license_no',     label: 'Driving Licence Number' },
     { name: 'issued_date',    label: 'Date of Issue' },
     { name: 'place_of_issue', label: 'Licence Issuing Emirate' },
     { name: 'expiry_date',    label: 'Date of Expiry' },
+    { name: 'dob',             label: 'Date of Birth' },
+    { name: 'place_of_birth',  label: 'Place of Birth' },
+    { name: 'emirate',         label: 'UAE Permanent Place of Residence' },
   ],
   delivery: [],
   review:   [],
 };
 
-// ── Delivery areas (Dubai & Abu Dhabi for now — more emirates to follow) ────────
-const DELIVERY_AREAS = [
-  'Al Barsha (1, 2, 3, South)', 'Al Quoz (1, 2, 3, 4, Industrial Areas)', 'Al Satwa',
-  'Al Safa (1 & 2)', 'Al Wasl', 'Jumeirah (1, 2, 3)', 'Umm Suqeim (1, 2, 3)',
-  'Dubai Marina', 'Jumeirah Beach Residence (JBR)', 'Bluewaters Island', 'Palm Jumeirah',
-  'Dubai Harbour', 'Dubai Internet City', 'Dubai Media City', 'Dubai Knowledge Park',
-  'Barsha Heights (Tecom)', 'The Greens', 'The Views', 'Emirates Hills', 'The Lakes',
-  'The Meadows', 'The Springs', 'Jumeirah Islands', 'Jumeirah Park',
-  'Jumeirah Village Circle (JVC)', 'Jumeirah Village Triangle (JVT)', 'Dubai Hills Estate',
-  'Arabian Ranches (1, 2, 3)', 'DAMAC Hills', 'DAMAC Hills 2', 'Motor City',
-  'Dubai Sports City', 'Studio City', 'Tilal Al Ghaf', 'Town Square', 'Mudon', 'Remraam',
-  'Mira', 'Mira Oasis', 'Villanova', 'The Villa', 'Falcon City', 'Nad Al Sheba',
-  'Nad Al Hamar', 'Ras Al Khor', 'Dubai Creek Harbour', 'Dubai Festival City',
-  'Al Warqa (1–5)', 'Mirdif', 'Mushrif', 'Al Mizhar (1 & 2)', 'Al Khawaneej',
-  'Al Twar (1–4)', 'Muhaisnah (1–4)', 'Al Qusais (1–3)', 'Al Nahda Dubai', 'Hor Al Anz',
-  'Abu Hail', 'Al Mamzar', 'Deira', 'Port Saeed', 'Al Rigga', 'Naif', 'Al Ras',
-  'Baniyas Square', 'Bur Dubai', 'Oud Metha', 'Karama', 'Zabeel', 'DIFC', 'Downtown Dubai',
-  'Business Bay', 'City Walk', 'Al Jaddaf', 'Sheikh Zayed Road', 'Meydan',
-  'Dubai Design District (d3)', 'Dubai South', 'Expo City Dubai',
-  'Dubai Investment Park (DIP 1 & 2)', 'Green Community', 'Jebel Ali', 'Jebel Ali Village',
-  'JAFZA', 'Al Furjan', 'Discovery Gardens', 'The Gardens', 'Ibn Battuta Area',
-  'Dubai Silicon Oasis', 'Academic City', 'International City (Clusters)', 'Liwan',
-  'Dubai Land', 'Living Legends', 'Majan', 'Arjan', 'Dubai Science Park', 'Al Sufouh',
-  'Umm Ramool', 'Al Garhoud', 'Al Awir', 'Warsan', 'Wadi Al Safa', 'Saih Shuaib',
-  'Madinat Hind', 'Al Zahiyah', 'Al Markaziyah', 'Al Khalidiyah', 'Al Bateen',
-  'Al Mushrif', 'Al Manhal', 'Al Nahyan', 'Al Reem Island', 'Al Maryah Island',
-  'Saadiyat Island', 'Yas Island', 'Jubail Island', 'Al Raha Beach', 'Al Raha Gardens',
-  'Al Muneera', 'Al Bandar', 'Al Zeina', 'Al Reef', 'Masdar City', 'Khalifa City A',
-  'Khalifa City B', 'Shakhbout City', 'Mohammed Bin Zayed City (MBZ)', 'Mussafah',
-  'ICAD (Industrial City)', 'Rabdan', 'Bain Al Jessrain', 'Al Maqtaa', 'Al Shahama',
-  'Al Bahia', 'Al Falah', 'Al Shamkha', 'Al Wathba', 'Madinat Zayed', 'Corniche',
-  'Mina Zayed', 'Tourist Club Area (TCA)', 'Al Danah', 'Electra Street', 'Hamdan Street',
-  'Airport Road', 'Defence Road', 'Corniche Road', 'Marina Village', 'Marina Mall Area',
-  'Hudayriyat Island', 'Al Hudayriat', 'Al Gurm', 'Al Raha Golf Gardens', 'Al Ain City',
+// ── Vehicle licence categories ───────────────────────────────────────────────────
+const VC_CAT_INFO = [
+  { code:'A', icon:'fa-motorcycle',  name:'Motorcycle',        desc:'For motorcycles with or without a sidecar.' },
+  { code:'B', icon:'fa-car',         name:'Car',               desc:'For motor vehicles up to 3,500 kg with up to 8 passenger seats.' },
+  { code:'C', icon:'fa-truck',       name:'Heavy Vehicle',     desc:'For vehicles over 3,500 kg.' },
+  { code:'D', icon:'fa-bus',         name:'Bus',               desc:'For buses with more than 8 passenger seats.' },
+  { code:'E', icon:'fa-trailer',     name:'Car with Heavy Trailer', desc:'For combination of vehicles in category B, C or D.' },
 ];
+
+// ── Delivery areas, grouped by emirate (Dubai & Abu Dhabi for now — more emirates
+// to follow; other emirates fall back to the free-text "Other" option below) ────
+const AREAS_BY_EMIRATE = {
+  'Dubai': [
+    'Al Barsha (1, 2, 3, South)', 'Al Quoz (1, 2, 3, 4, Industrial Areas)', 'Al Satwa',
+    'Al Safa (1 & 2)', 'Al Wasl', 'Jumeirah (1, 2, 3)', 'Umm Suqeim (1, 2, 3)',
+    'Dubai Marina', 'Jumeirah Beach Residence (JBR)', 'Bluewaters Island', 'Palm Jumeirah',
+    'Dubai Harbour', 'Dubai Internet City', 'Dubai Media City', 'Dubai Knowledge Park',
+    'Barsha Heights (Tecom)', 'The Greens', 'The Views', 'Emirates Hills', 'The Lakes',
+    'The Meadows', 'The Springs', 'Jumeirah Islands', 'Jumeirah Park',
+    'Jumeirah Village Circle (JVC)', 'Jumeirah Village Triangle (JVT)', 'Dubai Hills Estate',
+    'Arabian Ranches (1, 2, 3)', 'DAMAC Hills', 'DAMAC Hills 2', 'Motor City',
+    'Dubai Sports City', 'Studio City', 'Tilal Al Ghaf', 'Town Square', 'Mudon', 'Remraam',
+    'Mira', 'Mira Oasis', 'Villanova', 'The Villa', 'Falcon City', 'Nad Al Sheba',
+    'Nad Al Hamar', 'Ras Al Khor', 'Dubai Creek Harbour', 'Dubai Festival City',
+    'Al Warqa (1–5)', 'Mirdif', 'Mushrif', 'Al Mizhar (1 & 2)', 'Al Khawaneej',
+    'Al Twar (1–4)', 'Muhaisnah (1–4)', 'Al Qusais (1–3)', 'Al Nahda Dubai', 'Hor Al Anz',
+    'Abu Hail', 'Al Mamzar', 'Deira', 'Port Saeed', 'Al Rigga', 'Naif', 'Al Ras',
+    'Baniyas Square', 'Bur Dubai', 'Oud Metha', 'Karama', 'Zabeel', 'DIFC', 'Downtown Dubai',
+    'Business Bay', 'City Walk', 'Al Jaddaf', 'Sheikh Zayed Road', 'Meydan',
+    'Dubai Design District (d3)', 'Dubai South', 'Expo City Dubai',
+    'Dubai Investment Park (DIP 1 & 2)', 'Green Community', 'Jebel Ali', 'Jebel Ali Village',
+    'JAFZA', 'Al Furjan', 'Discovery Gardens', 'The Gardens', 'Ibn Battuta Area',
+    'Dubai Silicon Oasis', 'Academic City', 'International City (Clusters)', 'Liwan',
+    'Dubai Land', 'Living Legends', 'Majan', 'Arjan', 'Dubai Science Park', 'Al Sufouh',
+    'Umm Ramool', 'Al Garhoud', 'Al Awir', 'Warsan', 'Wadi Al Safa', 'Saih Shuaib',
+    'Madinat Hind',
+  ],
+  'Abu Dhabi': [
+    'Al Zahiyah', 'Al Markaziyah', 'Al Khalidiyah', 'Al Bateen',
+    'Al Mushrif', 'Al Manhal', 'Al Nahyan', 'Al Reem Island', 'Al Maryah Island',
+    'Saadiyat Island', 'Yas Island', 'Jubail Island', 'Al Raha Beach', 'Al Raha Gardens',
+    'Al Muneera', 'Al Bandar', 'Al Zeina', 'Al Reef', 'Masdar City', 'Khalifa City A',
+    'Khalifa City B', 'Shakhbout City', 'Mohammed Bin Zayed City (MBZ)', 'Mussafah',
+    'ICAD (Industrial City)', 'Rabdan', 'Bain Al Jessrain', 'Al Maqtaa', 'Al Shahama',
+    'Al Bahia', 'Al Falah', 'Al Shamkha', 'Al Wathba', 'Madinat Zayed', 'Corniche',
+    'Mina Zayed', 'Tourist Club Area (TCA)', 'Al Danah', 'Electra Street', 'Hamdan Street',
+    'Airport Road', 'Defence Road', 'Corniche Road', 'Marina Village', 'Marina Mall Area',
+    'Hudayriyat Island', 'Al Hudayriat', 'Al Gurm', 'Al Raha Golf Gardens', 'Al Ain City',
+  ],
+};
+const AREA_OTHER_VALUE = '__other__';
+// Flat list (all emirates combined) — used by the CPD wizard's simpler free-text/datalist area field.
+const DELIVERY_AREAS = Object.values(AREAS_BY_EMIRATE).flat();
 
 // ── Apply for IDL (wizard) ─────────────────────────────────────────────────────
 export async function renderPublicApplyIDL(param = null) {
@@ -130,8 +160,10 @@ export async function renderPublicApplyIDL(param = null) {
     api.idl.config(),
   ]);
 
-  const BASE_AMOUNT  = Number(idlCfg.idl_amount  ?? 170.00);
+  const BASE_AMOUNT  = Number(idlCfg.idl_amount   ?? 160.00);
+  const SERVICE_FEE  = Number(idlCfg.service_fee  ?? 10.00);
   const DELIVERY_FEE = Number(idlCfg.delivery_fee ?? 15.00);
+  const viaUaePass   = !!currentUser?.via_uae_pass;
 
   // Fetch last IDL request for this user to pre-populate fields
   let lastRequest = null;
@@ -149,7 +181,7 @@ export async function renderPublicApplyIDL(param = null) {
       { label: 'Application Submitted', done: rs >= 1, active: rs === 1 },
       { label: 'Payment Confirmed',     done: rs >= 2, active: rs === 2 },
       { label: 'Under Review',          done: rs >= 3, active: rs === 3 },
-      { label: 'IDL Issued',            done: rs >= 4, active: rs === 4 },
+      { label: 'IDP Issued',            done: rs >= 4, active: rs === 4 },
     ];
     return steps.map((s, i) => {
       const dotClass = s.done && !s.active ? 'done' : s.active ? 'active' : 'pending';
@@ -167,12 +199,12 @@ export async function renderPublicApplyIDL(param = null) {
 
   let currentStep = 0;
   let uaePassJustVerified = false; // true only right after "Continue with UAE PASS" is used
+  let uaePassRejected     = false; // true once the user has declined the UAE PASS data-sharing request — unlocks manual entry
 
   // ── Build step content HTML ──────────────────────────────────────────────────
   function stepIdentity() {
     const u = currentUser ?? {};
     const r = lastRequest ?? {};
-    const viaUaePass = !!u.via_uae_pass;
     const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ') || '—';
 
     const firstName       = u.first_name ?? r.first_name ?? '';
@@ -278,13 +310,23 @@ export async function renderPublicApplyIDL(param = null) {
         </div>
       </div>
 
-      ${viaUaePass ? `
+      ${viaUaePass && !uaePassRejected ? `
       <!-- Verified banner -->
       <div class="pub-verified-banner">
         <i class="fa-solid fa-circle-check pub-verified-icon"></i>
         <div>
           <div class="pub-verified-title">UAE PASS Profile Verified</div>
           <div class="pub-verified-sub">Your identity has been successfully verified.</div>
+        </div>
+      </div>` : ''}
+
+      ${uaePassRejected ? `
+      <!-- UAE PASS data-sharing rejected banner -->
+      <div class="pub-uaepass-rejected-banner">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <div>
+          <div>You have rejected the data sharing request on UAEPASS. Please retry.</div>
+          <div>Alternatively, you may submit the data manually by clicking the next button.</div>
         </div>
       </div>` : ''}
 
@@ -296,61 +338,6 @@ export async function renderPublicApplyIDL(param = null) {
         </div>
         <div class="pub-identity-rows">
           ${identityRowsHtml}
-        </div>
-      </div>
-
-      <!-- Additional information (editable) -->
-      <div class="pub-additional-card">
-        <div class="pub-additional-title">Additional Information</div>
-        <div class="form-grid pub-additional-grid" style="margin-top:16px">
-
-          <div class="field"><label>Date of Birth</label>
-            <div class="pub-input-icon-wrap">
-              ${viaUaePass
-                ? `<input value="${dobDisplay}" readonly /><input type="hidden" name="dob" value="${dobValue}" />`
-                : `<input name="dob" type="date" value="${dobValue}" />`}
-              <i class="fa-regular fa-calendar pub-input-icon-right"></i>
-            </div>
-            <div class="field-error" id="err-dob"></div>
-          </div>
-
-          <div class="field"><label>Place of Birth *</label>
-            <div class="pub-input-icon-wrap">
-              <input name="place_of_birth" required placeholder="Enter city or country of birth" />
-              <i class="fa-solid fa-location-dot pub-input-icon-right"></i>
-            </div>
-            <div class="field-error" id="err-place_of_birth"></div>
-          </div>
-
-          <div class="field">
-            <label>UAE Permanent Place of Residence *</label>
-            <div class="pub-input-icon-wrap">
-              <select name="emirate" required>
-                <option value="">Select emirate</option>
-                ${emirates.map(e => `<option value="${e.emirate_id}">${e.emirate}</option>`).join('')}
-              </select>
-              <i class="fa-solid fa-chevron-down pub-input-icon-right"></i>
-            </div>
-            <p class="pub-field-hint"><i class="fa-solid fa-circle-info"></i> As it appears on your passport or official documents.</p>
-            <div class="field-error" id="err-emirate"></div>
-          </div>
-
-          <div class="field"><label>Additional Phone Number</label>
-            <div class="pub-input-icon-wrap">
-              <input name="additional_mobile_no" placeholder="+971 50 xxx xxxx" />
-              <i class="fa-solid fa-phone pub-input-icon-right"></i>
-            </div>
-            <div class="field-error" id="err-additional_mobile_no"></div>
-          </div>
-
-          <div class="field"><label>Additional Email</label>
-            <div class="pub-input-icon-wrap">
-              <input name="additional_email" type="email" placeholder="alternate@email.com" />
-              <i class="fa-regular fa-envelope pub-input-icon-right"></i>
-            </div>
-            <div class="field-error" id="err-additional_email"></div>
-          </div>
-
         </div>
       </div>
 
@@ -366,13 +353,12 @@ export async function renderPublicApplyIDL(param = null) {
   }
 
   function stepLicence() {
-    const catInfo = [
-      { code:'A', icon:'fa-motorcycle',  name:'Motorcycle',        desc:'For motorcycles with or without a sidecar.' },
-      { code:'B', icon:'fa-car',         name:'Car',               desc:'For motor vehicles up to 3,500 kg with up to 8 passenger seats.' },
-      { code:'C', icon:'fa-truck',       name:'Heavy Vehicle',     desc:'For vehicles over 3,500 kg.' },
-      { code:'D', icon:'fa-bus',         name:'Bus',               desc:'For buses with more than 8 passenger seats.' },
-      { code:'E', icon:'fa-trailer',     name:'Car with Heavy Trailer', desc:'For combination of vehicles in category B, C or D.' },
-    ];
+    const catInfo = VC_CAT_INFO;
+    const u = currentUser ?? {};
+    const r = lastRequest ?? {};
+    const dobRaw     = u.dob ?? r.dob ?? '';
+    const dobValue   = dobRaw ? String(dobRaw).split('T')[0].split(' ')[0] : '';
+    const dobDisplay = dobValue ? new Date(dobValue).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
     return `
       <!-- ── Section header ── -->
       <div class="pub-step-header">
@@ -453,6 +439,7 @@ export async function renderPublicApplyIDL(param = null) {
               <span class="vc-tile-code">${c.code} &ndash; ${c.name}</span>
             </label>`).join('')}
         </div>
+        <div class="vc-selected-desc" id="vc-selected-desc">Select a category above to see its description here.</div>
         <input type="hidden" name="type_of_dl" id="type_of_dl_hidden" />
         <div class="field-error" id="err-type_of_dl" style="margin-top:8px"></div>
       </div>
@@ -507,6 +494,45 @@ export async function renderPublicApplyIDL(param = null) {
               <button type="button" class="btn btn-primary" id="sig-save-btn">Use Signature</button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- ── Additional Information ── -->
+      <div class="pub-additional-card" style="margin-top:20px">
+        <div class="pub-additional-title">Additional Information</div>
+        <div class="form-grid pub-additional-grid" style="margin-top:16px">
+
+          <div class="field"><label>Date of Birth *</label>
+            <div class="pub-input-icon-wrap">
+              ${viaUaePass
+                ? `<input value="${dobDisplay}" readonly /><input type="hidden" name="dob" value="${dobValue}" />`
+                : `<input name="dob" type="date" required value="${dobValue}" />`}
+              <i class="fa-regular fa-calendar pub-input-icon-right"></i>
+            </div>
+            <div class="field-error" id="err-dob"></div>
+          </div>
+
+          <div class="field"><label>Place of Birth *</label>
+            <div class="pub-input-icon-wrap">
+              <input name="place_of_birth" required placeholder="Enter city or country of birth" />
+              <i class="fa-solid fa-location-dot pub-input-icon-right"></i>
+            </div>
+            <div class="field-error" id="err-place_of_birth"></div>
+          </div>
+
+          <div class="field">
+            <label>UAE Permanent Place of Residence *</label>
+            <div class="pub-input-icon-wrap">
+              <select name="emirate" required>
+                <option value="">Select emirate</option>
+                ${emirates.map(e => `<option value="${e.emirate_id}">${e.emirate}</option>`).join('')}
+              </select>
+              <i class="fa-solid fa-chevron-down pub-input-icon-right"></i>
+            </div>
+            <p class="pub-field-hint"><i class="fa-solid fa-circle-info"></i> As it appears on your passport or official documents.</p>
+            <div class="field-error" id="err-emirate"></div>
+          </div>
+
         </div>
       </div>`;
   }
@@ -604,16 +630,6 @@ export async function renderPublicApplyIDL(param = null) {
               <div class="field-error" id="err-del_street"></div>
             </div>
 
-            <div class="field del-addr-third">
-              <label>Area <span style="color:var(--text-muted);font-weight:400">(Optional)</span></label>
-              <input name="del_area" id="del-area" list="del-area-list" autocomplete="off"
-                placeholder="Type to search, or enter your own" />
-              <datalist id="del-area-list">
-                ${DELIVERY_AREAS.map(a => `<option value="${a}"></option>`).join('')}
-              </datalist>
-              <div class="field-error" id="err-del_area"></div>
-            </div>
-
             <div class="field del-addr-half">
               <label>Emirate *</label>
               <div class="pub-input-icon-wrap">
@@ -626,9 +642,34 @@ export async function renderPublicApplyIDL(param = null) {
               <div class="field-error" id="err-del_emirate"></div>
             </div>
 
+            <div class="field del-addr-third">
+              <label>Area <span style="color:var(--text-muted);font-weight:400">(Optional)</span></label>
+              <div class="pub-input-icon-wrap">
+                <select id="del-area-select">
+                  <option value="">Select emirate first</option>
+                </select>
+                <i class="fa-solid fa-chevron-down pub-input-icon-right"></i>
+              </div>
+              <input name="del_area" id="del-area" type="hidden" />
+              <input id="del-area-other" placeholder="Enter your area" style="display:none;margin-top:8px" />
+              <div class="field-error" id="err-del_area"></div>
+            </div>
+
             <div class="field del-addr-half">
               <label>Additional Address Details <span style="color:var(--text-muted);font-weight:400">(Optional)</span></label>
               <input name="del_extra" id="del-extra" placeholder="E.g. Near landmark or building name" />
+            </div>
+
+            <div class="field del-addr-half">
+              <label>Additional Phone Number <span style="color:var(--text-muted);font-weight:400">(Optional)</span></label>
+              <input name="additional_mobile_no" id="del-additional-mobile" placeholder="+971 50 xxx xxxx" />
+              <div class="field-error" id="err-additional_mobile_no"></div>
+            </div>
+
+            <div class="field del-addr-half">
+              <label>Additional Email <span style="color:var(--text-muted);font-weight:400">(Optional)</span></label>
+              <input name="additional_email" id="del-additional-email" type="email" placeholder="alternate@email.com" />
+              <div class="field-error" id="err-additional_email"></div>
             </div>
 
           </div>
@@ -672,7 +713,8 @@ export async function renderPublicApplyIDL(param = null) {
     const isHome      = formData.delivery_option === 'home_delivery';
     const deliveryFee = isHome ? DELIVERY_FEE : 0;
     const vatAmount   = Math.round((BASE_AMOUNT + deliveryFee) * 0.05 * 100) / 100;
-    const totalPayable = BASE_AMOUNT + deliveryFee + vatAmount;
+    const subtotal    = BASE_AMOUNT + deliveryFee + vatAmount;
+    const totalPayable = subtotal + SERVICE_FEE;
     const aed         = n => 'AED ' + Number(n).toFixed(2);
     const natLabel    = nationalities.find(n => String(n.nationality_id) === String(formData.nationality))?.nationality ?? formData.nationality ?? '—';
     const emirLabel   = emirates.find(e => String(e.emirate_id) === String(formData.emirate))?.emirate ?? formData.emirate ?? '—';
@@ -740,8 +782,6 @@ export async function renderPublicApplyIDL(param = null) {
           <div class="rv-extra-row"><span class="rv-extra-label">Date of Birth</span><span class="rv-extra-value">${dob}</span></div>
           <div class="rv-extra-row"><span class="rv-extra-label">Place of Birth</span><span class="rv-extra-value">${formData.place_of_birth || '—'}</span></div>
           <div class="rv-extra-row"><span class="rv-extra-label">UAE Permanent Place of Residence</span><span class="rv-extra-value">${emirLabel}</span></div>
-          <div class="rv-extra-row"><span class="rv-extra-label">Additional Phone Number</span><span class="rv-extra-value">${formData.additional_mobile_no || '—'}</span></div>
-          <div class="rv-extra-row"><span class="rv-extra-label">Additional Email</span><span class="rv-extra-value">${formData.additional_email || '—'}</span></div>
         </div>
       </div>
 
@@ -798,6 +838,8 @@ export async function renderPublicApplyIDL(param = null) {
             ${formData.del_area ? `<div class="rv-delivery-row"><span class="rv-delivery-label">Area</span><span>${formData.del_area}</span></div>` : ''}
             <div class="rv-delivery-row"><span class="rv-delivery-label">Emirate</span><span>${emirates.find(e => String(e.emirate_id) === String(formData.del_emirate))?.emirate ?? formData.del_emirate ?? '—'}</span></div>
             ${formData.del_extra ? `<div class="rv-delivery-row"><span class="rv-delivery-label">Additional Details</span><span>${formData.del_extra}</span></div>` : ''}
+            ${formData.additional_mobile_no ? `<div class="rv-delivery-row"><span class="rv-delivery-label">Additional Phone Number</span><span>${formData.additional_mobile_no}</span></div>` : ''}
+            ${formData.additional_email ? `<div class="rv-delivery-row"><span class="rv-delivery-label">Additional Email</span><span>${formData.additional_email}</span></div>` : ''}
           </div>` : ''}
         </div>
 
@@ -828,9 +870,11 @@ export async function renderPublicApplyIDL(param = null) {
       <div class="rv-section">
         <div class="rv-section-title" style="margin-bottom:12px">Fee Breakdown</div>
         <div class="rv-extra-rows">
-          <div class="rv-extra-row"><span class="rv-extra-label">IDL Fee</span><span class="rv-extra-value">${aed(BASE_AMOUNT)}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Base Fee</span><span class="rv-extra-value">${aed(BASE_AMOUNT)}</span></div>
           ${isHome ? `<div class="rv-extra-row"><span class="rv-extra-label">Delivery Fee</span><span class="rv-extra-value">${aed(deliveryFee)}</span></div>` : ''}
           <div class="rv-extra-row"><span class="rv-extra-label">VAT 5%</span><span class="rv-extra-value">${aed(vatAmount)}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Subtotal (inc. VAT)</span><span class="rv-extra-value">${aed(subtotal)}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Service Fee</span><span class="rv-extra-value">${aed(SERVICE_FEE)}</span></div>
           <div class="rv-extra-row"><span class="rv-extra-label" style="font-weight:700;color:var(--text-primary)">Total Payable</span><span class="rv-extra-value" style="font-weight:700;color:var(--accent);font-size:1rem">${aed(totalPayable)}</span></div>
         </div>
       </div>
@@ -886,13 +930,13 @@ export async function renderPublicApplyIDL(param = null) {
           <div class="pub-breadcrumb">
             <span class="pub-crumb">Services</span>
             <i class="fa-solid fa-chevron-right pub-crumb-sep"></i>
-            <span class="pub-crumb pub-crumb-active">${isRenew ? 'Renew your IDL' : 'International Driving Permit'}</span>
+            <span class="pub-crumb pub-crumb-active">${isRenew ? 'Renew your IDP' : 'International Driving Permit'}</span>
           </div>
 
           ${isRenew ? `
           <div class="pub-renew-banner">
             <i class="fa-solid fa-rotate"></i>
-            <span>Renewing your last IDL${lastRequest?.request_id ? ` &ndash; ${lastRequest.request_id}` : ''}</span>
+            <span>Renewing your last IDP${lastRequest?.request_id ? ` &ndash; ${lastRequest.request_id}` : ''}</span>
           </div>` : ''}
 
           <!-- Step progress bar -->
@@ -925,7 +969,8 @@ export async function renderPublicApplyIDL(param = null) {
                 <i class="fa-solid fa-arrow-left"></i>
                 ${currentStep === 0 ? 'Back' : 'Back'}
               </button>
-              <button type="button" class="btn pub-btn-next" id="btn-wizard-next">
+              <button type="button" class="btn pub-btn-next" id="btn-wizard-next"
+                ${currentStep === 0 && !uaePassRejected ? 'disabled title="Continue with UAE PASS above, or reject the request to enter your details manually"' : ''}>
                 ${currentStep === STEPS.length - 1
                   ? 'Proceed to Payment <i class="fa-solid fa-arrow-right"></i>'
                   : 'Next <i class="fa-solid fa-arrow-right"></i>'}
@@ -1060,6 +1105,41 @@ export async function renderPublicApplyIDL(param = null) {
     if (delBuilding && formData.del_building)      delBuilding.value = formData.del_building;
     if (delStreet   && formData.del_street)        delStreet.value   = formData.del_street;
     if (delExtra    && formData.del_extra)         delExtra.value    = formData.del_extra;
+    // Area dropdown depends on the chosen emirate — rebuild its option list, then
+    // select the saved area (or fall back to "Other" with the typed value restored).
+    syncAreaSelect(delEmirate?.value, formData.del_area);
+  }
+
+  // Rebuilds #del-area-select's options for the given emirate, then selects `savedArea`
+  // if it's one of that emirate's known areas, or falls back to the free-text "Other" input.
+  function syncAreaSelect(emirateId, savedArea) {
+    const areaSelect = document.getElementById('del-area-select');
+    const areaOther   = document.getElementById('del-area-other');
+    const areaHidden  = document.getElementById('del-area');
+    if (!areaSelect) return;
+
+    const emirateName = emirates.find(e => String(e.emirate_id) === String(emirateId))?.emirate;
+    const areaList     = emirateName ? (AREAS_BY_EMIRATE[emirateName] || []) : [];
+
+    areaSelect.innerHTML = emirateId
+      ? [`<option value="">Select area</option>`,
+         ...areaList.map(a => `<option value="${a}">${a}</option>`),
+         `<option value="${AREA_OTHER_VALUE}">Other (type your own)</option>`].join('')
+      : `<option value="">Select emirate first</option>`;
+
+    if (savedArea && areaList.includes(savedArea)) {
+      areaSelect.value = savedArea;
+      if (areaOther)  areaOther.style.display = 'none';
+      if (areaHidden) areaHidden.value = savedArea;
+    } else if (savedArea) {
+      areaSelect.value = AREA_OTHER_VALUE;
+      if (areaOther)  { areaOther.style.display = ''; areaOther.value = savedArea; }
+      if (areaHidden) areaHidden.value = savedArea;
+    } else {
+      areaSelect.value = '';
+      if (areaOther)  areaOther.style.display = 'none';
+      if (areaHidden) areaHidden.value = '';
+    }
   }
 
   function updateDlHiddenValue() {
@@ -1085,6 +1165,20 @@ export async function renderPublicApplyIDL(param = null) {
     });
 
     // Vehicle category tiles (step 2)
+    function updateVcSelectedDesc() {
+      const descEl = document.getElementById('vc-selected-desc');
+      if (!descEl) return;
+      const checked = [...document.querySelectorAll('.vc-cb:checked')].map(c => c.value);
+      if (!checked.length) {
+        descEl.innerHTML = 'Select a category above to see its description here.';
+        return;
+      }
+      descEl.innerHTML = checked.map(code => {
+        const c = VC_CAT_INFO.find(x => x.code === code);
+        if (!c) return '';
+        return `<div class="vc-selected-desc-row"><strong>${c.code} &ndash; ${c.name}:</strong> ${c.desc}</div>`;
+      }).join('');
+    }
     document.querySelectorAll('.vc-tile').forEach(tile => {
       tile.addEventListener('click', () => {
         const cb = tile.querySelector('.vc-cb');
@@ -1098,6 +1192,7 @@ export async function renderPublicApplyIDL(param = null) {
           const errEl = document.getElementById('err-type_of_dl');
           if (errEl) errEl.textContent = '';
         }
+        updateVcSelectedDesc();
       });
     });
     // Restore vc tile active state from formData
@@ -1107,6 +1202,7 @@ export async function renderPublicApplyIDL(param = null) {
         const cb   = tile?.querySelector('.vc-cb');
         if (tile && cb) { cb.checked = true; tile.classList.add('vc-tile-active'); }
       });
+      updateVcSelectedDesc();
     }
 
     // Vehicle category info tooltip
@@ -1337,6 +1433,30 @@ export async function renderPublicApplyIDL(param = null) {
       });
     }
 
+    // Emirate → Area dependent dropdown (step 3) — the area list is filtered to
+    // whichever emirate is selected, plus an "Other" option for free-text entry.
+    const delEmirateSelect = document.getElementById('del-emirate');
+    const delAreaSelect    = document.getElementById('del-area-select');
+    const delAreaOther     = document.getElementById('del-area-other');
+    const delAreaHidden    = document.getElementById('del-area');
+    if (delEmirateSelect && delAreaSelect) {
+      delEmirateSelect.addEventListener('change', () => {
+        syncAreaSelect(delEmirateSelect.value, null); // emirate changed — area choice no longer valid
+      });
+      delAreaSelect.addEventListener('change', () => {
+        if (delAreaSelect.value === AREA_OTHER_VALUE) {
+          if (delAreaOther) { delAreaOther.style.display = ''; delAreaOther.value = ''; delAreaOther.focus(); }
+          if (delAreaHidden) delAreaHidden.value = '';
+        } else {
+          if (delAreaOther)  delAreaOther.style.display = 'none';
+          if (delAreaHidden) delAreaHidden.value = delAreaSelect.value;
+        }
+      });
+      delAreaOther?.addEventListener('input', () => {
+        if (delAreaHidden) delAreaHidden.value = delAreaOther.value;
+      });
+    }
+
     // Load review step document thumbnails — user upload first, server URL fallback
     if (STEPS[currentStep].id === 'review') {
       document.querySelectorAll('.rv-doc-thumb[data-slot]').forEach(thumbEl => {
@@ -1377,11 +1497,18 @@ export async function renderPublicApplyIDL(param = null) {
 
     // Navigation buttons
     document.querySelector('.btn-uae-pass-continue')?.addEventListener('click', () => {
-      showUaePassLoader(() => {
-        uaePassJustVerified = true;
-        currentStep = 1;
-        renderWizard();
-      });
+      showUaePassLoader(
+        () => {
+          uaePassJustVerified = true;
+          uaePassRejected     = false;
+          currentStep = 1;
+          renderWizard();
+        },
+        () => {
+          uaePassRejected = true;
+          renderWizard();
+        },
+      );
     });
 
     document.getElementById('btn-wizard-back')?.addEventListener('click', () => {
@@ -1465,6 +1592,9 @@ export async function renderPublicApplyIDL(param = null) {
         }
       }
 
+    }
+
+    if (key === 'licence') {
       const dobEl = document.querySelector('[name="dob"]');
       if (dobEl && dobEl.type !== 'hidden' && dobEl.value) {
         const eighteenYearsAgo = new Date();
@@ -1473,9 +1603,7 @@ export async function renderPublicApplyIDL(param = null) {
           setErr('dob', 'You must be at least 18 years old'); ok = false;
         }
       }
-    }
 
-    if (key === 'licence') {
       const licenseNoEl = document.querySelector('[name="license_no"]');
       if (licenseNoEl?.value?.trim() && !/^\d+$/.test(licenseNoEl.value.trim())) {
         setErr('license_no', 'Licence number should only contain numbers'); ok = false;
@@ -1671,19 +1799,24 @@ export async function renderPublicApplyCPD(param = null) {
       { name: 'sex',         label: 'Gender'      },
       { name: 'mobile_no',   label: 'Mobile No'   },
       { name: 'email',       label: 'Email'       },
-      { name: 'passport_no', label: 'Passport Number' },
     ],
     vehicle: [
-      { name: 'license_no',      label: 'Driving Licence Number'      },
-      { name: 'license_expiry',  label: 'Driving Licence Expiry Date' },
-      { name: 'vehicle_make',    label: 'Vehicle Make'     },
-      { name: 'vehicle_model',   label: 'Vehicle Model'    },
-      { name: 'registration_no', label: 'Registration No'  },
-      { name: 'mulkiya_no',      label: 'Traffic File Number' },
-      { name: 'chassis_no',      label: 'Chassis No'       },
-      { name: 'manuf_year',      label: 'Manufacture Year' },
-      { name: 'radio',           label: 'Radio'            },
-      { name: 'spare_tyre',      label: 'Spare Tyre'       },
+      { name: 'license_no',           label: 'Driving Licence Number'      },
+      { name: 'license_expiry',       label: 'Driving Licence Expiry Date' },
+      { name: 'vehicle_make',         label: 'Vehicle Make'     },
+      { name: 'vehicle_model',        label: 'Vehicle Model'    },
+      { name: 'registration_no',      label: 'Vehicle Plate Number' },
+      { name: 'mulkiya_no',           label: 'Traffic File Number' },
+      { name: 'body_type',            label: 'Body Type'        },
+      { name: 'vehicle_registered_in',label: 'Vehicle Registered In' },
+      { name: 'color',                label: 'Color as per Mulkiya' },
+      { name: 'chassis_no',           label: 'Chassis No'       },
+      { name: 'net_weight',           label: 'Net Weight (Empty Load)' },
+      { name: 'engine_no',            label: 'Engine No'        },
+      { name: 'no_of_seats',          label: 'No of Seats'      },
+      { name: 'manuf_year',           label: 'Manufacture Year' },
+      { name: 'usage_type',           label: 'Usage Type'       },
+      { name: 'passport_no',          label: 'Passport Number'  },
     ],
     trip:    [],
     review:  [],
@@ -1692,6 +1825,7 @@ export async function renderPublicApplyCPD(param = null) {
 
   let currentStep   = 0;
   let uaePassJustVerified = false; // true only right after "Continue with UAE PASS" is used
+  let uaePassRejected     = false; // true once the user has declined the UAE PASS data-sharing request — unlocks manual entry
   const formData    = {};
   const savedCountries = [];
 
@@ -1743,7 +1877,9 @@ export async function renderPublicApplyCPD(param = null) {
   const savedDocs = {};
 
   const UAE_STATES = ['Abu Dhabi','Dubai','Sharjah','Ajman','Umm Al Quwain','Ras Al Khaimah','Fujairah'];
-  const BODY_TYPES = ['Luxury','Station','Saloon','Motor Cycle','Truck','Trailer','Pickup'];
+  // "Luxury" is intentionally not a selectable body type — luxury vehicles are
+  // auto-detected from the make (see LUXURY_MAKES below) and priced accordingly.
+  const BODY_TYPES = ['Station','Saloon','Motor Cycle','Truck','Trailer','Pickup','Caravan'];
   const COLORS     = ['White','Silver','Black','Grey','Blue','Red','Brown','Green','Other'];
   const YEAR_OPTS  = Array.from({length:41},(_,i)=>2030-i).map(y=>`<option value="${y}">${y}</option>`).join('');
 
@@ -1804,6 +1940,16 @@ export async function renderPublicApplyCPD(param = null) {
         </div>
       </div>
 
+      ${uaePassRejected ? `
+      <!-- UAE PASS data-sharing rejected banner -->
+      <div class="pub-uaepass-rejected-banner">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <div>
+          <div>You have rejected the data sharing request on UAEPASS. Please retry.</div>
+          <div>Alternatively, you may submit the data manually by clicking the next button.</div>
+        </div>
+      </div>` : ''}
+
       <div class="pub-identity-card">
         <div class="pub-identity-card-header">
           <span>Your Identity Information</span>
@@ -1862,90 +2008,11 @@ export async function renderPublicApplyCPD(param = null) {
         </div>
       </div>
 
-      <div class="rv-section-title" style="margin-bottom:12px">Additional Information</div>
-      <div class="pub-identity-card">
-        <div class="pub-identity-rows pub-identity-rows-2col">
-
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-regular fa-calendar"></i></span>
-            <span class="pub-id-label">Date of Birth</span>
-            <input name="dob" type="date" class="pub-id-inline-input" />
-            <div class="field-error" id="err-dob" style="margin:0"></div>
-          </div>
-
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
-            <span class="pub-id-label">Passport Number</span>
-            <input name="passport_no" class="pub-id-inline-input" placeholder="Passport number" />
-            <div class="field-error" id="err-passport_no" style="margin:0"></div>
-          </div>
-
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-solid fa-inbox"></i></span>
-            <span class="pub-id-label">PO Box</span>
-            <input name="po_box" class="pub-id-inline-input" placeholder="PO Box" />
-          </div>
-
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-solid fa-location-dot"></i></span>
-            <span class="pub-id-label">Address</span>
-            <input name="address" class="pub-id-inline-input" placeholder="Street, area, emirate" />
-          </div>
-
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-solid fa-city"></i></span>
-            <span class="pub-id-label">City</span>
-            <input name="city" class="pub-id-inline-input" placeholder="City" />
-          </div>
-
-        </div>
-
-        <div class="pub-identity-rows pub-identity-rows-bycol-3">
-
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
-            <span class="pub-id-label">Extra Driver 1 Full Name</span>
-            <input name="extra_owner1_name" class="pub-id-inline-input" placeholder="Full name" />
-          </div>
-
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
-            <span class="pub-id-label">Extra Driver 1 Emirates ID</span>
-            <input name="extra_owner1_eid" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
-          </div>
-
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
-            <span class="pub-id-label">Extra Driver 1 Passport Number</span>
-            <input name="extra_owner1_passport" class="pub-id-inline-input" placeholder="Passport number" />
-          </div>
-
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
-            <span class="pub-id-label">Extra Driver 2 Full Name</span>
-            <input name="extra_owner2_name" class="pub-id-inline-input" placeholder="Full name" />
-          </div>
-
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
-            <span class="pub-id-label">Extra Driver 2 Emirates ID</span>
-            <input name="extra_owner2_eid" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
-          </div>
-
-          <div class="pub-identity-row">
-            <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
-            <span class="pub-id-label">Extra Driver 2 Passport Number</span>
-            <input name="extra_owner2_passport" class="pub-id-inline-input" placeholder="Passport number" />
-          </div>
-
-        </div>
-      </div>
-
       <!-- UAE PASS request widget -->
       <div class="pub-uaepass-widget">
         <div class="pub-uaepass-icon"><i class="fa-solid fa-id-card"></i></div>
         <div class="pub-uaepass-text">
-          <div class="pub-uaepass-title">We will be requesting your Emirates ID and Driving License</div>
+          <div class="pub-uaepass-title">We will be requesting your Emirates ID, Driving License &amp; Mulkiya</div>
           <div class="pub-uaepass-sub">Share authentic and up to date documents eliminating the need for paper and physical visits</div>
         </div>
         <button type="button" class="btn-uae-pass-continue" aria-label="Continue with UAE PASS"></button>
@@ -1957,6 +2024,8 @@ export async function renderPublicApplyCPD(param = null) {
     const usageType = formData.usage_type || 'PERSONAL';
     const upholsteryChoice = ['Yes','No'].includes(formData.upholstery) ? formData.upholstery : (formData.upholstery ? 'Other' : '');
     const upholsteryOther  = upholsteryChoice === 'Other' ? formData.upholstery : '';
+    const showExtra1 = !!(formData.extra_owner1_name || formData.extra_owner1_eid || formData.extra_owner1_passport);
+    const showExtra2 = !!(formData.extra_owner2_name || formData.extra_owner2_eid || formData.extra_owner2_passport);
     return `
     <div class="pub-step-header">
       <div class="pub-step-icon-wrap"><i class="fa-solid fa-car"></i></div>
@@ -1975,34 +2044,13 @@ export async function renderPublicApplyCPD(param = null) {
       </div>
     </div>` : ''}
 
-    <div class="rv-section-title" style="margin-bottom:12px">Driving Licence Details</div>
-    <div class="pub-identity-card" style="margin-bottom:20px">
-      <div class="pub-identity-rows pub-identity-rows-2col">
-
-        <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-solid fa-id-card"></i></span>
-          <span class="pub-id-label">Driving Licence Number</span>
-          <input name="license_no" class="pub-id-inline-input" placeholder="Licence number" />
-          <div class="field-error" id="err-license_no" style="margin:0"></div>
-        </div>
-
-        <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-regular fa-calendar-xmark"></i></span>
-          <span class="pub-id-label">Driving Licence Expiry Date</span>
-          <input name="license_expiry" type="date" class="pub-id-inline-input" />
-          <div class="field-error" id="err-license_expiry" style="margin:0"></div>
-        </div>
-
-      </div>
-    </div>
-
     <div class="rv-section-title" style="margin-bottom:12px">Vehicle Details</div>
     <div class="pub-identity-card" style="margin-bottom:20px">
       <div class="pub-identity-rows pub-identity-rows-2col">
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-hashtag"></i></span>
-          <span class="pub-id-label">Registration No</span>
+          <span class="pub-id-label">Vehicle Plate Number</span>
           <input name="registration_no" required class="pub-id-inline-input" placeholder="e.g. Dubai A 12345" />
           <div class="field-error" id="err-registration_no" style="margin:0"></div>
         </div>
@@ -2032,27 +2080,33 @@ export async function renderPublicApplyCPD(param = null) {
         </div>
 
         <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-solid fa-sack-dollar"></i></span>
-          <span class="pub-id-label">Vehicle Value (AED)</span>
-          <input name="vehicle_value" type="number" class="pub-id-inline-input" placeholder="80000" />
+          <span class="pub-id-icon"><i class="fa-solid fa-shapes"></i></span>
+          <span class="pub-id-label">Body Type</span>
+          <select name="body_type" required class="pub-id-inline-select">
+            <option value="">Select type</option>
+            ${BODY_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+          </select>
+          <div class="field-error" id="err-body_type" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-location-dot"></i></span>
           <span class="pub-id-label">Vehicle Registered In</span>
-          <select name="vehicle_registered_in" class="pub-id-inline-select">
+          <select name="vehicle_registered_in" required class="pub-id-inline-select">
             <option value="">Select emirate</option>
             ${UAE_STATES.map(s => `<option value="${s}">${s}</option>`).join('')}
           </select>
+          <div class="field-error" id="err-vehicle_registered_in" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-solid fa-shapes"></i></span>
-          <span class="pub-id-label">Body Type</span>
-          <select name="body_type" class="pub-id-inline-select">
-            <option value="">Select type</option>
-            ${BODY_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+          <span class="pub-id-icon"><i class="fa-solid fa-palette"></i></span>
+          <span class="pub-id-label">Color as per Mulkiya</span>
+          <select name="color" required class="pub-id-inline-select">
+            <option value="">Select color</option>
+            ${COLORS.map(c => `<option value="${c}">${c}</option>`).join('')}
           </select>
+          <div class="field-error" id="err-color" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
@@ -2066,21 +2120,6 @@ export async function renderPublicApplyCPD(param = null) {
         </div>
 
         <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-solid fa-palette"></i></span>
-          <span class="pub-id-label">Color as per Mulkiya</span>
-          <select name="color" class="pub-id-inline-select">
-            <option value="">Select color</option>
-            ${COLORS.map(c => `<option value="${c}">${c}</option>`).join('')}
-          </select>
-        </div>
-
-        <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-solid fa-weight-hanging"></i></span>
-          <span class="pub-id-label">Net Weight (Empty Load)</span>
-          <input name="net_weight" class="pub-id-inline-input" placeholder="kg" />
-        </div>
-
-        <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-barcode"></i></span>
           <span class="pub-id-label">Chassis No</span>
           <input name="chassis_no" required class="pub-id-inline-input" placeholder="VIN / Chassis number" />
@@ -2088,9 +2127,99 @@ export async function renderPublicApplyCPD(param = null) {
         </div>
 
         <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-weight-hanging"></i></span>
+          <span class="pub-id-label">Net Weight (Empty Load)</span>
+          <input name="net_weight" required class="pub-id-inline-input" placeholder="kg" />
+          <div class="field-error" id="err-net_weight" style="margin:0"></div>
+        </div>
+
+        <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-gears"></i></span>
           <span class="pub-id-label">Engine No</span>
-          <input name="engine_no" class="pub-id-inline-input" placeholder="Engine number" />
+          <input name="engine_no" required class="pub-id-inline-input" placeholder="Engine number" />
+          <div class="field-error" id="err-engine_no" style="margin:0"></div>
+        </div>
+
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-users"></i></span>
+          <span class="pub-id-label">No of Seats</span>
+          <input name="no_of_seats" type="number" required class="pub-id-inline-input" placeholder="5" />
+          <div class="field-error" id="err-no_of_seats" style="margin:0"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="rv-section-title" style="margin-bottom:12px">Driving Licence Details</div>
+    <div class="pub-identity-card" style="margin-bottom:20px">
+      <div class="pub-identity-rows pub-identity-rows-2col">
+
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-id-card"></i></span>
+          <span class="pub-id-label">Driving Licence Number</span>
+          <input name="license_no" class="pub-id-inline-input" placeholder="Licence number" />
+          <div class="field-error" id="err-license_no" style="margin:0"></div>
+        </div>
+
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-regular fa-calendar-xmark"></i></span>
+          <span class="pub-id-label">Driving Licence Expiry Date</span>
+          <input name="license_expiry" type="date" class="pub-id-inline-input" />
+          <div class="field-error" id="err-license_expiry" style="margin:0"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <div style="margin-top:24px">
+      <div style="font-weight:600;margin-bottom:12px;color:var(--text-secondary)">
+        <i class="fa-solid fa-paperclip" style="margin-right:6px"></i>Supporting Documents
+      </div>
+      <div class="doc-upload-grid" id="cpd-doc-grid">
+        ${cpdDocZone('eid_front',      'Emirates ID (Front)')}
+        ${cpdDocZone('eid_back',       'Emirates ID (Back)')}
+        ${cpdDocZone('dl_front',       'Driving License (Front)')}
+        ${cpdDocZone('dl_back',        'Driving License (Back)')}
+        ${cpdDocZone('traffic_front',  'Traffic File (Front)')}
+        ${cpdDocZone('traffic_back',   'Traffic File (Back)')}
+        ${cpdDocZone('passport_photo', 'Passport Copy')}
+        <div id="cpd-corporate-docs" style="display:${usageType === 'COMPANY' ? 'contents' : 'none'}">
+          ${cpdDocZone('visa_page',      'Visa Page of Owner')}
+          ${cpdDocZone('trade_license',  'Trade License')}
+          ${cpdDocZone('noc',            'NOC from Company Owner')}
+        </div>
+      </div>
+    </div>
+
+    <div class="rv-section-title" style="margin-bottom:12px">Additional Information</div>
+    <div class="pub-identity-card" style="margin-bottom:20px">
+      <div class="pub-identity-rows pub-identity-rows-2col">
+
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-briefcase"></i></span>
+          <span class="pub-id-label">Usage Type</span>
+          <select name="usage_type" id="cpd-usage-type" required class="pub-id-inline-select">
+            <option value="">Select</option>
+            <option value="PERSONAL" ${usageType === 'PERSONAL' ? 'selected' : ''}>Personal Use</option>
+            <option value="COMPANY" ${usageType === 'COMPANY' ? 'selected' : ''}>Company Use</option>
+          </select>
+          <div class="field-error" id="err-usage_type" style="margin:0"></div>
+        </div>
+
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
+          <span class="pub-id-label">Passport Number
+            <i class="fa-solid fa-circle-info" style="margin-left:4px;color:var(--text-muted);cursor:help"
+               title="Please attach a copy of your passport in Supporting Documents above"></i>
+          </span>
+          <input name="passport_no" required class="pub-id-inline-input" placeholder="Passport number" />
+          <div class="field-error" id="err-passport_no" style="margin:0"></div>
+        </div>
+
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-sack-dollar"></i></span>
+          <span class="pub-id-label">Vehicle Value (AED)</span>
+          <input name="vehicle_value" type="number" class="pub-id-inline-input" placeholder="80000" />
         </div>
 
         <div class="pub-identity-row">
@@ -2123,29 +2252,21 @@ export async function renderPublicApplyCPD(param = null) {
         </div>
 
         <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-solid fa-users"></i></span>
-          <span class="pub-id-label">No of Seats</span>
-          <input name="no_of_seats" type="number" class="pub-id-inline-input" placeholder="5" />
-        </div>
-
-        <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-radio"></i></span>
           <span class="pub-id-label">Radio</span>
-          <select name="radio" required class="pub-id-inline-select">
+          <select name="radio" class="pub-id-inline-select">
             <option value="">Select</option>
             <option value="Yes">Yes</option><option value="No">No</option>
           </select>
-          <div class="field-error" id="err-radio" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-ring"></i></span>
           <span class="pub-id-label">Spare Tyre</span>
-          <select name="spare_tyre" required class="pub-id-inline-select">
+          <select name="spare_tyre" class="pub-id-inline-select">
             <option value="">Select</option>
             <option value="Yes">Yes</option><option value="No">No</option>
           </select>
-          <div class="field-error" id="err-spare_tyre" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
@@ -2167,17 +2288,11 @@ export async function renderPublicApplyCPD(param = null) {
           <input name="others2" class="pub-id-inline-input" placeholder="e.g. Winch, spare parts…" />
         </div>
 
-        <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-solid fa-briefcase"></i></span>
-          <span class="pub-id-label">Usage Type</span>
-          <select name="usage_type" id="cpd-usage-type" class="pub-id-inline-select">
-            <option value="PERSONAL" ${usageType === 'PERSONAL' ? 'selected' : ''}>Personal Use</option>
-            <option value="COMPANY" ${usageType === 'COMPANY' ? 'selected' : ''}>Company Use</option>
-          </select>
-        </div>
-
       </div>
+    </div>
 
+    <div class="rv-section-title" style="margin-bottom:12px">References</div>
+    <div class="pub-identity-card" style="margin-bottom:20px">
       <div class="pub-identity-rows pub-identity-rows-bycol-4">
 
         <div class="pub-identity-row">
@@ -2189,7 +2304,8 @@ export async function renderPublicApplyCPD(param = null) {
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
           <span class="pub-id-label">Reference 1 in UAE Mobile Number</span>
-          <input name="uae_refree1_mobile" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
+          <input name="uae_refree1_mobile" class="pub-id-inline-input" placeholder="0501234567" />
+          <div class="field-error" id="err-uae_refree1_mobile" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
@@ -2213,7 +2329,8 @@ export async function renderPublicApplyCPD(param = null) {
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
           <span class="pub-id-label">Reference 2 in UAE Mobile Number</span>
-          <input name="uae_refree2_mobile" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
+          <input name="uae_refree2_mobile" class="pub-id-inline-input" placeholder="0501234567" />
+          <div class="field-error" id="err-uae_refree2_mobile" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
@@ -2230,22 +2347,51 @@ export async function renderPublicApplyCPD(param = null) {
 
       </div>
     </div>
-    <div style="margin-top:24px">
-      <div style="font-weight:600;margin-bottom:12px;color:var(--text-secondary)">
-        <i class="fa-solid fa-paperclip" style="margin-right:6px"></i>Supporting Documents
+
+    <div class="rv-section-title" style="margin-bottom:12px">Extra Drivers <span style="font-weight:400;color:var(--text-muted)">(Optional)</span></div>
+    <div class="pub-identity-card" style="margin-bottom:20px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:${showExtra1 || showExtra2 ? '16px' : '0'}">
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-add-extra-driver-1" style="display:${showExtra1 ? 'none' : ''}">
+          <i class="fa-solid fa-plus"></i> Add Extra Driver 1</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-add-extra-driver-2" style="display:${showExtra2 ? 'none' : ''}">
+          <i class="fa-solid fa-plus"></i> Add Extra Driver 2</button>
       </div>
-      <div class="doc-upload-grid" id="cpd-doc-grid">
-        ${cpdDocZone('eid_front',      'Emirates ID (Front)')}
-        ${cpdDocZone('eid_back',       'Emirates ID (Back)')}
-        ${cpdDocZone('dl_front',       'Driving License (Front)')}
-        ${cpdDocZone('dl_back',        'Driving License (Back)')}
-        ${cpdDocZone('traffic_front',  'Traffic File (Front)')}
-        ${cpdDocZone('traffic_back',   'Traffic File (Back)')}
-        ${cpdDocZone('passport_photo', 'Passport Copy')}
-        <div id="cpd-corporate-docs" style="display:${usageType === 'COMPANY' ? 'contents' : 'none'}">
-          ${cpdDocZone('visa_page',      'Visa Page of Owner')}
-          ${cpdDocZone('trade_license',  'Trade License')}
-          ${cpdDocZone('noc',            'NOC from Company Owner')}
+
+      <div class="pub-identity-rows pub-identity-rows-bycol-3" id="cpd-extra-driver-1-fields" style="display:${showExtra1 ? '' : 'none'}">
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
+          <span class="pub-id-label">Extra Driver 1 Full Name</span>
+          <input name="extra_owner1_name" class="pub-id-inline-input" placeholder="Full name" />
+        </div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
+          <span class="pub-id-label">Extra Driver 1 Emirates ID</span>
+          <input name="extra_owner1_eid" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
+          <div class="field-error" id="err-extra_owner1_eid" style="margin:0"></div>
+        </div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
+          <span class="pub-id-label">Extra Driver 1 Passport Number</span>
+          <input name="extra_owner1_passport" class="pub-id-inline-input" placeholder="Passport number" />
+        </div>
+      </div>
+
+      <div class="pub-identity-rows pub-identity-rows-bycol-3" id="cpd-extra-driver-2-fields" style="display:${showExtra2 ? '' : 'none'}">
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
+          <span class="pub-id-label">Extra Driver 2 Full Name</span>
+          <input name="extra_owner2_name" class="pub-id-inline-input" placeholder="Full name" />
+        </div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
+          <span class="pub-id-label">Extra Driver 2 Emirates ID</span>
+          <input name="extra_owner2_eid" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
+          <div class="field-error" id="err-extra_owner2_eid" style="margin:0"></div>
+        </div>
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
+          <span class="pub-id-label">Extra Driver 2 Passport Number</span>
+          <input name="extra_owner2_passport" class="pub-id-inline-input" placeholder="Passport number" />
         </div>
       </div>
     </div>`;
@@ -2273,6 +2419,7 @@ export async function renderPublicApplyCPD(param = null) {
             ${c.nationality}
           </label>`).join('')}
         </div>
+        <div id="cpd-trip-notes"></div>
       </div>
       <div class="form-grid">
         <div class="field field-full"><label>Additional Remarks</label>
@@ -2284,7 +2431,6 @@ export async function renderPublicApplyCPD(param = null) {
 
   function stepCPDReview() {
     const natLabel = nationalities.find(n => String(n.nationality_id) === String(formData.nationality))?.nationality ?? formData.nationality ?? '—';
-    const dob       = formData.dob ? new Date(formData.dob).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }) : '—';
     const licExpiry = formData.license_expiry ? new Date(formData.license_expiry).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }) : '—';
     const fullName  = formData.full_name || [formData.first_name, formData.last_name].filter(Boolean).join(' ') || '—';
     const usageType = formData.usage_type === 'COMPANY' ? 'Company Use' : 'Personal Use';
@@ -2347,11 +2493,7 @@ export async function renderPublicApplyCPD(param = null) {
       <div class="rv-section">
         <div class="rv-section-title" style="margin-bottom:12px">Additional Information</div>
         <div class="rv-extra-rows">
-          <div class="rv-extra-row"><span class="rv-extra-label">Date of Birth</span><span class="rv-extra-value">${dob}</span></div>
           <div class="rv-extra-row"><span class="rv-extra-label">Passport Number</span><span class="rv-extra-value">${formData.passport_no || '—'}</span></div>
-          <div class="rv-extra-row"><span class="rv-extra-label">PO Box</span><span class="rv-extra-value">${formData.po_box || '—'}</span></div>
-          <div class="rv-extra-row"><span class="rv-extra-label">Address</span><span class="rv-extra-value">${formData.address || '—'}</span></div>
-          <div class="rv-extra-row"><span class="rv-extra-label">City</span><span class="rv-extra-value">${formData.city || '—'}</span></div>
           <div class="rv-extra-row"><span class="rv-extra-label">Extra Driver 1 Full Name</span><span class="rv-extra-value">${formData.extra_owner1_name || '—'}</span></div>
           <div class="rv-extra-row"><span class="rv-extra-label">Extra Driver 1 Emirates ID</span><span class="rv-extra-value">${formData.extra_owner1_eid || '—'}</span></div>
           <div class="rv-extra-row"><span class="rv-extra-label">Extra Driver 1 Passport Number</span><span class="rv-extra-value">${formData.extra_owner1_passport || '—'}</span></div>
@@ -2374,7 +2516,7 @@ export async function renderPublicApplyCPD(param = null) {
       <div class="rv-section">
         <div class="rv-section-title" style="margin-bottom:14px">Vehicle Details</div>
         <div class="rv-identity-rows">
-          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-hashtag"></i></span><span class="rv-id-label">Registration No</span><span class="rv-id-value">${formData.registration_no || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-hashtag"></i></span><span class="rv-id-label">Vehicle Plate Number</span><span class="rv-id-value">${formData.registration_no || '—'}</span></div>
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-file-lines"></i></span><span class="rv-id-label">Traffic File No</span><span class="rv-id-value">${formData.mulkiya_no || '—'}</span></div>
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-car"></i></span><span class="rv-id-label">Vehicle Make</span><span class="rv-id-value">${formData.vehicle_make || '—'}</span></div>
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-car-side"></i></span><span class="rv-id-label">Vehicle Model</span><span class="rv-id-value">${formData.vehicle_model || '—'}</span></div>
@@ -2493,16 +2635,6 @@ export async function renderPublicApplyCPD(param = null) {
                 <div class="field-error" id="err-del_street"></div>
               </div>
 
-              <div class="field del-addr-third">
-                <label>Area <span style="color:var(--text-muted);font-weight:400">(Optional)</span></label>
-                <input name="del_area" id="cpd-del-area" list="cpd-del-area-list" autocomplete="off"
-                  placeholder="Type to search, or enter your own" value="${formData.del_area || ''}" />
-                <datalist id="cpd-del-area-list">
-                  ${DELIVERY_AREAS.map(a => `<option value="${a}"></option>`).join('')}
-                </datalist>
-                <div class="field-error" id="err-del_area"></div>
-              </div>
-
               <div class="field del-addr-half">
                 <label>Emirate *</label>
                 <div class="pub-input-icon-wrap">
@@ -2513,6 +2645,19 @@ export async function renderPublicApplyCPD(param = null) {
                   <i class="fa-solid fa-chevron-down pub-input-icon-right"></i>
                 </div>
                 <div class="field-error" id="err-del_emirate"></div>
+              </div>
+
+              <div class="field del-addr-third">
+                <label>Area *</label>
+                <div class="pub-input-icon-wrap">
+                  <select id="cpd-del-area-select">
+                    <option value="">Select emirate first</option>
+                  </select>
+                  <i class="fa-solid fa-chevron-down pub-input-icon-right"></i>
+                </div>
+                <input name="del_area" id="cpd-del-area" type="hidden" value="${formData.del_area || ''}" />
+                <input id="cpd-del-area-other" placeholder="Enter your area" style="display:none;margin-top:8px" />
+                <div class="field-error" id="err-del_area"></div>
               </div>
 
               <div class="field del-addr-half">
@@ -2601,12 +2746,33 @@ export async function renderPublicApplyCPD(param = null) {
   });
   (guaranteeRules.booking_fees ?? []).forEach(bf => _bookingFees.push(bf));
 
-  const LUXURY_TYPES  = ['Luxury'];
-  const STATION_TYPES = ['Station','SUV','-Station','Pickup','Truck','Bus','Trailer'];
+  // Special notes (e.g. "requires cash cheque", "cash deposit required") tied to a
+  // destination's guarantee group — shared by the live Trip Details preview and the
+  // full calcGuarantee() breakdown on the Payment step, so both stay in sync.
+  function notesForCountryIds(countryIds) {
+    const notesSet = new Set();
+    countryIds.forEach(id => {
+      const name    = countries.find(c => String(c.nationality_id) === String(id))?.nationality ?? '';
+      const mapping = _countryMap[`id:${id}`] ?? _countryMap[name.toLowerCase()];
+      const grp     = _groups[mapping?.group_code ?? 'DEFAULT'];
+      if (grp?.special_note)     notesSet.add(grp.special_note);
+      if (mapping?.special_note) notesSet.add(mapping.special_note);
+    });
+    return [...notesSet];
+  }
 
-  function getVehicleTier(bodyType) {
+  const STATION_TYPES = ['Station','SUV','-Station','Pickup','Truck','Bus','Trailer','Caravan'];
+  // "Luxury" is no longer a selectable body type — the tier is inferred from the
+  // vehicle make instead. Not specified in the client's request; adjust this list
+  // if it doesn't match how the business actually classifies luxury vehicles.
+  const LUXURY_MAKES = [
+    'Rolls Royce', 'Bentley', 'Ferrari', 'Lamborghini', 'Maserati', 'Aston Martin',
+    'McLaren', 'Bugatti', 'Koenigsegg', 'Pagani', 'Maybach', 'W Motors', 'Bizzarrini', 'Gumpert',
+  ];
+
+  function getVehicleTier(bodyType, vehicleMake) {
+    if (LUXURY_MAKES.includes((vehicleMake ?? '').trim())) return 'luxury';
     const bt = (bodyType ?? '').trim();
-    if (LUXURY_TYPES.includes(bt))  return 'luxury';
     if (STATION_TYPES.includes(bt)) return 'station';
     return 'saloon';
   }
@@ -2635,7 +2801,7 @@ export async function renderPublicApplyCPD(param = null) {
   }
 
   function calcGuarantee() {
-    const tier = getVehicleTier(formData.body_type);
+    const tier = getVehicleTier(formData.body_type, formData.vehicle_make);
     const band = getYearBand(formData.manuf_year);
     const isMotorcycle  = formData.body_type === 'Motor Cycle';
     const isUaeNational = nationalities.find(n => String(n.nationality_id) === String(formData.nationality))?.nationality === 'United Arab Emirates';
@@ -2710,7 +2876,7 @@ export async function renderPublicApplyCPD(param = null) {
   }
   function stepPayment() {
     const { guaranteeFee, bookingFee, extraFee, deliveryFee, processingFee, vat, total, notes, breakdown } = calcGuarantee();
-    const tier      = getVehicleTier(formData.body_type);
+    const tier      = getVehicleTier(formData.body_type, formData.vehicle_make);
     const band      = getYearBand(formData.manuf_year);
     const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1);
     const bandLabel = ['1990–2000','2001–2010','2011+'][band];
@@ -2895,7 +3061,8 @@ export async function renderPublicApplyCPD(param = null) {
           <button type="button" class="btn btn-ghost" id="btn-cpd-back">
             <i class="fa-solid fa-arrow-left"></i> ${currentStep === 0 ? 'Cancel' : 'Back'}
           </button>
-          <button type="button" class="btn btn-primary" id="btn-cpd-next">
+          <button type="button" class="btn btn-primary" id="btn-cpd-next"
+            ${currentStep === 0 && !uaePassRejected ? 'disabled title="Continue with UAE PASS above, or reject the request to enter your details manually"' : ''}>
             ${currentStep === CPD_STEPS.length - 1
               ? '<i class="fa-solid fa-paper-plane"></i> Submit Application'
               : 'Next <i class="fa-solid fa-arrow-right"></i>'}
@@ -2980,6 +3147,42 @@ export async function renderPublicApplyCPD(param = null) {
       if (otherRow) otherRow.style.display = e.target.value === 'Other' ? '' : 'none';
     });
 
+    // Live special-notes preview on Trip Details (e.g. "requires cash cheque",
+    // "cash deposit required") — the same notes calcGuarantee() shows on the
+    // Payment step, but visible as soon as destinations are picked, not just at checkout.
+    const tripNotesEl = document.getElementById('cpd-trip-notes');
+    if (tripNotesEl) {
+      const renderTripNotes = () => {
+        const checkedIds = [...document.querySelectorAll('.cpd-country-check input:checked')].map(cb => cb.value);
+        const notes = notesForCountryIds(checkedIds);
+        tripNotesEl.innerHTML = notes.length ? `
+          <div style="margin-top:12px;padding:10px 14px;background:#fefce8;border:1px solid #fde68a;border-radius:var(--radius);display:flex;flex-direction:column;gap:5px">
+            ${notes.map(n => `
+            <div style="display:flex;align-items:flex-start;gap:7px;font-size:.8rem;color:#92400e">
+              <i class="fa-solid fa-triangle-exclamation" style="margin-top:2px;flex-shrink:0;color:#d97706"></i>
+              <span>${n}</span>
+            </div>`).join('')}
+          </div>` : '';
+      };
+      renderTripNotes();
+      document.querySelectorAll('.cpd-country-check input').forEach(cb => {
+        cb.addEventListener('change', () => {
+          cb.closest('.cpd-country-check')?.classList.toggle('checked', cb.checked);
+          renderTripNotes();
+        });
+      });
+    }
+
+    // Reveal Extra Driver 1/2 fields on demand instead of always showing them
+    document.getElementById('btn-add-extra-driver-1')?.addEventListener('click', function () {
+      document.getElementById('cpd-extra-driver-1-fields').style.display = '';
+      this.style.display = 'none';
+    });
+    document.getElementById('btn-add-extra-driver-2')?.addEventListener('click', function () {
+      document.getElementById('cpd-extra-driver-2-fields').style.display = '';
+      this.style.display = 'none';
+    });
+
     // Load review step document thumbnails
     if (CPD_STEPS[currentStep].id === 'review') {
       document.querySelectorAll('.rv-doc-thumb[data-slot]').forEach(thumbEl => {
@@ -3058,6 +3261,53 @@ export async function renderPublicApplyCPD(param = null) {
       });
     }
 
+    // Emirate → Area dependent dropdown (review step) — CPD's del_emirate select
+    // uses the emirate NAME as its value already, so it indexes AREAS_BY_EMIRATE directly.
+    const cpdDelEmirateSelect = document.getElementById('cpd-del-emirate');
+    const cpdDelAreaSelect    = document.getElementById('cpd-del-area-select');
+    const cpdDelAreaOther     = document.getElementById('cpd-del-area-other');
+    const cpdDelAreaHidden    = document.getElementById('cpd-del-area');
+    function syncCpdAreaSelect(emirateName, savedArea) {
+      if (!cpdDelAreaSelect) return;
+      const areaList = emirateName ? (AREAS_BY_EMIRATE[emirateName] || []) : [];
+      cpdDelAreaSelect.innerHTML = emirateName
+        ? [`<option value="">Select area</option>`,
+           ...areaList.map(a => `<option value="${a}">${a}</option>`),
+           `<option value="${AREA_OTHER_VALUE}">Other (type your own)</option>`].join('')
+        : `<option value="">Select emirate first</option>`;
+      if (savedArea && areaList.includes(savedArea)) {
+        cpdDelAreaSelect.value = savedArea;
+        if (cpdDelAreaOther)  cpdDelAreaOther.style.display = 'none';
+        if (cpdDelAreaHidden) cpdDelAreaHidden.value = savedArea;
+      } else if (savedArea) {
+        cpdDelAreaSelect.value = AREA_OTHER_VALUE;
+        if (cpdDelAreaOther)  { cpdDelAreaOther.style.display = ''; cpdDelAreaOther.value = savedArea; }
+        if (cpdDelAreaHidden) cpdDelAreaHidden.value = savedArea;
+      } else {
+        cpdDelAreaSelect.value = '';
+        if (cpdDelAreaOther)  cpdDelAreaOther.style.display = 'none';
+        if (cpdDelAreaHidden) cpdDelAreaHidden.value = '';
+      }
+    }
+    if (cpdDelEmirateSelect && cpdDelAreaSelect) {
+      syncCpdAreaSelect(cpdDelEmirateSelect.value, formData.del_area);
+      cpdDelEmirateSelect.addEventListener('change', () => {
+        syncCpdAreaSelect(cpdDelEmirateSelect.value, null);
+      });
+      cpdDelAreaSelect.addEventListener('change', () => {
+        if (cpdDelAreaSelect.value === AREA_OTHER_VALUE) {
+          if (cpdDelAreaOther)  { cpdDelAreaOther.style.display = ''; cpdDelAreaOther.value = ''; cpdDelAreaOther.focus(); }
+          if (cpdDelAreaHidden) cpdDelAreaHidden.value = '';
+        } else {
+          if (cpdDelAreaOther)  cpdDelAreaOther.style.display = 'none';
+          if (cpdDelAreaHidden) cpdDelAreaHidden.value = cpdDelAreaSelect.value;
+        }
+      });
+      cpdDelAreaOther?.addEventListener('input', () => {
+        if (cpdDelAreaHidden) cpdDelAreaHidden.value = cpdDelAreaOther.value;
+      });
+    }
+
     // Doc upload zones (vehicle step)
     document.querySelectorAll('[data-cpd-doc]').forEach(input => {
       const zone      = input.closest('.doc-upload-zone');
@@ -3105,11 +3355,18 @@ export async function renderPublicApplyCPD(param = null) {
     });
 
     document.querySelector('.btn-uae-pass-continue')?.addEventListener('click', () => {
-      showUaePassLoader(() => {
-        uaePassJustVerified = true;
-        currentStep = 1;
-        renderCPDWizard();
-      });
+      showUaePassLoader(
+        () => {
+          uaePassJustVerified = true;
+          uaePassRejected     = false;
+          currentStep = 1;
+          renderCPDWizard();
+        },
+        () => {
+          uaePassRejected = true;
+          renderCPDWizard();
+        },
+      );
     });
 
     document.getElementById('btn-cpd-back')?.addEventListener('click', () => {
@@ -3140,9 +3397,23 @@ export async function renderPublicApplyCPD(param = null) {
     input?.closest('.field')?.classList.add('field-invalid');
   }
 
+  // Accepts local (0501234567), country-code (971501234567) and full-international
+  // (00971501234567) UAE mobile formats — matches whichever prefix the user typed.
+  function validateCPDMobile(name) {
+    const el = document.querySelector(`[name="${name}"]`);
+    if (!el || el.type === 'hidden' || !el.value?.trim()) return true;
+    const digits = el.value.replace(/\D/g, '');
+    if (!/^(00971|971|0)5\d{8}$/.test(digits)) {
+      setErrCPD(name, 'Enter a valid mobile number (e.g. 0501234567)');
+      return false;
+    }
+    return true;
+  }
+
   function validateCPDStep(step) {
     document.querySelectorAll('.field-error').forEach(el => { el.textContent = ''; });
     document.querySelectorAll('.field-invalid').forEach(el => el.classList.remove('field-invalid'));
+    document.querySelectorAll('.doc-upload-zone-invalid').forEach(el => el.classList.remove('doc-upload-zone-invalid'));
     document.getElementById('cpd-form-error')?.classList.add('hidden');
     const key = CPD_STEPS[step].id;
     let ok = true;
@@ -3161,28 +3432,42 @@ export async function renderPublicApplyCPD(param = null) {
         setErrCPD('emirates_id', 'Enter a valid Emirates ID (784-XXXX-XXXXXXX-X)'); ok = false;
       }
 
-      const mobileEl = document.querySelector('[name="mobile_no"]');
-      if (mobileEl && mobileEl.type !== 'hidden' && mobileEl.value?.trim()) {
-        const digits = mobileEl.value.replace(/\D/g, '');
-        if (![10, 13, 14].includes(digits.length)) {
-          setErrCPD('mobile_no', 'Enter a valid phone number'); ok = false;
-        }
-      }
-
-      const dobEl = document.querySelector('[name="dob"]');
-      if (dobEl && dobEl.type !== 'hidden' && dobEl.value) {
-        const eighteenYearsAgo = new Date();
-        eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
-        if (new Date(dobEl.value) > eighteenYearsAgo) {
-          setErrCPD('dob', 'You must be at least 18 years old'); ok = false;
-        }
-      }
+      if (!validateCPDMobile('mobile_no')) ok = false;
     }
 
     if (key === 'vehicle') {
       const licenseNoEl = document.querySelector('[name="license_no"]');
       if (licenseNoEl?.value?.trim() && !/^\d+$/.test(licenseNoEl.value.trim())) {
         setErrCPD('license_no', 'Licence number should only contain numbers'); ok = false;
+      }
+
+      // Reference mobiles "in UAE" — same UAE mobile format as the applicant's own number.
+      // Destination-country references are left unvalidated since their numbers won't be UAE-formatted.
+      if (!validateCPDMobile('uae_refree1_mobile')) ok = false;
+      if (!validateCPDMobile('uae_refree2_mobile')) ok = false;
+
+      // Extra driver Emirates ID — same format check as the applicant's own EID, only if filled in (optional field).
+      ['extra_owner1_eid', 'extra_owner2_eid'].forEach(name => {
+        const el = document.querySelector(`[name="${name}"]`);
+        if (el?.value?.trim() && !/^784-?\d{4}-?\d{7}-?\d$/.test(el.value.trim())) {
+          setErrCPD(name, 'Enter a valid Emirates ID (784-XXXX-XXXXXXX-X)'); ok = false;
+        }
+      });
+
+      // Supporting documents — all are mandatory (corporate docs only when Usage Type is Company).
+      const requiredDocSlots = ['eid_front', 'eid_back', 'dl_front', 'dl_back', 'traffic_front', 'traffic_back', 'passport_photo'];
+      if (formData.usage_type === 'COMPANY') requiredDocSlots.push('visa_page', 'trade_license', 'noc');
+      let missingDocs = false;
+      requiredDocSlots.forEach(slot => {
+        if (!savedDocs[slot]) {
+          missingDocs = true;
+          document.getElementById(`cpd-doc-zone-${slot}`)?.classList.add('doc-upload-zone-invalid');
+        }
+      });
+      if (missingDocs) {
+        ok = false;
+        const formErrEl = document.getElementById('cpd-form-error');
+        if (formErrEl) { formErrEl.textContent = 'Please upload all required documents'; formErrEl.classList.remove('hidden'); }
       }
     }
 
@@ -3197,7 +3482,8 @@ export async function renderPublicApplyCPD(param = null) {
       if (deliveryOption === 'home_delivery') {
         const emirate = document.getElementById('cpd-del-emirate')?.value;
         if (!emirate) { setErrCPD('del_emirate', 'Emirate is required'); ok = false; }
-        // Area is intentionally left optional — every other delivery address field is mandatory.
+        const area = document.getElementById('cpd-del-area')?.value.trim();
+        if (!area) { setErrCPD('del_area', 'Area is required'); ok = false; }
         const building = document.getElementById('cpd-del-building')?.value.trim();
         if (!building) { setErrCPD('del_building', 'Building / Villa / Floor # is required'); ok = false; }
         const street = document.getElementById('cpd-del-street')?.value.trim();
@@ -3447,12 +3733,12 @@ export async function renderPublicHistory(defaultTab = 'idl') {
     <div class="page-header">
       <div class="page-title-block">
         <h1 class="page-title">My History</h1>
-        <p class="page-subtitle">Your IDL and CPD application history</p>
+        <p class="page-subtitle">Your IDP and CPD application history</p>
       </div>
     </div>
     <div class="tab-bar">
       <button class="tab-btn ${defaultTab === 'idl' ? 'active' : ''}" data-tab="idl">
-        <i class="fa-solid fa-id-card"></i> IDL Applications
+        <i class="fa-solid fa-id-card"></i> IDP Applications
       </button>
       <button class="tab-btn ${defaultTab === 'cpd' ? 'active' : ''}" data-tab="cpd">
         <i class="fa-solid fa-car"></i> CPD Applications
@@ -3496,7 +3782,7 @@ export async function renderPublicHistory(defaultTab = 'idl') {
                 <td><span class="badge badge-default">${r.request_type ?? '—'}</span></td>
                 <td>${formatDateTime(r.requested_datetime)}</td>
                 <td>${r.idl_no || '—'}</td>
-                <td>${r.total_amount != null ? 'AED ' + Number(r.total_amount).toFixed(2) : '—'}</td>
+                <td>${formatCurrency(r.total_amount)}</td>
                 <td>${statusBadge(r.paid_status == 1 ? 'Paid' : 'Not Paid')}</td>
                 <td>${statusBadge(r.status_label ?? r.request_status)}</td>
                 <td>
@@ -3551,7 +3837,7 @@ export async function renderPublicHistory(defaultTab = 'idl') {
     // Bind Cancel buttons
     idlEl.querySelectorAll('.cancel-idl-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        confirm('Cancel this IDL application? This cannot be undone.', async () => {
+        confirm('Cancel this IDP application? This cannot be undone.', async () => {
           try {
             await api.idl.cancelOwn(Number(btn.dataset.id));
             toast('Application cancelled', 'info');
@@ -3563,7 +3849,7 @@ export async function renderPublicHistory(defaultTab = 'idl') {
       });
     });
   } else {
-    idlEl.innerHTML = emptyState('fa-id-card', 'No IDL applications yet', 'Your IDL application history will appear here.');
+    idlEl.innerHTML = emptyState('fa-id-card', 'No IDP applications yet', 'Your IDP application history will appear here.');
   }
 
   const cpdEl = document.getElementById('tab-content-cpd');
@@ -3592,7 +3878,7 @@ export async function renderPublicHistory(defaultTab = 'idl') {
                 <td><strong>${r.request_id ?? '&#8212;'}</strong></td>
                 <td><span class="badge badge-default">${r.request_category ?? '&#8212;'}</span></td>
                 <td>${[r.vehicle_make, r.vehicle_model].filter(Boolean).join(' ') || '&#8212;'}</td>
-                <td>${r.total_amount != null ? 'AED ' + Number(r.total_amount).toFixed(2) : '&#8212;'}</td>
+                <td>${formatCurrency(r.total_amount)}</td>
                 <td>${formatDateTime(r.requested_datetime)}</td>
                 <td>${statusBadge(r.status_label ?? r.request_status)}</td>
                 <td>${+r.paid_status === 1
@@ -3632,7 +3918,7 @@ function emptyState(icon, title, subtitle) {
 function openIdlPreviewModal(autoId) {
   const previewUrl = `${api.idl.printUrl(autoId)}#toolbar=0&navpanes=0`;
   openModal({
-    title: 'IDL Preview',
+    title: 'IDP Preview',
     size: 'lg',
     body: `<iframe src="${previewUrl}" style="width:100%;height:75vh;border:0;border-radius:var(--radius)"></iframe>`,
     footer: `<button class="btn btn-ghost" onclick="closeModalGlobal()">Close</button>`,
@@ -3671,22 +3957,15 @@ function openCPDReturnModal(autoId, onSuccess) {
           <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
             border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;
             transition:border-color .15s" id="label-pay-bank">
-            <input type="radio" name="return-payment" value="BANK_DEPOSIT" id="pay-bank"
+            <input type="radio" name="return-payment" value="BANK_DEPOSIT" id="pay-bank" checked
               style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" />
             <span><strong>Deposit to Bank</strong></span>
-          </label>
-          <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
-            border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;
-            transition:border-color .15s" id="label-pay-cheque">
-            <input type="radio" name="return-payment" value="COLLECT_CHEQUE" id="pay-cheque"
-              style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" />
-            <span><strong>Collect Cheque from Office</strong></span>
           </label>
         </div>
       </div>
 
       <!-- Bank Details (shown when Deposit to Bank selected) -->
-      <div id="bank-details-section" style="display:none;background:var(--bg-elevated);
+      <div id="bank-details-section" style="background:var(--bg-elevated);
         border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px">
         <div style="font-size:.85rem;font-weight:600;color:var(--text-muted);margin-bottom:12px;
           text-transform:uppercase;letter-spacing:.05em">Bank Details</div>
@@ -3732,7 +4011,7 @@ function openCPDReturnModal(autoId, onSuccess) {
     });
   };
 
-  // Bank details section
+  // Bank details section — Deposit to Bank is the only option, pre-selected on open
   document.querySelectorAll('input[name="return-payment"]').forEach(r => {
     r.addEventListener('change', () => {
       document.getElementById('bank-details-section').style.display =
@@ -3740,6 +4019,7 @@ function openCPDReturnModal(autoId, onSuccess) {
       highlightOption('return-payment', r.value, 'label-pay-');
     });
   });
+  highlightOption('return-payment', 'BANK_DEPOSIT', 'label-pay-');
 
   document.getElementById('return-carnet-confirm').onclick = async () => {
     const delivery = document.querySelector('input[name="return-delivery"]:checked')?.value;
@@ -4112,6 +4392,18 @@ async function renderPublicCPDView(autoId) {
                 ? '<span class="badge badge-warning">Pending Payment</span>'
                 : '<span class="badge badge-info">Processing</span>')}
         </div>
+        ${existingReturn.deposit_slip_path ? `
+        <div style="margin-top:12px;padding:12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:var(--radius);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div>
+            <div style="font-size:.78rem;font-weight:700;color:var(--success,#22c55e);text-transform:uppercase;letter-spacing:.05em">
+              <i class="fa-solid fa-circle-check"></i> Deposit Slip Available
+            </div>
+            <div style="font-size:.8rem;color:var(--text-muted);margin-top:2px">Uploaded ${formatDateTime(existingReturn.deposit_slip_uploaded_datetime)}</div>
+          </div>
+          <a class="btn btn-ghost btn-sm" href="${api.cpd.depositSlipUrl(existingReturn.return_id)}" target="_blank" rel="noopener">
+            <i class="fa-solid fa-file-arrow-down"></i> View
+          </a>
+        </div>` : ''}
       </div>
     </div>` : ''}
 
@@ -4349,7 +4641,7 @@ async function renderPublicIDLView(autoId) {
   content.innerHTML = `
     <div class="page-header">
       <div class="page-title-block">
-        <h1 class="page-title">IDL Application</h1>
+        <h1 class="page-title">IDP Application</h1>
         <p class="page-subtitle">
           ${esc(r.request_id)}
           &nbsp;·&nbsp; ${statusBadge(r.paid_status == 1 ? 'Paid' : 'Not Paid')}
@@ -4441,7 +4733,7 @@ async function renderPublicIDLView(autoId) {
         <div class="rv-extra-row"><span class="rv-extra-label">Delivery Option</span><span class="rv-extra-value">${(DL_OPTION_LABELS[r.delivery_option] ?? esc(r.delivery_option)) || '—'}</span></div>
         ${['send_to_address', 'home_delivery'].includes(r.delivery_option) ? `<div class="rv-extra-row"><span class="rv-extra-label">Delivery Address</span><span class="rv-extra-value">${esc(r.delivery_address) || '—'}</span></div>` : ''}
         <div class="rv-extra-row"><span class="rv-extra-label">Payment Method</span><span class="rv-extra-value">${(() => { const m = (r.payment_method ?? '').toUpperCase(); const map = { CREDIT_CARD:'Credit Card', CASH:'Cash', CARD:'Card', ONLINE:'Online', CHEQUE:'Cheque' }; return map[m] || r.payment_method || '—'; })()}</span></div>
-        <div class="rv-extra-row"><span class="rv-extra-label">Total Amount</span><span class="rv-extra-value">${r.total_amount != null ? 'AED ' + Number(r.total_amount).toFixed(2) : '—'}</span></div>
+        <div class="rv-extra-row"><span class="rv-extra-label">Total Amount</span><span class="rv-extra-value">${formatCurrency(r.total_amount)}</span></div>
         <div class="rv-extra-row"><span class="rv-extra-label">Paid Date</span><span class="rv-extra-value">${r.paid_date ? formatDateTime(r.paid_date) : '—'}</span></div>
         ${r.order_ref_no   ? `<div class="rv-extra-row"><span class="rv-extra-label">Payment Reference</span><span class="rv-extra-value">${esc(r.order_ref_no)}</span></div>` : ''}
         ${r.idl_no         ? `<div class="rv-extra-row"><span class="rv-extra-label">IDL No</span><span class="rv-extra-value">${esc(r.idl_no)}</span></div>` : ''}
@@ -4463,4 +4755,51 @@ async function renderPublicIDLView(autoId) {
       });
     });
   });
+}
+
+// ── Public IDP verification page — the QR code target on every printed IDP.
+// Deliberately outside the login-screen / app-shell flow: anyone scanning the code
+// (e.g. a border or traffic officer) sees this with no portal account required. ──
+export async function renderPublicIdlDisplay(hash) {
+  const screen = document.getElementById('public-display-screen');
+  screen.innerHTML = `
+    <div class="pdv-card">
+      <div class="pdv-header">
+        <img src="${PUBLIC_BASE}/css/atc-logo.png" alt="EMSO" class="pdv-logo" />
+        <div class="pdv-header-title">International Driving Permit Verification</div>
+      </div>
+      <div class="pdv-body"><div class="spinner"></div></div>
+    </div>`;
+
+  const bodyEl = screen.querySelector('.pdv-body');
+  try {
+    const d = await api.idl.publicDisplay(hash);
+    const fmt = s => s ? new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+    bodyEl.innerHTML = `
+      <div class="pdv-status ${d.is_valid ? 'pdv-status-valid' : 'pdv-status-expired'}">
+        <i class="fa-solid ${d.is_valid ? 'fa-circle-check' : 'fa-circle-xmark'}"></i>
+        ${d.is_valid ? 'Valid Permit' : 'Expired'}
+      </div>
+      <div class="pdv-rows">
+        <div class="pdv-row"><span class="pdv-label">Full Name</span><span class="pdv-value">${esc(d.full_name) || '—'}</span></div>
+        <div class="pdv-row"><span class="pdv-label">IDP No</span><span class="pdv-value">${esc(d.idl_no) || '—'}</span></div>
+        <div class="pdv-row"><span class="pdv-label">Nationality</span><span class="pdv-value">${esc(d.nationality) || '—'}</span></div>
+        <div class="pdv-row"><span class="pdv-label">Categories</span><span class="pdv-value">${(d.categories || []).join(', ') || '—'}</span></div>
+        <div class="pdv-row"><span class="pdv-label">Valid From</span><span class="pdv-value">${fmt(d.valid_from)}</span></div>
+        <div class="pdv-row"><span class="pdv-label">Valid To</span><span class="pdv-value">${fmt(d.valid_to)}</span></div>
+      </div>`;
+  } catch (err) {
+    bodyEl.innerHTML = `
+      <div class="pdv-status pdv-status-expired">
+        <i class="fa-solid fa-triangle-exclamation"></i> Not Found
+      </div>
+      <p style="text-align:center;color:var(--text-muted);font-size:.85rem;margin-top:12px">
+        ${esc(err.message) || 'This code does not match a valid, issued International Driving Permit.'}
+      </p>`;
+  }
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 }

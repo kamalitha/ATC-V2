@@ -239,6 +239,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .pub-uaepass-loader-spinner { font-size: 2rem; color: var(--accent); margin-bottom: 16px; }
 .pub-uaepass-loader-title { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); }
 .pub-uaepass-loader-sub   { font-size: .88rem; color: var(--text-muted); margin-top: 6px; }
+.pub-uaepass-loader-cancel { margin-top: 20px; }
 
 @media (max-width: 768px) {
   .login-wrapper { justify-content: center; padding: 1.5rem; }
@@ -957,6 +958,10 @@ tbody td { padding: 12px 16px; font-size: 1rem; }
 .doc-upload-zone:hover {
   border-color: var(--accent);
   background: var(--accent-dim);
+}
+.doc-upload-zone-invalid {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 2px var(--danger-dim);
 }
 .doc-upload-placeholder {
   display: flex;
@@ -1782,7 +1787,7 @@ table.dataTable .badge {
 /* ── Step Progress Bar ───────────────────────────────────────────────────── */
 .pub-step-bar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1794,7 +1799,12 @@ table.dataTable .badge {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  flex-shrink: 0;
+  /* Fixed, equal width per step — labels vary a lot in length ("Delivery" vs.
+     "Driving Licence & Documents"), and letting item width track content made
+     the connector lines between steps stretch unevenly. Equal-width items keep
+     the connectors (flex:1 below) visually identical regardless of label length. */
+  flex: 1 1 0;
+  min-width: 0;
 }
 .pub-step-circle {
   width: 32px; height: 32px;
@@ -1807,20 +1817,24 @@ table.dataTable .badge {
   justify-content: center;
   font-size: .8rem;
   font-weight: 700;
+  flex-shrink: 0;
   transition: border-color .2s, background .2s, color .2s;
 }
 .pub-step-label {
   font-size: .72rem;
   color: var(--text-muted);
-  white-space: nowrap;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.3;
   font-weight: 500;
   transition: color .2s;
 }
 .pub-step-connector {
-  flex: 1;
+  flex: 1 1 0;
   height: 2px;
+  min-width: 12px;
   background: var(--border);
-  margin-bottom: 22px; /* align with circle center */
+  margin-top: 15px; /* align with circle center (16px circle radius - 1px half of 2px line height) */
   transition: background .2s;
 }
 .pub-step-connector-done { background: var(--accent); }
@@ -1876,6 +1890,20 @@ table.dataTable .badge {
 .pub-verified-icon { color: #22c55e; font-size: 1.3rem; flex-shrink: 0; margin-top: 1px; }
 .pub-verified-title { font-size: .88rem; font-weight: 700; color: var(--text-primary); }
 .pub-verified-sub   { font-size: .8rem; color: var(--text-muted); margin-top: 1px; }
+
+.pub-uaepass-rejected-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: rgba(245,158,11,.08);
+  border: 1px solid rgba(245,158,11,.35);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: .84rem;
+  color: var(--text-secondary);
+}
+.pub-uaepass-rejected-banner i { color: #f59e0b; font-size: 1.2rem; flex-shrink: 0; margin-top: 1px; }
 
 /* ── Identity Card ───────────────────────────────────────────────────────── */
 .pub-identity-card {
@@ -2081,8 +2109,8 @@ table.dataTable .badge {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: 96px;
-  max-width: 120px;
+  flex: 0 0 120px;
+  width: 120px;
   padding: 12px 10px;
   border: 2px solid var(--border);
   border-radius: var(--radius);
@@ -2101,6 +2129,20 @@ table.dataTable .badge {
 }
 .vc-tile-icon { font-size: 1.4rem; }
 .vc-tile-code { font-size: .78rem; font-weight: 700; line-height: 1.3; }
+
+/* ── Selected-category description (shown below the tile grid) ──────────── */
+.vc-selected-desc {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: .8rem;
+  color: var(--text-muted);
+}
+.vc-selected-desc-row { color: var(--text-secondary); }
+.vc-selected-desc-row + .vc-selected-desc-row { margin-top: 6px; }
+.vc-selected-desc-row strong { color: var(--text-primary); }
 
 /* ── Vehicle Category Info Panel ─────────────────────────────────────────── */
 .vc-info-btn {
@@ -2316,6 +2358,11 @@ table.dataTable .badge {
 .del-addr-full  { grid-column: 1 / -1; }
 .del-addr-half  { grid-column: span 2; }
 .del-addr-third { grid-column: span 1; }
+/* Labels in the narrower third-width columns (e.g. "Building / Villa / Floor #")
+   wrap to 2 lines while short labels next to them (e.g. "Street / Road") stay on
+   1 line — reserving 2 lines' height for every label keeps the inputs below them
+   aligned regardless of which fields end up side by side. */
+.del-address-grid .field label { min-height: 2.6em; }
 
 .del-info-banner {
   display: flex;
@@ -2656,3 +2703,58 @@ table.dataTable .badge {
     position: static;
   }
 }
+
+/* ── Public IDP verification page (QR code target, no login) ────────────── */
+.public-display-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+  padding: 24px;
+}
+.pdv-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.pdv-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+.pdv-logo { height: 32px; width: auto; }
+.pdv-header-title { font-size: .95rem; font-weight: 700; color: var(--text-primary); }
+.pdv-body { padding: 24px; }
+.pdv-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  padding: 14px;
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+}
+.pdv-status-valid   { background: rgba(34,197,94,.1);  color: #16a34a; }
+.pdv-status-expired { background: rgba(239,68,68,.1);  color: #dc2626; }
+.pdv-rows { display: flex; flex-direction: column; gap: 12px; }
+.pdv-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--bg-base);
+  font-size: .88rem;
+}
+.pdv-row:last-child { border-bottom: none; padding-bottom: 0; }
+.pdv-label { color: var(--text-muted); }
+.pdv-value { color: var(--text-primary); font-weight: 600; text-align: right; }

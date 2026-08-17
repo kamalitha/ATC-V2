@@ -188,6 +188,7 @@ class CPDController
                     rr.delivery_fee, rr.order_ref, rr.order_status,
                     rr.added_datetime, rr.confirmed_by, rr.confirmed_datetime,
                     rr.cus_bank_information,
+                    rr.deposit_slip_path, rr.deposit_slip_uploaded_datetime,
                     u.first_name AS submitted_by_first, u.last_name AS submitted_by_last
              FROM mn_cpd_carnet_returns rr
              LEFT JOIN mn_users u ON u.user_id = rr.added_by
@@ -269,14 +270,6 @@ class CPDController
         $telrRef   = $ipgOutput['order']['transaction']['ref'] ?? null;
 
         if ((int)$status === 3) {
-            // Ensure payment columns exist (added via migration)
-            try {
-                $this->db->execute('ALTER TABLE mn_cpd_requests ADD COLUMN IF NOT EXISTS `paid_status` tinyint DEFAULT 0');
-                $this->db->execute('ALTER TABLE mn_cpd_requests ADD COLUMN IF NOT EXISTS `paid_date` datetime DEFAULT NULL');
-            } catch (\Throwable $e) {
-                Logger::warning('CPD telrVerify column check: ' . $e->getMessage());
-            }
-
             $this->db->execute(
                 "UPDATE mn_cpd_requests
                  SET paid_status              = 1,
@@ -630,8 +623,8 @@ class CPDController
                   destination_refree2, destination_refree2_mobile,
                   delivery_option, delivery_address,
                   guarantee_amount, booking_fee, processing_fee, extra_fees, vat_amount, total_amount,
-                  method_of_payment, booking_channel, request_status, parent_request_id, requested_datetime)
-                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ONLINE',1,?,NOW())",
+                  method_of_payment, booking_channel, request_type, request_status, parent_request_id, requested_datetime)
+                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ONLINE','ONLINE',1,?,NOW())",
                 [
                     $parentAutoId ? 'RENEW' : 'NORMAL',
                     $body['usage_type']           ?? 'PERSONAL',
@@ -829,9 +822,9 @@ class CPDController
                   destination_refree1, destination_refree1_mobile,
                   destination_refree2, destination_refree2_mobile,
                   guarantee_amount, booking_fee, extra_fees, vat_amount, total_amount,
-                  method_of_payment, booking_channel, request_status,
+                  method_of_payment, booking_channel, request_type, request_status,
                   current_queue_position, requested_datetime)
-                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WALKIN','NEW',?,NOW())",
+                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WALKIN','CALL_CENTER','NEW',?,NOW())",
                 [
                     $body['request_category']   ?? 'NORMAL',
                     $body['usage_type']         ?? 'PERSONAL',
@@ -1115,6 +1108,102 @@ class CPDController
         Response::success(null, 'Return request approved successfully');
     }
 
+    /**
+     * POST /api/cpd/return-requests/{id}/deposit-slip
+     * Officer uploads proof the guarantee deposit was banked, once the return has
+     * already been approved — this is what "closes off" the return per the client's
+     * described workflow. Visible to the customer afterwards via serveDepositSlip().
+     */
+    public function uploadDepositSlip(array $params, array $body, array $query): void
+    {
+        $returnId = (int) $params['id'];
+
+        $ret = $this->db->queryOne(
+            'SELECT return_id, confirmed_by FROM mn_cpd_carnet_returns WHERE return_id = ?',
+            [$returnId],
+        );
+        if (!$ret) Response::notFound('Return request not found');
+        if ((int)$ret['confirmed_by'] === 0) {
+            Response::error('The return must be approved before a deposit slip can be uploaded', 422);
+        }
+
+        if (empty($_FILES['deposit_slip']) || $_FILES['deposit_slip']['error'] === UPLOAD_ERR_NO_FILE) {
+            Response::error('deposit_slip file is required', 422);
+        }
+        $file = $_FILES['deposit_slip'];
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            Response::error('Upload error code ' . $file['error'], 422);
+        }
+        $mime = mime_content_type($file['tmp_name']);
+        $extByMime = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'application/pdf' => 'pdf'];
+        if (!isset($extByMime[$mime])) {
+            Response::error('Only JPG, PNG or PDF files are accepted', 422);
+        }
+        if ($file['size'] > Config::UPLOAD_MAX_BYTES) {
+            Response::error('File exceeds 2 MB', 422);
+        }
+
+        $dir = API_ROOT . DIRECTORY_SEPARATOR . Config::CPD_IMAGE_PATH
+             . DIRECTORY_SEPARATOR . 'returns' . DIRECTORY_SEPARATOR . $returnId;
+        if (!is_dir($dir) && !mkdir($dir, 0755, true)) {
+            Response::serverError('Could not create upload directory');
+        }
+
+        $ext  = $extByMime[$mime];
+        $dest = $dir . DIRECTORY_SEPARATOR . 'deposit_slip.' . $ext;
+        if (!move_uploaded_file($file['tmp_name'], $dest)) {
+            Response::serverError('Failed to save file');
+        }
+
+        $relativePath = "returns/{$returnId}/deposit_slip.{$ext}";
+        $this->db->execute(
+            "UPDATE mn_cpd_carnet_returns
+             SET deposit_slip_path = ?, deposit_slip_uploaded_by = ?, deposit_slip_uploaded_datetime = NOW()
+             WHERE return_id = ?",
+            [$relativePath, Auth::id(), $returnId],
+        );
+
+        $this->logEvent('DEPOSIT_SLIP_UPLOADED', $ret['return_id'] ?? $returnId, "return_id={$returnId}");
+        Response::success(['deposit_slip_path' => $relativePath], 'Deposit slip uploaded');
+    }
+
+    /**
+     * GET /api/cpd/return-requests/{id}/deposit-slip
+     * Serves the uploaded slip to either the officer or the customer who owns the
+     * underlying request — this is the "visible for the end user" half of the ask.
+     */
+    public function serveDepositSlip(array $params, array $body, array $query): void
+    {
+        $returnId = (int) $params['id'];
+        $user     = Auth::user();
+
+        $ret = $this->db->queryOne(
+            "SELECT rr.deposit_slip_path, r.belonging_user_id
+             FROM mn_cpd_carnet_returns rr
+             JOIN mn_cpd_requests r ON r.auto_id = rr.request_id
+             WHERE rr.return_id = ?",
+            [$returnId],
+        );
+        if (!$ret || empty($ret['deposit_slip_path'])) Response::notFound('Deposit slip not found');
+
+        $isOwner = (int)$ret['belonging_user_id'] === (int)($user['user_id'] ?? 0);
+        $isStaff = in_array('cpd', $user['modules'] ?? [], true);
+        if (!$isOwner && !$isStaff) Response::forbidden('Access denied');
+
+        $filePath = API_ROOT . DIRECTORY_SEPARATOR . Config::CPD_IMAGE_PATH
+                  . DIRECTORY_SEPARATOR . $ret['deposit_slip_path'];
+        if (!file_exists($filePath)) Response::notFound('Deposit slip not found');
+
+        $ext   = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        $mimes = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'pdf' => 'application/pdf'];
+        header('Content-Type: ' . ($mimes[$ext] ?? 'application/octet-stream'));
+        header('Content-Disposition: inline; filename="deposit_slip.' . $ext . '"');
+        header('Content-Length: ' . filesize($filePath));
+        header('Cache-Control: private, max-age=3600');
+        readfile($filePath);
+        exit;
+    }
+
     public function indexReturnRequests(array $params, array $body, array $query): void
     {
         $v       = Validator::make($query);
@@ -1122,9 +1211,15 @@ class CPDController
         $perPage = 20;
         $offset  = ($page - 1) * $perPage;
         $search  = $v->get('search', '');
+        $status  = $v->get('status', 'pending');
         $penalty = Config::CPD_PENALTY;
 
-        $where = 'WHERE rr.confirmed_by = 0';
+        // Default stays pending-only (unchanged behaviour for existing callers); the
+        // officer list can now also ask for approved returns or everything, the same
+        // way the main CPD Requests list offers an "All Statuses" filter.
+        if ($status === 'approved')     $where = 'WHERE rr.confirmed_by != 0';
+        elseif ($status === 'all')      $where = 'WHERE 1';
+        else                            $where = 'WHERE rr.confirmed_by = 0';
         $binds = [];
 
         if ($search !== '') {
@@ -1237,7 +1332,8 @@ class CPDController
     {
         $row = $this->db->queryOne(
             "SELECT return_id, added_datetime, confirmed_by, remarks,
-                    delivery_method, return_payment_method, order_status
+                    delivery_method, return_payment_method, order_status,
+                    deposit_slip_path, deposit_slip_uploaded_datetime
              FROM mn_cpd_carnet_returns WHERE request_id = ? LIMIT 1",
             [(int) $params['id']],
         );
@@ -1570,7 +1666,10 @@ class CPDController
         $sortDir  = strtoupper($v->get('dir', 'ASC')) === 'DESC' ? 'DESC' : 'ASC';
 
         $binds = [];
-        if ($status === 'unused')       $where = 'WHERE c.is_used=0 AND c.is_damaged=0';
+        // 'available' is what the Issue Carnet modal actually sends — without this,
+        // it fell through to the unfiltered branch below and listed every carnet,
+        // including ones already allocated to another request.
+        if (in_array($status, ['unused', 'available'], true)) $where = 'WHERE c.is_used=0 AND c.is_damaged=0';
         elseif ($status === 'used')    $where = 'WHERE c.is_used=1';
         elseif ($status === 'damaged') $where = 'WHERE c.is_damaged=1';
         else                           $where = 'WHERE 1';
@@ -2922,6 +3021,58 @@ class CPDController
         $this->logEvent('ADD_CLAIM', $requestId, "claim_id={$claimId} carnet={$carnetNo}");
 
         Response::created(['claim_id' => $claimId, 'saved' => $saved, 'errors' => $errors]);
+    }
+
+    /**
+     * GET /api/cpd/claims
+     * Browsable list of all claims (previously only reachable one carnet at a time
+     * via searchClaims()) — paginated and searchable by carnet no / request id / applicant.
+     */
+    public function indexClaims(array $params, array $body, array $query): void
+    {
+        $v       = Validator::make($query);
+        $page    = max(1, $v->int('page', 1));
+        $perPage = 20;
+        $offset  = ($page - 1) * $perPage;
+        $search  = $v->get('search', '');
+
+        $where = 'WHERE 1';
+        $binds = [];
+        if ($search !== '') {
+            $like   = "%{$search}%";
+            $where .= ' AND (c.carnet_no LIKE ? OR r.request_id LIKE ? OR cu.first_name LIKE ? OR cu.last_name LIKE ?)';
+            array_push($binds, $like, $like, $like, $like);
+        }
+
+        $total = (int) $this->db->scalar(
+            "SELECT COUNT(*) FROM mn_cpd_claims c
+             LEFT JOIN mn_cpd_requests r      ON r.auto_id           = c.request_id
+             LEFT JOIN mn_cpd_request_user cu ON cu.request_auto_id  = c.request_id
+             {$where}",
+            $binds,
+        );
+
+        $rows = $this->db->query(
+            "SELECT c.claim_id, c.request_id, c.carnet_no, c.claim_details, c.added_datetime,
+                    r.request_id AS cpd_request_id,
+                    cu.first_name, cu.last_name,
+                    CONCAT(u.first_name,' ',u.last_name) AS added_by_name
+             FROM mn_cpd_claims c
+             LEFT JOIN mn_cpd_requests r      ON r.auto_id           = c.request_id
+             LEFT JOIN mn_cpd_request_user cu ON cu.request_auto_id  = c.request_id
+             LEFT JOIN mn_users u             ON u.user_id           = c.added_by
+             {$where}
+             ORDER BY c.claim_id DESC
+             LIMIT {$perPage} OFFSET {$offset}",
+            $binds,
+        );
+
+        Response::success([
+            'data'     => $rows,
+            'total'    => $total,
+            'page'     => $page,
+            'per_page' => $perPage,
+        ]);
     }
 
     public function getClaims(array $params, array $body, array $query): void
