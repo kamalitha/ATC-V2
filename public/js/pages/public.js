@@ -53,14 +53,22 @@ export async function renderPublicSelectService() {
       <label class="del-method-card" id="select-service-cpd">
         <div class="del-method-icon-wrap"><i class="fa-solid fa-car"></i></div>
         <div>
-          <div class="del-method-title">Carnet De Passage (CPD)</div>
+          <div class="del-method-title">Carnet De Passage (CPD) &ndash; Personal Vehicle</div>
           <div class="del-method-desc">Apply for, renew or return your vehicle Carnet.</div>
+        </div>
+      </label>
+      <label class="del-method-card" id="select-service-cpd-company">
+        <div class="del-method-icon-wrap"><i class="fa-solid fa-building"></i></div>
+        <div>
+          <div class="del-method-title">Carnet De Passage (CPD) &ndash; Company Vehicle</div>
+          <div class="del-method-desc">Apply for, renew or return a company-owned vehicle Carnet.</div>
         </div>
       </label>
     </div>`;
 
   document.getElementById('select-service-idl').addEventListener('click', () => navigate('public-apply-idl'));
   document.getElementById('select-service-cpd').addEventListener('click', () => navigate('public-apply-cpd'));
+  document.getElementById('select-service-cpd-company').addEventListener('click', () => navigate('public-apply-cpd', { usageType: 'COMPANY' }));
 }
 
 // ── Wizard step definitions ────────────────────────────────────────────────────
@@ -290,7 +298,7 @@ export async function renderPublicApplyIDL(param = null) {
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
             <span class="pub-id-label">Mobile Number</span>
-            <input name="mobile_no" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" value="${mobileNo}" />
+            <input name="mobile_no" class="pub-id-inline-input" placeholder="05X XXX XXXX" value="${mobileNo}" />
             <div class="field-error" id="err-mobile_no" style="margin:0"></div>
           </div>
           <div class="pub-identity-row">
@@ -345,7 +353,7 @@ export async function renderPublicApplyIDL(param = null) {
       <div class="pub-uaepass-widget">
         <div class="pub-uaepass-icon"><i class="fa-solid fa-id-card"></i></div>
         <div class="pub-uaepass-text">
-          <div class="pub-uaepass-title">We will be requesting your Emirates ID, Passport and Visa</div>
+          <div class="pub-uaepass-title">We will be requesting your Emirates ID &amp; Driving License</div>
           <div class="pub-uaepass-sub">Share authentic and up to date documents eliminating the need for paper and physical visits</div>
         </div>
         <button type="button" class="btn-uae-pass-continue" aria-label="Continue with UAE PASS"></button>
@@ -590,7 +598,7 @@ export async function renderPublicApplyIDL(param = null) {
             <div>
               <div class="del-method-title">Home Delivery</div>
               <div class="del-method-fee">AED ${DELIVERY_FEE.toFixed(2)}</div>
-              <div class="del-method-desc">Delivered within 24–48 hours</div>
+              <div class="del-method-desc">Delivered within 3–5 working days</div>
             </div>
           </label>
 
@@ -630,7 +638,7 @@ export async function renderPublicApplyIDL(param = null) {
               <div class="field-error" id="err-del_street"></div>
             </div>
 
-            <div class="field del-addr-half">
+            <div class="field del-addr-third">
               <label>Emirate *</label>
               <div class="pub-input-icon-wrap">
                 <select name="del_emirate" id="del-emirate">
@@ -642,8 +650,8 @@ export async function renderPublicApplyIDL(param = null) {
               <div class="field-error" id="err-del_emirate"></div>
             </div>
 
-            <div class="field del-addr-third">
-              <label>Area <span style="color:var(--text-muted);font-weight:400">(Optional)</span></label>
+            <div class="field del-addr-half">
+              <label>Area *</label>
               <div class="pub-input-icon-wrap">
                 <select id="del-area-select">
                   <option value="">Select emirate first</option>
@@ -830,7 +838,7 @@ export async function renderPublicApplyIDL(param = null) {
             <span>Delivery Method &amp; Address</span>
           </div>
           <div class="rv-delivery-method">${isHome ? 'Home Delivery' : 'Collection'}</div>
-          <div class="rv-delivery-desc">${isHome ? 'Delivered within 24–48 hours' : 'You will collect from our office'}</div>
+          <div class="rv-delivery-desc">${isHome ? 'Delivered within 3–5 working days' : 'You will collect from our office'}</div>
           ${isHome ? `
           <div class="rv-delivery-rows">
             <div class="rv-delivery-row"><span class="rv-delivery-label">Building / Villa / Floor #</span><span>${formData.del_building || '—'}</span></div>
@@ -908,8 +916,8 @@ export async function renderPublicApplyIDL(param = null) {
         </div>
         <div class="rv-next-steps-list">
           <div class="rv-next-step-item"><span class="rv-next-step-num">1</span><span>Your IDP application will be submitted automatically after successful payment.</span></div>
-          <div class="rv-next-step-item"><span class="rv-next-step-num">2</span><span>A confirmation email and SMS will be sent to you.</span></div>
-          <div class="rv-next-step-item"><span class="rv-next-step-num">3</span><span>If Home Delivery was selected: Your IDP will be dispatched within 24–48 hours.</span></div>
+          <div class="rv-next-step-item"><span class="rv-next-step-num">2</span><span>A confirmation email will be sent to you.</span></div>
+          <div class="rv-next-step-item"><span class="rv-next-step-num">3</span><span>If Home Delivery was selected: Your IDP will be dispatched within 3–5 working days.</span></div>
           <div class="rv-next-step-item"><span class="rv-next-step-num">4</span><span>If Collection was selected: You will receive a notification when your permit is ready for collection.</span></div>
           <div class="rv-next-step-item"><span class="rv-next-step-num">5</span><span>You can track the status of your application anytime under History.</span></div>
         </div>
@@ -1652,7 +1660,8 @@ export async function renderPublicApplyIDL(param = null) {
       if (isHome) {
         const emirate = document.getElementById('del-emirate')?.value;
         if (!emirate) { setErr('del_emirate', 'Emirate is required'); ok = false; }
-        // Area is intentionally left optional — every other delivery address field is mandatory.
+        const area = document.getElementById('del-area')?.value.trim();
+        if (!area) { setErr('del_area', 'Area is required'); ok = false; }
         const building = document.getElementById('del-building')?.value.trim();
         if (!building) { setErr('del_building', 'Building / Villa / Floor # is required'); ok = false; }
         const street = document.getElementById('del-street')?.value.trim();
@@ -1774,6 +1783,10 @@ export async function renderPublicApplyCPD(param = null) {
 
   const isRenew = (typeof param === 'object' && param?.mode === 'renew');
   const renewSource = isRenew ? (param?.source ?? null) : null;
+  // Company Vehicle CPD is the same wizard/process as Personal Vehicle, minus the
+  // UAE PASS option — chosen up front on the Select Service screen since it changes
+  // step 1 rather than something togglable mid-wizard.
+  const isCompanyVehicle = (typeof param === 'object' && param?.usageType === 'COMPANY');
 
   const [nationalities, vehicleTypes, countries, guaranteeRules] = await Promise.all([
     api.idl.nationalities(),
@@ -1801,8 +1814,6 @@ export async function renderPublicApplyCPD(param = null) {
       { name: 'email',       label: 'Email'       },
     ],
     vehicle: [
-      { name: 'license_no',           label: 'Driving Licence Number'      },
-      { name: 'license_expiry',       label: 'Driving Licence Expiry Date' },
       { name: 'vehicle_make',         label: 'Vehicle Make'     },
       { name: 'vehicle_model',        label: 'Vehicle Model'    },
       { name: 'registration_no',      label: 'Vehicle Plate Number' },
@@ -1817,6 +1828,14 @@ export async function renderPublicApplyCPD(param = null) {
       { name: 'manuf_year',           label: 'Manufacture Year' },
       { name: 'usage_type',           label: 'Usage Type'       },
       { name: 'passport_no',          label: 'Passport Number'  },
+      { name: 'uae_refree1',                  label: 'Reference 1 in UAE Full Name' },
+      { name: 'uae_refree1_mobile',           label: 'Reference 1 in UAE Mobile Number' },
+      { name: 'destination_refree1',          label: 'Reference 1 in Destination Full Name' },
+      { name: 'destination_refree1_mobile',   label: 'Reference 1 in Destination Mobile Number' },
+      { name: 'uae_refree2',                  label: 'Reference 2 in UAE Full Name' },
+      { name: 'uae_refree2_mobile',           label: 'Reference 2 in UAE Mobile Number' },
+      { name: 'destination_refree2',          label: 'Reference 2 in Destination Full Name' },
+      { name: 'destination_refree2_mobile',   label: 'Reference 2 in Destination Mobile Number' },
     ],
     trip:    [],
     review:  [],
@@ -1825,9 +1844,13 @@ export async function renderPublicApplyCPD(param = null) {
 
   let currentStep   = 0;
   let uaePassJustVerified = false; // true only right after "Continue with UAE PASS" is used
-  let uaePassRejected     = false; // true once the user has declined the UAE PASS data-sharing request — unlocks manual entry
+  // Company Vehicle has no UAE PASS option at all, so manual entry is unlocked from
+  // the start — same end state as a normal (Personal) rejection, minus the "you
+  // rejected" banner, which stepIdentity() suppresses via isCompanyVehicle below.
+  let uaePassRejected     = isCompanyVehicle; // true once the user has declined the UAE PASS data-sharing request — unlocks manual entry
   const formData    = {};
   const savedCountries = [];
+  if (isCompanyVehicle) formData.usage_type = 'COMPANY';
 
   if (renewSource) {
     const s = renewSource;
@@ -1940,7 +1963,7 @@ export async function renderPublicApplyCPD(param = null) {
         </div>
       </div>
 
-      ${uaePassRejected ? `
+      ${uaePassRejected && !isCompanyVehicle ? `
       <!-- UAE PASS data-sharing rejected banner -->
       <div class="pub-uaepass-rejected-banner">
         <i class="fa-solid fa-triangle-exclamation"></i>
@@ -2008,6 +2031,7 @@ export async function renderPublicApplyCPD(param = null) {
         </div>
       </div>
 
+      ${!isCompanyVehicle ? `
       <!-- UAE PASS request widget -->
       <div class="pub-uaepass-widget">
         <div class="pub-uaepass-icon"><i class="fa-solid fa-id-card"></i></div>
@@ -2016,7 +2040,7 @@ export async function renderPublicApplyCPD(param = null) {
           <div class="pub-uaepass-sub">Share authentic and up to date documents eliminating the need for paper and physical visits</div>
         </div>
         <button type="button" class="btn-uae-pass-continue" aria-label="Continue with UAE PASS"></button>
-      </div>`;
+      </div>` : ''}`;
   }
 
   function stepVehicle() {
@@ -2299,6 +2323,7 @@ export async function renderPublicApplyCPD(param = null) {
           <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
           <span class="pub-id-label">Reference 1 in UAE Full Name</span>
           <input name="uae_refree1" class="pub-id-inline-input" placeholder="Full name" />
+          <div class="field-error" id="err-uae_refree1" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
@@ -2312,18 +2337,21 @@ export async function renderPublicApplyCPD(param = null) {
           <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
           <span class="pub-id-label">Reference 1 in Destination Full Name</span>
           <input name="destination_refree1" class="pub-id-inline-input" placeholder="Full name" />
+          <div class="field-error" id="err-destination_refree1" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
           <span class="pub-id-label">Reference 1 in Destination Mobile Number</span>
           <input name="destination_refree1_mobile" class="pub-id-inline-input" placeholder="Mobile number" />
+          <div class="field-error" id="err-destination_refree1_mobile" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
           <span class="pub-id-label">Reference 2 in UAE Full Name</span>
           <input name="uae_refree2" class="pub-id-inline-input" placeholder="Full name" />
+          <div class="field-error" id="err-uae_refree2" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
@@ -2337,12 +2365,14 @@ export async function renderPublicApplyCPD(param = null) {
           <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
           <span class="pub-id-label">Reference 2 in Destination Full Name</span>
           <input name="destination_refree2" class="pub-id-inline-input" placeholder="Full name" />
+          <div class="field-error" id="err-destination_refree2" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
           <span class="pub-id-label">Reference 2 in Destination Mobile Number</span>
           <input name="destination_refree2_mobile" class="pub-id-inline-input" placeholder="Mobile number" />
+          <div class="field-error" id="err-destination_refree2_mobile" style="margin:0"></div>
         </div>
 
       </div>
@@ -2357,41 +2387,53 @@ export async function renderPublicApplyCPD(param = null) {
           <i class="fa-solid fa-plus"></i> Add Extra Driver 2</button>
       </div>
 
-      <div class="pub-identity-rows pub-identity-rows-bycol-3" id="cpd-extra-driver-1-fields" style="display:${showExtra1 ? '' : 'none'}">
-        <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
-          <span class="pub-id-label">Extra Driver 1 Full Name</span>
-          <input name="extra_owner1_name" class="pub-id-inline-input" placeholder="Full name" />
+      <div id="cpd-extra-driver-1-fields" style="display:${showExtra1 ? '' : 'none'}">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:6px">
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-remove-extra-driver-1" style="color:var(--danger)">
+            <i class="fa-solid fa-xmark"></i> Remove Extra Driver 1</button>
         </div>
-        <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
-          <span class="pub-id-label">Extra Driver 1 Emirates ID</span>
-          <input name="extra_owner1_eid" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
-          <div class="field-error" id="err-extra_owner1_eid" style="margin:0"></div>
-        </div>
-        <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
-          <span class="pub-id-label">Extra Driver 1 Passport Number</span>
-          <input name="extra_owner1_passport" class="pub-id-inline-input" placeholder="Passport number" />
+        <div class="pub-identity-rows pub-identity-rows-bycol-3">
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
+            <span class="pub-id-label">Extra Driver 1 Full Name</span>
+            <input name="extra_owner1_name" class="pub-id-inline-input" placeholder="Full name" />
+          </div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
+            <span class="pub-id-label">Extra Driver 1 Emirates ID</span>
+            <input name="extra_owner1_eid" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
+            <div class="field-error" id="err-extra_owner1_eid" style="margin:0"></div>
+          </div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
+            <span class="pub-id-label">Extra Driver 1 Passport Number</span>
+            <input name="extra_owner1_passport" class="pub-id-inline-input" placeholder="Passport number" />
+          </div>
         </div>
       </div>
 
-      <div class="pub-identity-rows pub-identity-rows-bycol-3" id="cpd-extra-driver-2-fields" style="display:${showExtra2 ? '' : 'none'}">
-        <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
-          <span class="pub-id-label">Extra Driver 2 Full Name</span>
-          <input name="extra_owner2_name" class="pub-id-inline-input" placeholder="Full name" />
+      <div id="cpd-extra-driver-2-fields" style="display:${showExtra2 ? '' : 'none'}">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:6px">
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-remove-extra-driver-2" style="color:var(--danger)">
+            <i class="fa-solid fa-xmark"></i> Remove Extra Driver 2</button>
         </div>
-        <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
-          <span class="pub-id-label">Extra Driver 2 Emirates ID</span>
-          <input name="extra_owner2_eid" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
-          <div class="field-error" id="err-extra_owner2_eid" style="margin:0"></div>
-        </div>
-        <div class="pub-identity-row">
-          <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
-          <span class="pub-id-label">Extra Driver 2 Passport Number</span>
-          <input name="extra_owner2_passport" class="pub-id-inline-input" placeholder="Passport number" />
+        <div class="pub-identity-rows pub-identity-rows-bycol-3">
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
+            <span class="pub-id-label">Extra Driver 2 Full Name</span>
+            <input name="extra_owner2_name" class="pub-id-inline-input" placeholder="Full name" />
+          </div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
+            <span class="pub-id-label">Extra Driver 2 Emirates ID</span>
+            <input name="extra_owner2_eid" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
+            <div class="field-error" id="err-extra_owner2_eid" style="margin:0"></div>
+          </div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
+            <span class="pub-id-label">Extra Driver 2 Passport Number</span>
+            <input name="extra_owner2_passport" class="pub-id-inline-input" placeholder="Passport number" />
+          </div>
         </div>
       </div>
     </div>`;
@@ -2597,7 +2639,7 @@ export async function renderPublicApplyCPD(param = null) {
               <div>
                 <div class="del-method-title">Home Delivery</div>
                 <div class="del-method-fee">AED ${CPD_DELIVERY_FEE.toFixed(2)}</div>
-                <div class="del-method-desc">Delivered within 24–48 hours</div>
+                <div class="del-method-desc">Delivered within 3–5 working days</div>
               </div>
             </label>
 
@@ -2635,7 +2677,7 @@ export async function renderPublicApplyCPD(param = null) {
                 <div class="field-error" id="err-del_street"></div>
               </div>
 
-              <div class="field del-addr-half">
+              <div class="field del-addr-third">
                 <label>Emirate *</label>
                 <div class="pub-input-icon-wrap">
                   <select name="del_emirate" id="cpd-del-emirate">
@@ -2647,7 +2689,7 @@ export async function renderPublicApplyCPD(param = null) {
                 <div class="field-error" id="err-del_emirate"></div>
               </div>
 
-              <div class="field del-addr-third">
+              <div class="field del-addr-half">
                 <label>Area *</label>
                 <div class="pub-input-icon-wrap">
                   <select id="cpd-del-area-select">
@@ -2780,7 +2822,7 @@ export async function renderPublicApplyCPD(param = null) {
   function getYearBand(year) {
     const y = parseInt(year, 10);
     if (y <= 2000) return 0;
-    if (y <= 2010) return 1;
+    if (y <= 2009) return 1; // band 2 starts at 2010, matching the guarantee rate table
     return 2;
   }
 
@@ -2848,6 +2890,11 @@ export async function renderPublicApplyCPD(param = null) {
 
     // Guarantee fee = HIGHEST single group amount (not sum)
     const guaranteeFee = Math.max(0, ...Object.values(groupAmounts));
+    // Which group produced that max — Portugal's cash+cheque guarantee doesn't carry
+    // the 2.5% card/cash-deposit processing fee the way every other destination's does
+    // (price list: Fee 1,500 + VAT 75 + Cash 100,000 = Total 101,575 exactly, with no
+    // extra 2,500 for a processing fee).
+    const winningGroupCode = Object.entries(groupAmounts).find(([, amt]) => amt === guaranteeFee)?.[0];
 
     // Booking fee from mn_cpd_booking_fees by country IDs
     const bookingFee = calcBookingFee(savedCountries);
@@ -2859,8 +2906,8 @@ export async function renderPublicApplyCPD(param = null) {
     // Delivery fee — charged only for Home Delivery
     const deliveryFee = (formData.delivery_option ?? 'home_delivery') === 'home_delivery' ? CPD_DELIVERY_FEE : 0;
 
-    // Processing fee — 2.5% of the guarantee fee only
-    const processingFee = Math.round(guaranteeFee * 0.025 * 100) / 100;
+    // Processing fee — 2.5% of the guarantee fee, except Portugal (see note above)
+    const processingFee = winningGroupCode === 'PORTUGAL' ? 0 : Math.round(guaranteeFee * 0.025 * 100) / 100;
 
     // VAT 5% on booking + extra driver + delivery only (guarantee fee is excluded)
     const vatBase = bookingFee + extraFee + deliveryFee;
@@ -2879,7 +2926,7 @@ export async function renderPublicApplyCPD(param = null) {
     const tier      = getVehicleTier(formData.body_type, formData.vehicle_make);
     const band      = getYearBand(formData.manuf_year);
     const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1);
-    const bandLabel = ['1990–2000','2001–2010','2011+'][band];
+    const bandLabel = ['1990–2000','2001–2009','2010–2026'][band];
     const fmt       = n => 'AED ' + Number(n).toLocaleString('en-AE', { minimumFractionDigits: 2 });
 
     const feeRow = (label, value, bold = false, accent = false) => `
@@ -3182,6 +3229,24 @@ export async function renderPublicApplyCPD(param = null) {
       document.getElementById('cpd-extra-driver-2-fields').style.display = '';
       this.style.display = 'none';
     });
+
+    // Remove an added Extra Driver — clears its fields (DOM + saved formData, so
+    // showExtra1/2 doesn't re-trigger it on the next render) and re-reveals the
+    // "Add Extra Driver" button.
+    const removeExtraDriver = (n) => {
+      ['name', 'eid', 'passport'].forEach(suffix => {
+        const key = `extra_owner${n}_${suffix}`;
+        const el = document.querySelector(`[name="${key}"]`);
+        if (el) el.value = '';
+        delete formData[key];
+      });
+      const errEl = document.getElementById(`err-extra_owner${n}_eid`);
+      if (errEl) errEl.textContent = '';
+      document.getElementById(`cpd-extra-driver-${n}-fields`).style.display = 'none';
+      document.getElementById(`btn-add-extra-driver-${n}`).style.display = '';
+    };
+    document.getElementById('btn-remove-extra-driver-1')?.addEventListener('click', () => removeExtraDriver(1));
+    document.getElementById('btn-remove-extra-driver-2')?.addEventListener('click', () => removeExtraDriver(2));
 
     // Load review step document thumbnails
     if (CPD_STEPS[currentStep].id === 'review') {
@@ -3793,7 +3858,7 @@ export async function renderPublicHistory(defaultTab = 'idl') {
                   <button class="btn btn-ghost btn-sm view-idl-btn" data-id="${r.auto_id}">
                     <i class="fa-solid fa-eye"></i> View
                   </button>
-                  ${Number(r.request_status) === 4 ? `
+                  ${[4, 5].includes(Number(r.request_status)) ? `
                   <button class="btn btn-primary btn-sm view-idp-btn" data-id="${r.auto_id}">
                     <i class="fa-solid fa-file-pdf"></i> View IDP
                   </button>` : ''}
@@ -4653,7 +4718,7 @@ async function renderPublicIDLView(autoId) {
         </p>
       </div>
       <div class="page-actions">
-        ${Number(r.request_status) === 4 ? `
+        ${[4, 5].includes(Number(r.request_status)) ? `
         <button class="btn btn-primary btn-sm" id="btn-view-idp">
           <i class="fa-solid fa-file-pdf"></i> View IDP
         </button>` : ''}
@@ -4662,6 +4727,14 @@ async function renderPublicIDLView(autoId) {
         </button>
       </div>
     </div>
+
+    ${Number(r.request_status) === 3 && r.reject_reason ? `
+    <div class="rv-section" style="border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.06)">
+      <div class="rv-section-header">
+        <span class="rv-section-title"><i class="fa-solid fa-circle-xmark" style="color:var(--danger,#ef4444);margin-right:6px"></i>Application Rejected</span>
+      </div>
+      <div style="padding:0 2px 4px">${esc(r.reject_reason)}</div>
+    </div>` : ''}
 
     <!-- Personal Information -->
     <div class="rv-section">
@@ -4675,10 +4748,6 @@ async function renderPublicIDLView(autoId) {
         ${idRow('fa-solid fa-venus-mars',     'Gender',              esc(r.sex))}
         ${idRow('fa-solid fa-mobile-screen',  'Mobile Number',       esc(r.mobile_no))}
         ${idRow('fa-regular fa-envelope',     'Email Address',       esc(r.email))}
-        ${idRow('fa-solid fa-location-dot',   'Address in UAE',      esc(r.address_in_uae))}
-        ${idRow('fa-solid fa-inbox',          'PO Box',              esc(r.po_box))}
-        ${idRow('fa-solid fa-city',           'City',                esc(r.city))}
-        ${idRow('fa-solid fa-globe',          'Home Country Address',esc(r.home_country_address))}
       </div>
     </div>
 
@@ -4777,21 +4846,13 @@ export async function renderPublicIdlDisplay(hash) {
 
   const bodyEl = screen.querySelector('.pdv-body');
   try {
-    const d = await api.idl.publicDisplay(hash);
-    const fmt = s => s ? new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+    const d = await api.idl.publicDisplay(hash); // not-found/expired check before loading the image
     bodyEl.innerHTML = `
       <div class="pdv-status ${d.is_valid ? 'pdv-status-valid' : 'pdv-status-expired'}">
         <i class="fa-solid ${d.is_valid ? 'fa-circle-check' : 'fa-circle-xmark'}"></i>
         ${d.is_valid ? 'Valid Permit' : 'Expired'}
       </div>
-      <div class="pdv-rows">
-        <div class="pdv-row"><span class="pdv-label">Full Name</span><span class="pdv-value">${esc(d.full_name) || '—'}</span></div>
-        <div class="pdv-row"><span class="pdv-label">IDP No</span><span class="pdv-value">${esc(d.idl_no) || '—'}</span></div>
-        <div class="pdv-row"><span class="pdv-label">Nationality</span><span class="pdv-value">${esc(d.nationality) || '—'}</span></div>
-        <div class="pdv-row"><span class="pdv-label">Categories</span><span class="pdv-value">${(d.categories || []).join(', ') || '—'}</span></div>
-        <div class="pdv-row"><span class="pdv-label">Valid From</span><span class="pdv-value">${fmt(d.valid_from)}</span></div>
-        <div class="pdv-row"><span class="pdv-label">Valid To</span><span class="pdv-value">${fmt(d.valid_to)}</span></div>
-      </div>`;
+      <img class="pdv-card-image" src="${window.location.origin}${API_BASE}/idl/display/${encodeURIComponent(hash)}/image" alt="International Driving Permit" />`;
   } catch (err) {
     bodyEl.innerHTML = `
       <div class="pdv-status pdv-status-expired">

@@ -561,7 +561,9 @@ class CPDController
             ->required('vehicle_make','vehicle_model','registration_no','chassis_no','manuf_year',
                        'mulkiya_no',
                        'first_name','mobile_no','email',
-                       'passport_no','license_no','license_expiry','sex')
+                       'passport_no','sex',
+                       'uae_refree1','uae_refree1_mobile','destination_refree1','destination_refree1_mobile',
+                       'uae_refree2','uae_refree2_mobile','destination_refree2','destination_refree2_mobile')
             ->validate();
 
         $userId = Auth::id();
@@ -821,10 +823,10 @@ class CPDController
                   uae_refree1, uae_refree1_mobile, uae_refree2, uae_refree2_mobile,
                   destination_refree1, destination_refree1_mobile,
                   destination_refree2, destination_refree2_mobile,
-                  guarantee_amount, booking_fee, extra_fees, vat_amount, total_amount,
+                  guarantee_amount, booking_fee, processing_fee, extra_fees, vat_amount, total_amount,
                   method_of_payment, booking_channel, request_type, request_status,
                   current_queue_position, requested_datetime)
-                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WALKIN','CALL_CENTER','NEW',?,NOW())",
+                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WALKIN','CALL_CENTER','NEW',?,NOW())",
                 [
                     $body['request_category']   ?? 'NORMAL',
                     $body['usage_type']         ?? 'PERSONAL',
@@ -858,6 +860,7 @@ class CPDController
                     $body['destination_refree2_mobile'] ?? '',
                     $body['guarantee_amount']   ?? 0,
                     $body['booking_fee']        ?? 0,
+                    $body['processing_fee']     ?? 0,
                     $body['extra_fees']         ?? 0,
                     $body['vat_amount']         ?? 0,
                     $body['total_amount']       ?? 0,
@@ -2792,10 +2795,10 @@ class CPDController
                   manuf_year, color, body_type, no_of_cylinders, horse_power,
                   net_weight, vehicle_value, mulkiya_no,
                   extra_owner1_name, extra_owner2_name,
-                  guarantee_amount, booking_fee, extra_fees, vat_amount, total_amount,
+                  guarantee_amount, booking_fee, processing_fee, extra_fees, vat_amount, total_amount,
                   method_of_payment, booking_channel, request_status,
                   current_queue_position, request_type, parent_request_id, requested_datetime)
-                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WALKIN',1,?,?,?,NOW())",
+                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WALKIN',1,?,?,?,NOW())",
                 [
                     $body['request_category']   ?? 'NORMAL',
                     $userId,
@@ -2816,6 +2819,7 @@ class CPDController
                     $body['extra_owner2_name']  ?? '',
                     $body['guarantee_amount']   ?? 0,
                     $body['booking_fee']        ?? 0,
+                    $body['processing_fee']     ?? 0,
                     $body['extra_fees']         ?? 0,
                     $body['vat_amount']         ?? 0,
                     $body['total_amount']       ?? 0,

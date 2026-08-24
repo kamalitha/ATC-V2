@@ -120,7 +120,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   border-radius: 0;
 }
 .login-btn {
-  width: 100%; padding: 0.8rem;
+  width: 100%; height: 48px;
   margin-top: 0.5rem; border: none; cursor: pointer;
   background: linear-gradient(90deg, #FF2E00, #CC934C);
   color: #fff; font-weight: 600;
@@ -140,14 +140,13 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 }
 
 .btn-uae-pass {
-  /* No fixed height — with both width and height pinned, aspect-ratio has
-     nothing left to resolve, so at any container width other than exactly
-     253px the SVG (native ratio 253:50) got letterboxed by background-size:
-     contain, leaving empty margins that made the button look narrower than
-     .login-btn even though their boxes were the same width. Letting
-     aspect-ratio compute the height from width:100% keeps the box's ratio
-     identical to the image's, so it fills edge-to-edge. */
-  width: 100%; aspect-ratio: 253 / 50; cursor: pointer;
+  /* Fixed height matching .login-btn exactly, so the two buttons are always
+     the same size regardless of container width — previously this used
+     aspect-ratio (253:50) to derive height from width, which only matched
+     .login-btn's height at one specific container width and looked
+     mismatched everywhere else. background-size:contain still preserves the
+     UAE PASS artwork's own aspect ratio inside the fixed box. */
+  width: 100%; height: 48px; cursor: pointer;
   background-color: transparent; border: none; padding: 0;
   background-image: url('../images/uae-pass/login-with/Active.svg');
   background-size: contain; background-repeat: no-repeat; background-position: center;
@@ -161,7 +160,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 }
 
 /* Registration screen uses the "Sign up with" variant of the same button */
-#btn-uae-pass-signup { aspect-ratio: 270 / 50; background-image: url('../images/uae-pass/sign-up-with/Active.svg'); }
+#btn-uae-pass-signup { background-image: url('../images/uae-pass/sign-up-with/Active.svg'); }
 #btn-uae-pass-signup:hover:not(:disabled)  { background-image: url('../images/uae-pass/sign-up-with/Focus.svg'); }
 #btn-uae-pass-signup:active:not(:disabled) { background-image: url('../images/uae-pass/sign-up-with/Pressed.svg'); }
 #btn-uae-pass-signup:disabled { background-image: url('../images/uae-pass/sign-up-with/Disabled.svg'); }
@@ -1020,6 +1019,8 @@ tbody td { padding: 12px 16px; font-size: 1rem; }
   color: var(--danger);
   margin-top: 4px;
   min-height: 1em;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 .field-invalid input,
 .field-invalid select,
@@ -1939,7 +1940,11 @@ table.dataTable .badge {
 .pub-identity-rows { display: flex; flex-direction: column; }
 .pub-identity-row {
   display: grid;
-  grid-template-columns: 28px 160px 1fr auto;
+  /* The 4th (error-message) track was `auto`, which sizes to the message's
+     unwrapped width — a long validation message (e.g. the Emirates ID format
+     hint) could squeeze the input track down to a few unusable pixels. Capping
+     it forces the message to wrap instead of stealing the input's space. */
+  grid-template-columns: 28px 160px minmax(60px, 1fr) minmax(0, 180px);
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
@@ -1954,7 +1959,7 @@ table.dataTable .badge {
   grid-template-columns: 1fr 1fr;
 }
 .pub-identity-rows-2col .pub-identity-row {
-  grid-template-columns: 24px 130px 1fr auto;
+  grid-template-columns: 24px 130px minmax(60px, 1fr) minmax(0, 180px);
   border-bottom: 1px solid var(--border);
   border-right: 1px solid var(--border);
 }
@@ -1980,7 +1985,7 @@ table.dataTable .badge {
 .pub-identity-rows-bycol-4 { grid-auto-flow: column; grid-template-rows: repeat(4, auto); }
 .pub-identity-rows-bycol-3 .pub-identity-row,
 .pub-identity-rows-bycol-4 .pub-identity-row {
-  grid-template-columns: 24px 130px 1fr auto;
+  grid-template-columns: 24px 130px minmax(60px, 1fr) minmax(0, 180px);
   border-bottom: 1px solid var(--border);
   border-right: 1px solid var(--border);
 }
@@ -2715,7 +2720,7 @@ table.dataTable .badge {
 }
 .pdv-card {
   width: 100%;
-  max-width: 440px;
+  max-width: 700px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -2758,3 +2763,4 @@ table.dataTable .badge {
 .pdv-row:last-child { border-bottom: none; padding-bottom: 0; }
 .pdv-label { color: var(--text-muted); }
 .pdv-value { color: var(--text-primary); font-weight: 600; text-align: right; }
+.pdv-card-image { display: block; width: 100%; height: auto; border-radius: var(--radius); }

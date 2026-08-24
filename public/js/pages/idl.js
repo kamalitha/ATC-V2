@@ -806,6 +806,11 @@ export async function renderIDLDetail(param) {
   // Air Waybill No must be enterable at status 4 (Approved, awaiting dispatch) —
   // otherwise the Dispatch button can never succeed since the field starts empty.
   const canEditAwb = canEdit || status === 4;
+  // Personal-info edit is allowed for officers up until the IDL is printed (print_hash
+  // is only ever set the first time printIdl() runs) — matches the feedback that once
+  // printed, the customer-officer view must be locked from further edits.
+  const canEditIdentity = !r.print_hash && ['idl_officer', 'idl_cpd_walkin'].includes(currentUser?.role_name);
+  const nationalities = canEditIdentity ? await api.idl.nationalities() : [];
 
   const CAT_LABELS   = { A:'Motorcycle', B:'Car', C:'Heavy Vehicle', D:'Bus', E:'Car with Heavy Trailer' };
   const CAT_ICONS    = { A:'fa-motorcycle', B:'fa-car', C:'fa-truck', D:'fa-bus', E:'fa-trailer' };
@@ -836,21 +841,51 @@ export async function renderIDLDetail(param) {
 
     <!-- ── 1. Personal Information ──────────────────────────────────────── -->
     <div class="rv-section">
-      <div class="rv-section-header">
+      <div class="rv-section-header" style="display:flex;justify-content:space-between;align-items:center">
         <span class="rv-section-title">Personal Information</span>
+        ${canEditIdentity ? `
+        <button class="btn btn-ghost btn-sm" id="btn-edit-identity">
+          <i class="fa-solid fa-pen"></i> Edit</button>` : ''}
       </div>
-      <div class="rv-identity-rows">
+      <div class="rv-identity-rows" id="identity-view-rows">
         ${identityRow('fa-regular fa-user',        'Full Name',           [r.first_name, r.last_name].filter(Boolean).join(' '))}
         ${identityRow('fa-regular fa-id-card',     'Emirates ID',         r.emirates_id)}
         ${identityRow('fa-solid fa-flag',          'Nationality',         r.nationality)}
         ${identityRow('fa-solid fa-venus-mars',    'Gender',              r.sex)}
         ${identityRow('fa-solid fa-mobile-screen', 'Mobile Number',       r.mobile_no)}
         ${identityRow('fa-regular fa-envelope',    'Email Address',       r.email)}
-        ${identityRow('fa-solid fa-location-dot',  'Address in UAE',      r.address_in_uae)}
-        ${identityRow('fa-solid fa-inbox',         'PO Box',              r.po_box)}
-        ${identityRow('fa-solid fa-city',          'City',                r.city)}
-        ${identityRow('fa-solid fa-globe',         'Home Country Address',r.home_country_address)}
       </div>
+      ${canEditIdentity ? `
+      <div class="form-grid" id="identity-edit-rows" style="display:none;margin-top:12px">
+        <div class="field">
+          <label>First Name</label>
+          <input id="id-edit-first-name" value="${esc(r.first_name ?? '')}" />
+        </div>
+        <div class="field">
+          <label>Last Name</label>
+          <input id="id-edit-last-name" value="${esc(r.last_name ?? '')}" />
+        </div>
+        <div class="field">
+          <label>Nationality</label>
+          <select id="id-edit-nationality">
+            ${nationalities.map(n => `<option value="${n.nationality_id}" ${String(n.nationality_id) === String(r.nationality_id) ? 'selected' : ''}>${esc(n.nationality)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label>Gender</label>
+          <select id="id-edit-sex">
+            <option value="Male" ${r.sex === 'Male' ? 'selected' : ''}>Male</option>
+            <option value="Female" ${r.sex === 'Female' ? 'selected' : ''}>Female</option>
+          </select>
+        </div>
+      </div>
+      <div id="identity-edit-error" class="form-error hidden" style="margin-top:8px"></div>
+      <div id="identity-edit-actions" style="display:none;gap:8px;margin-top:12px">
+        <button class="btn btn-success btn-sm" id="btn-save-identity">
+          <i class="fa-solid fa-floppy-disk"></i> Save</button>
+        <button class="btn btn-ghost btn-sm" id="btn-cancel-identity">
+          <i class="fa-solid fa-xmark"></i> Cancel</button>
+      </div>` : ''}
     </div>
 
     <!-- ── Additional Information ───────────────────────────────────────── -->
@@ -949,12 +984,12 @@ export async function renderIDLDetail(param) {
            (status === 4 || status === 5) ? `
         <div class="form-grid">
           <div class="field">
-            <label>IDL No</label>
+            <label>IDP No</label>
             <input id="proc-idl-no" value="${esc(r.idl_no ?? '')}"
               placeholder="Auto-generated when issued" readonly />
           </div>
           <div class="field">
-            <label>IDL Booklet Number</label>
+            <label>IDP Booklet Number</label>
             <input id="proc-booklet" value="${esc(r.idl_booklet_no ?? '')}"
               placeholder="Assigned when issued" readonly />
           </div>
@@ -987,7 +1022,7 @@ export async function renderIDLDetail(param) {
             <i class="fa-solid fa-ban"></i> Reject</button>` : ''}
           ${status === 4 && !r.idl_no ? `
           <button class="btn btn-primary btn-sm" data-action="issue">
-            <i class="fa-solid fa-id-card"></i> Issue IDL</button>` : ''}
+            <i class="fa-solid fa-id-card"></i> Issue IDP</button>` : ''}
           ${status === 4 || status === 5 ? `
           <button class="btn btn-info btn-sm" data-action="dispatch">
             <i class="fa-solid fa-truck"></i> Mark Dispatched</button>` : ''}
@@ -1014,6 +1049,45 @@ export async function renderIDLDetail(param) {
   initDocUploads();
   initIdlLightbox();
   loadExistingDocs(id);
+
+  if (canEditIdentity) {
+    const viewRows    = document.getElementById('identity-view-rows');
+    const editRows    = document.getElementById('identity-edit-rows');
+    const editActions = document.getElementById('identity-edit-actions');
+    const editBtn     = document.getElementById('btn-edit-identity');
+
+    editBtn.addEventListener('click', () => {
+      viewRows.style.display    = 'none';
+      editRows.style.display    = '';
+      editActions.style.display = 'flex';
+      editBtn.style.display     = 'none';
+    });
+
+    document.getElementById('btn-cancel-identity').addEventListener('click', () => renderIDLDetail(param));
+
+    document.getElementById('btn-save-identity').addEventListener('click', async () => {
+      const errEl  = document.getElementById('identity-edit-error');
+      const saveBtn = document.getElementById('btn-save-identity');
+      errEl.classList.add('hidden');
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving…';
+      try {
+        await api.put(`/idl/requests/${id}`, {
+          first_name:  document.getElementById('id-edit-first-name').value.trim(),
+          last_name:   document.getElementById('id-edit-last-name').value.trim(),
+          nationality: document.getElementById('id-edit-nationality').value,
+          sex:         document.getElementById('id-edit-sex').value,
+        });
+        toast('Personal information updated', 'success');
+        renderIDLDetail(param);
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.classList.remove('hidden');
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save';
+      }
+    });
+  }
 
   function handleIDLAction(e) {
     const btn = e.target.closest('[data-action]');
@@ -1399,10 +1473,10 @@ function handleReject(id, param) {
 
 async function handleIssue(id, param) {
   openModal({
-    title: 'Issue IDL',
+    title: 'Issue IDP',
     body: `
       <div class="form-grid">
-        <div class="field"><label>IDL Number</label>
+        <div class="field"><label>IDP Number</label>
           <input value="Auto-generated on issue" disabled /></div>
         <div class="field"><label>Booklet Number *</label>
           <input id="issue-booklet" list="issue-booklet-list" autocomplete="off" disabled
@@ -1415,7 +1489,7 @@ async function handleIssue(id, param) {
                <i class="fa-solid fa-xmark"></i> Cancel
              </button>
              <button class="btn btn-success" id="confirm-issue">
-               <i class="fa-solid fa-circle-check"></i> Issue IDL
+               <i class="fa-solid fa-circle-check"></i> Issue IDP
              </button>`,
   });
 
@@ -1449,12 +1523,12 @@ async function handleIssue(id, param) {
       res = await api.idl.issue(id, { idl_booklet_no });
     } catch (err) {
       confirmBtn.disabled = false;
-      confirmBtn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Issue IDL';
-      bookletErr.textContent = err.message || 'Failed to issue IDL';
+      confirmBtn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Issue IDP';
+      bookletErr.textContent = err.message || 'Failed to issue IDP';
       return;
     }
     closeModal();
-    toast(`IDL issued successfully — IDL No: ${res.idl_no}`, 'success');
+    toast(`IDP issued successfully — IDP No: ${res.idl_no}`, 'success');
     renderIDLDetail(param);
   };
 }

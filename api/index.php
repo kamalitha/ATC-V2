@@ -37,6 +37,11 @@ header('Access-Control-Allow-Headers: Content-Type, X-CSRF-Token');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
+// Session data itself (not just the cookie) expires after this many seconds of
+// inactivity — PHP's server default (often 1440s/24min) was cutting active CPD
+// sessions short. Every request that touches the session (i.e. any API call)
+// resets this clock, so a user who's actually working stays logged in.
+ini_set('session.gc_maxlifetime', '1800'); // 30 minutes
 session_set_cookie_params(['lifetime'=>0,'path'=>'/','secure'=>Config::IS_LIVE,'httponly'=>true,'samesite'=>'Strict']);
 session_start();
 
@@ -128,6 +133,7 @@ $r->post('/api/idl/requests/{id}/cancel-own',[IDLController::class,'cancelOwn'],
 $r->post('/api/idl/requests/{id}/void',     [IDLController::class,'voidRequest'],   auth:true);
 $r->get('/api/idl/requests/{id}/print',     [IDLController::class,'printIdl'],      auth:true);
 $r->get('/api/idl/display/{hash}',          [IDLController::class,'publicDisplay'], auth:false);
+$r->get('/api/idl/display/{hash}/image',    [IDLController::class,'publicDisplayImage'], auth:false);
 $r->post('/api/idl/requests/{id}/print-awb',[IDLController::class,'printAwb'],      auth:true);
 $r->get('/api/idl/print-margins',           [IDLController::class,'getPrintMargins'], auth:true);
 $r->post('/api/idl/print-margins',          [IDLController::class,'savePrintMargins'],auth:true);

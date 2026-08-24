@@ -637,6 +637,12 @@ export async function renderCPDNew() {
             <div class="field"><label>Guarantee Amount (AED)</label><input name="guarantee_amount" type="number" step="0.01" placeholder="0.00" /></div>
             <div class="field"><label>Booking Fee (AED)</label><input name="booking_fee" type="number" step="0.01" placeholder="0.00" /></div>
             <div class="field">
+              <label>Processing Fee (AED)</label>
+              <input name="processing_fee" id="cpd-processing-fee" type="number" step="0.01" placeholder="0.00" readonly
+                style="background:var(--bg-elevated);cursor:default" />
+              <div style="font-size:.75rem;color:var(--text-muted);margin-top:3px">2.5% of the guarantee amount, except Portugal</div>
+            </div>
+            <div class="field">
               <label>Extra Fees (AED)</label>
               <input name="extra_fees" id="cpd-extra-fees" type="number" step="0.01" placeholder="0.00" readonly
                 style="background:var(--bg-elevated);cursor:default" />
@@ -712,7 +718,7 @@ export async function renderCPDNew() {
   function cpdGetBand(y) {
     const yr = parseInt(y, 10);
     if (yr <= 2000) return 0;
-    if (yr <= 2010) return 1;
+    if (yr <= 2009) return 1; // band 2 starts at 2010, matching the guarantee rate table
     return 2;
   }
   function cpdBookingFee(ids) {
@@ -734,7 +740,7 @@ export async function renderCPDNew() {
     const driver2 = document.querySelector('[name="extra_owner2_name"]')?.value?.trim() ?? '';
     const extraFee = (driver1 || driver2) ? EXTRA_DRIVER_FEE : 0;
     if (!checkedBoxes.length) {
-      setFeeFields(0, 0, extraFee, Math.round(extraFee * 0.05 * 100) / 100, extraFee + Math.round(extraFee * 0.05 * 100) / 100);
+      setFeeFields(0, 0, extraFee, Math.round(extraFee * 0.05 * 100) / 100, extraFee + Math.round(extraFee * 0.05 * 100) / 100, 0);
       return;
     }
     const selectedIds   = checkedBoxes.map(cb => cb.value);
@@ -767,19 +773,25 @@ export async function renderCPDNew() {
     });
 
     const guaranteeFee = Math.max(0, ...Object.values(groupAmounts));
+    // Portugal's cash+cheque guarantee doesn't carry the 2.5% processing fee the way
+    // every other destination's does (price list total is Fee+VAT+Cash only) —
+    // matches the same exception in public.js's calcGuarantee().
+    const winningGroupCode = Object.entries(groupAmounts).find(([, amt]) => amt === guaranteeFee)?.[0];
+    const processingFee = winningGroupCode === 'PORTUGAL' ? 0 : Math.round(guaranteeFee * 0.025 * 100) / 100;
     const bookingFee   = cpdBookingFee(selectedIds);
-    const vat          = Math.round((guaranteeFee + bookingFee + extraFee) * 0.05 * 100) / 100;
-    const total        = guaranteeFee + bookingFee + extraFee + vat;
-    setFeeFields(guaranteeFee, bookingFee, extraFee, vat, total);
+    const vat          = Math.round((bookingFee + extraFee) * 0.05 * 100) / 100;
+    const total        = guaranteeFee + bookingFee + extraFee + processingFee + vat;
+    setFeeFields(guaranteeFee, bookingFee, extraFee, vat, total, processingFee);
   }
 
-  function setFeeFields(guarantee, booking, extra, vat, total) {
+  function setFeeFields(guarantee, booking, extra, vat, total, processingFee = 0) {
     const set = (name, val) => {
       const el = document.querySelector(`[name="${name}"]`);
       if (el) el.value = val > 0 ? val.toFixed(2) : '';
     };
     set('guarantee_amount', guarantee);
     set('booking_fee',      booking);
+    set('processing_fee',   processingFee);
     set('extra_fees',       extra);
     set('vat_amount',       vat);
     set('total_amount',     total);
@@ -2788,6 +2800,11 @@ export async function renderCPDRenew() {
               <div class="field"><label>Guarantee Amount (AED)</label><input name="guarantee_amount" type="number" step="0.01" placeholder="0.00" /></div>
               <div class="field"><label>Booking Fee (AED)</label><input name="booking_fee" type="number" step="0.01" placeholder="0.00" /></div>
               <div class="field">
+                <label>Processing Fee (AED)</label>
+                <input name="processing_fee" type="number" step="0.01" placeholder="0.00" readonly style="background:var(--bg-elevated);cursor:default" />
+                <div style="font-size:.75rem;color:var(--text-muted);margin-top:3px">2.5% of the guarantee amount, except Portugal</div>
+              </div>
+              <div class="field">
                 <label>Extra Fees (AED)</label>
                 <input name="extra_fees" type="number" step="0.01" placeholder="0.00" readonly style="background:var(--bg-elevated);cursor:default" />
                 <div style="font-size:.75rem;color:var(--text-muted);margin-top:3px">AED 50 per extra driver added automatically</div>
@@ -2992,7 +3009,7 @@ export async function renderCPDRenew() {
     'McLaren', 'Bugatti', 'Koenigsegg', 'Pagani', 'Maybach', 'W Motors', 'Bizzarrini', 'Gumpert',
   ];
   const getTier = (bt, make) => LUXURY_MAKES.includes((make ?? '').trim()) ? 'luxury' : STATION_TYPES.includes(bt ?? '') ? 'station' : 'saloon';
-  const getBand = y  => { const yr = parseInt(y,10); return yr <= 2000 ? 0 : yr <= 2010 ? 1 : 2; };
+  const getBand = y  => { const yr = parseInt(y,10); return yr <= 2000 ? 0 : yr <= 2009 ? 1 : 2; };
   const calcBookingFee = ids => {
     const s = new Set(ids.map(String)); let best = 0;
     _bookingFees.forEach(bf => {
@@ -3012,7 +3029,7 @@ export async function renderCPDRenew() {
     const d2 = form.querySelector('[name="extra_owner2_name"]')?.value?.trim() ?? '';
     const extra = (d1||d2) ? EXTRA_DRIVER_FEE : 0;
     if (!checked.length) {
-      setRenewFees(0,0,extra,Math.round(extra*.05*100)/100,extra+Math.round(extra*.05*100)/100);
+      setRenewFees(0,0,extra,Math.round(extra*.05*100)/100,extra+Math.round(extra*.05*100)/100,0);
       return;
     }
     const ids   = checked.map(cb=>cb.value);
@@ -3040,16 +3057,21 @@ export async function renderCPDRenew() {
       if (!ga[gc]||amt>ga[gc]) ga[gc]=amt;
     });
     const gFee = Math.max(0,...Object.values(ga));
+    // Portugal's cash+cheque guarantee doesn't carry the 2.5% processing fee the way
+    // every other destination's does — matches the same exception in public.js.
+    const winningGroupCode = Object.entries(ga).find(([, amt]) => amt === gFee)?.[0];
+    const processingFee = winningGroupCode === 'PORTUGAL' ? 0 : Math.round(gFee * 0.025 * 100) / 100;
     const bFee = calcBookingFee(ids);
-    const vat  = Math.round((gFee+bFee+extra)*.05*100)/100;
-    setRenewFees(gFee, bFee, extra, vat, gFee+bFee+extra+vat);
+    const vat  = Math.round((bFee+extra)*.05*100)/100;
+    setRenewFees(gFee, bFee, extra, vat, gFee+bFee+extra+processingFee+vat, processingFee);
   }
 
-  function setRenewFees(guarantee,booking,extra,vat,total) {
+  function setRenewFees(guarantee,booking,extra,vat,total,processingFee = 0) {
     const form = document.getElementById('cpd-renew-form');
     if (!form) return;
     const set = (n,v) => { const el=form.querySelector(`[name="${n}"]`); if(el) el.value=v>0?v.toFixed(2):''; };
     set('guarantee_amount',guarantee); set('booking_fee',booking);
+    set('processing_fee',processingFee);
     set('extra_fees',extra);           set('vat_amount',vat);
     set('total_amount',total);
   }

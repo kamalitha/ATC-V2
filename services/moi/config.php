@@ -19,11 +19,20 @@ define('MOI_ALLOWED_IPS', [
 ]);
 
 // ── File Paths ─────────────────────────────────────────────────────────────────
-define('MOI_IDL_FILES_PATH', dirname(__DIR__, 4) . '/public/user-images/idl/appointment-requests');
-define('MOI_CPD_FILES_PATH', dirname(__DIR__, 4) . '/public/user-images/cpd/appointment-requests');
-define('MOI_USER_FILES_PATH', dirname(__DIR__, 4) . '/public/user-images/users');
-define('MOI_FONTS_PATH',      dirname(__DIR__, 4) . '/public/fonts');
-define('MOI_IMAGES_PATH',     dirname(__DIR__, 4) . '/public/images');
+// __DIR__ here is .../source/services/moi — dirname(__DIR__, 2) is the source root
+// (.../source), matching where api/ and public/ actually live. The previous
+// dirname(__DIR__, 4) went two levels too far (e.g. resolved to /var on the live
+// server instead of /var/www/html), and MOI_IDL_FILES_PATH/MOI_CPD_FILES_PATH used
+// to point at a "public/user-images/..." tree that was never real — the main portal
+// has always stored these documents under api/appointment-requests (see
+// Config::UPLOADS_DIR / Config::CPD_IMAGE_PATH in api/config.php), which is what
+// MoiRepository::saveBase64Image() must write into and what MoiService must read
+// from for a submitted document (e.g. a passport photo) to ever be found again.
+define('MOI_IDL_FILES_PATH', dirname(__DIR__, 2) . '/api/appointment-requests');
+define('MOI_CPD_FILES_PATH', dirname(__DIR__, 2) . '/api/appointment-requests/cpd');
+define('MOI_USER_FILES_PATH', dirname(__DIR__, 2) . '/public/user-images/users');
+define('MOI_FONTS_PATH',      dirname(__DIR__, 2) . '/public/fonts');
+define('MOI_IMAGES_PATH',     dirname(__DIR__, 2) . '/public/images');
 define('MOI_HOST',            'https://eservices.atcuae.ae');
 
 // ── Timezone ───────────────────────────────────────────────────────────────────

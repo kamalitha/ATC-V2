@@ -280,6 +280,17 @@ function applyNavVisibility(modules) {
     ['nav-idl','nav-cpd','nav-admin','nav-reports'].forEach(show);
   }
 
+  // RTA & Distributor Applications: manager-tier only (feedback request — regular IDL
+  // officers filter their queue by Online/Walk-In/MOI/ADConnect and don't need these).
+  const idlManagerRoles = ['admin', 'cpd_super_user', 'idl_branch_mgr'];
+  if (idlManagerRoles.includes(role)) {
+    show('nav-idl-rta');
+    show('nav-idl-distributor');
+  } else {
+    hide('nav-idl-rta');
+    hide('nav-idl-distributor');
+  }
+
   // Hide Dashboard for IDL officer roles, CPD officer, and public users
   const idlOfficerRoles = ['idl_officer','idl_cpd_cashier','idl_cpd_walkin','idl_cpd_online','idl_cpd_branch','cpd_officer','cpd_cheque','cpd_branch','cpd_super_user'];
   if (idlOfficerRoles.includes(role) || modules.includes('public')) {

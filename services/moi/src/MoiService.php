@@ -171,9 +171,21 @@ final class MoiService
 
             $userId    = $row['belonging_user_id'];
             $userPath  = MOI_USER_FILES_PATH . "/{$userId}";
+            // This directory is otherwise only ever read from (buildIDLView()'s legacy
+            // fallback, the passport lookup above) — nothing else in the codebase ever
+            // creates it, but the composite/print images below are written into it.
+            if (!is_dir($userPath)) mkdir($userPath, 0755, true);
+            // Passport photos submitted via CreateMOIRequest are saved per-request under
+            // MOI_IDL_FILES_PATH/{autoId} (see MoiRepository::createIDLRequest) — check
+            // that location first, same as buildIDLView() does, before falling back to
+            // the per-user path (older/legacy requests that only ever had a user-level photo).
+            $requestPath = MOI_IDL_FILES_PATH . "/{$autoId}";
             $photoFile = null;
 
-            foreach (["{$userPath}/passport.jpg", "{$userPath}/passport.png"] as $candidate) {
+            foreach ([
+                "{$requestPath}/passport.jpg", "{$requestPath}/passport.png",
+                "{$userPath}/passport.jpg", "{$userPath}/passport.png",
+            ] as $candidate) {
                 if (file_exists($candidate)) { $photoFile = $candidate; break; }
             }
 

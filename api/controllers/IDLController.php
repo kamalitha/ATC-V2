@@ -1668,10 +1668,38 @@ class IDLController
                 $binds[] = $body[$f];
             }
         }
-        if (empty($sets)) Response::error('No updatable fields provided');
+        if (!empty($sets)) {
+            $binds[] = $params['id'];
+            $this->db->execute("UPDATE mn_idl_requests SET " . implode(',', $sets) . " WHERE auto_id=?", $binds);
+        }
 
-        $binds[] = $params['id'];
-        $this->db->execute("UPDATE mn_idl_requests SET " . implode(',', $sets) . " WHERE auto_id=?", $binds);
+        // Personal-info fields the officer may correct pre-print — these live on
+        // mn_idl_request_user (a per-request snapshot), never on mn_users, so editing
+        // them here can never leak into the customer's shared account/login profile.
+        // Emirates ID is deliberately excluded — it's the identity match key.
+        // Once print_hash is set the request has been printed and is locked (enforced
+        // by the frontend hiding Edit; re-check here so a stale page can't bypass it).
+        $identityAllowed = ['first_name','last_name','sex','nationality'];
+        $identitySets  = [];
+        $identityBinds = [];
+        foreach ($identityAllowed as $f) {
+            if (array_key_exists($f, $body)) {
+                $identitySets[]  = "{$f}=?";
+                $identityBinds[] = $body[$f];
+            }
+        }
+        if (!empty($identitySets)) {
+            $printed = $this->db->scalar('SELECT print_hash FROM mn_idl_requests WHERE auto_id=?', [$params['id']]);
+            if (!empty($printed)) Response::error('This request has already been printed and can no longer be edited', 422);
+
+            $identityBinds[] = $params['id'];
+            $this->db->execute(
+                "UPDATE mn_idl_request_user SET " . implode(',', $identitySets) . " WHERE request_auto_id=?",
+                $identityBinds,
+            );
+        }
+
+        if (empty($sets) && empty($identitySets)) Response::error('No updatable fields provided');
         Response::success(null, 'Request updated');
     }
 
@@ -2361,6 +2389,133 @@ class IDLController
             'valid_to'    => $validTo,
             'is_valid'    => strtotime($validTo) >= strtotime(date('Y-m-d')),
         ]);
+    }
+
+    /**
+     * GET /api/idl/display/{hash}/image
+     * Public, unauthenticated — renders the same composited card image (template +
+     * photo + tick marks + QR + burned-in text) that scanning a printed IDL's QR
+     * code has always shown, ported from the legacy portal's display.phtml. This is
+     * the actual page body rendered by renderPublicIdlDisplay() on the frontend;
+     * publicDisplay() above is only used for the initial not-found/expired check.
+     */
+    public function publicDisplayImage(array $params, array $body, array $query): void
+    {
+        $hash = (string)($params['hash'] ?? '');
+        if ($hash === '') Response::notFound('Not found');
+
+        $r = $this->db->queryOne(
+            "SELECT r.auto_id, r.request_type, r.idl_no, r.request_id, r.request_status, r.issued_date,
+                    iru.first_name, iru.last_name, iru.type_of_dl, iru.nationality,
+                    iru.place_of_birth, iru.dob, iru.city, iru.sex, iru.license_no,
+                    n.nationality AS nationality_name
+             FROM mn_idl_requests r
+             JOIN mn_idl_request_user iru ON r.auto_id = iru.request_auto_id
+             LEFT JOIN mn_nationalities n ON iru.nationality = n.nationality_id
+             WHERE r.print_hash = ?",
+            [$hash],
+        );
+        if ($r === null || (int)$r['request_status'] !== 4) {
+            Response::notFound('No valid IDL found for this code');
+        }
+
+        require_once API_ROOT . '/library/phpqrcode/qrlib.php';
+
+        $imagesDir = dirname(API_ROOT) . '/public/images';
+        $reqDir    = API_ROOT . '/' . Config::UPLOADS_DIR . '/' . $r['auto_id'];
+
+        // ── Passport photo — same lookup as printIdl(), resized to the template's 111×155 box ──
+        $passportSrc = null;
+        foreach (['jpg', 'jpeg', 'png'] as $ext) {
+            if (file_exists("$reqDir/passport.$ext")) { $passportSrc = "$reqDir/passport.$ext"; break; }
+        }
+        $photoImg = $this->loadResizedPhoto($passportSrc ?? "$imagesDir/user.png", 111, 155);
+
+        $template = imagecreatefromjpeg("$imagesDir/idl_print_materials/template-public.jpg");
+        imagecopy($template, $photoImg, 317, 376, 0, 0, imagesx($photoImg), imagesy($photoImg));
+        imagedestroy($photoImg);
+
+        // ── Category tick marks — same coordinates as the legacy template ──
+        $legacyNumericToLetter = ['1' => 'A', '2' => 'B', '3' => 'C', '4' => 'D', '5' => 'E', '6' => 'E'];
+        $categories = array_values(array_unique(array_map(
+            fn($t) => $legacyNumericToLetter[trim($t)] ?? trim($t),
+            explode(',', (string)$r['type_of_dl']),
+        )));
+        $tickImg = imagecreatefrompng("$imagesDir/tick_small.png");
+        $tickY   = ['A' => 315, 'B' => 335, 'C' => 355, 'D' => 375, 'E' => 396];
+        foreach ($tickY as $code => $y) {
+            if (in_array($code, $categories, true)) {
+                imagecopy($template, $tickImg, 480, $y, 0, 0, imagesx($tickImg), imagesy($tickImg));
+            }
+        }
+        imagedestroy($tickImg);
+
+        // ── QR code — re-encodes this same verification link ──
+        $qrPath = sys_get_temp_dir() . '/idl_qr_' . preg_replace('/[^a-zA-Z0-9]/', '', $hash) . '.png';
+        QRcode::png(Config::frontendUrl() . '/?display=' . $hash, $qrPath, '', '1.5', '5');
+        $qrImg = imagecreatefrompng($qrPath);
+        imagecopy($template, $qrImg, 330, 178, 0, 0, imagesx($qrImg), imagesy($qrImg));
+        imagedestroy($qrImg);
+        @unlink($qrPath);
+
+        // ── Burn in text fields — same coordinates/logic as legacy display.phtml ──
+        $black    = imagecolorallocate($template, 0, 0, 0);
+        $fontPath = dirname(API_ROOT) . '/public/fonts/arial.ttf';
+
+        $issuerText = $r['request_type'] === 'RTA' ? 'RTA' : 'ATC';
+        imagettftext($template, 8, 0, 350, 138, $black, $fontPath, $issuerText);
+
+        $issuedBasis = $r['issued_date'] ?? date('Y-m-d');
+        $dateText    = 'FROM ' . date('Y-m-d', strtotime($issuedBasis)) . ' To ' . date('Y-m-d', strtotime($issuedBasis . ' + 365 day'));
+        imagettftext($template, 8, 0, 270, 166, $black, $fontPath, $dateText);
+
+        imagettftext($template, 8, 0, 180, 333, $black, $fontPath, strtoupper((string)$r['last_name']));
+        imagettftext($template, 8, 0, 180, 360, $black, $fontPath, strtoupper((string)$r['first_name']));
+        imagettftext($template, 8, 0, 180, 380, $black, $fontPath, strtoupper((string)$r['place_of_birth']));
+        imagettftext($template, 8, 0, 180, 410, $black, $fontPath, strtoupper((string)$r['dob']));
+        imagettftext($template, 8, 0, 180, 433, $black, $fontPath, strtoupper((string)$r['city']));
+        imagettftext($template, 8, 0, 180, 462, $black, $fontPath, strtoupper((string)$r['sex']));
+
+        // Long nationality names get shrunk/wrapped rather than overflowing the column —
+        // same three-tier threshold as legacy.
+        $nationality = strtoupper((string)($r['nationality_name'] ?? ''));
+        if (strlen($nationality) > 19)     imagettftext($template, 4, 0, 226, 462, $black, $fontPath, $nationality);
+        elseif (strlen($nationality) > 10) imagettftext($template, 6, 0, 226, 462, $black, $fontPath, $nationality);
+        else                                imagettftext($template, 8, 0, 226, 462, $black, $fontPath, $nationality);
+
+        $idText = $r['request_type'] === 'RTA' ? $r['request_id'] : $r['idl_no'];
+        imagettftext($template, 8, 0, 180, 487, $black, $fontPath, strtoupper((string)$idText));
+        imagettftext($template, 8, 0, 180, 520, $black, $fontPath, strtoupper((string)$r['license_no']));
+
+        header('Content-Type: image/jpeg');
+        header('Cache-Control: no-store');
+        imagejpeg($template, null, 90);
+        imagedestroy($template);
+        exit;
+    }
+
+    /** Loads an image (jpeg/png, EXIF-orientation-corrected) and resizes it to exactly $w×$h. */
+    private function loadResizedPhoto(string $sourcePath, int $w, int $h)
+    {
+        $info     = @getimagesize($sourcePath);
+        $mime     = $info['mime'] ?? 'image/png';
+        $createFn = match ($mime) {
+            'image/jpeg' => 'imagecreatefromjpeg',
+            'image/png'  => 'imagecreatefrompng',
+            default      => 'imagecreatefrompng',
+        };
+        $img = @$createFn($sourcePath) ?: imagecreatetruecolor($w, $h);
+
+        if ($mime === 'image/jpeg' && function_exists('exif_read_data')) {
+            $exif   = @exif_read_data($sourcePath);
+            $rotate = ['3' => 180, '6' => -90, '8' => 90][(string)($exif['Orientation'] ?? '')] ?? null;
+            if ($rotate !== null) $img = imagerotate($img, $rotate, 0);
+        }
+
+        $resized = imagecreatetruecolor($w, $h);
+        imagecopyresampled($resized, $img, 0, 0, 0, 0, $w, $h, imagesx($img), imagesy($img));
+        imagedestroy($img);
+        return $resized;
     }
 
     /**

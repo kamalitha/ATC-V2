@@ -105,40 +105,48 @@ final class MoiRepository
 
     public static function createIDLRequest(array $p): string
     {
-        $seq       = (int) MoiDB::scalar('SELECT COUNT(*)+1 FROM mn_idl_requests');
-        $requestId = sprintf('IDL-ATC-%s/%d', date('Ymd'), $seq);
-
         MoiDB::beginTransaction();
         try {
             // Find or create user
             $userId = self::findOrCreateUser($p);
 
+            // request_id is filled in below via UPDATE once the real auto_id is known —
+            // a pre-generated COUNT(*)+1 sequence drifts from the real auto-increment ID
+            // as soon as any historical row has ever been deleted (and races under
+            // concurrent inserts), producing a request_id that doesn't match the auto_id
+            // actually stored, so a caller can never look the request back up by it.
             $autoId = MoiDB::insert(
                 "INSERT INTO mn_idl_requests
                  (request_id, request_type, belonging_user_id, paid_status,
                   delivery_option, travel_insurance, total_amount,
                   requested_datetime, request_status, booking_channel, is_active)
-                 VALUES (?, 'MOI', ?, 0, ?, 0, 178.50, NOW(), 1, ?, 1)",
+                 VALUES ('PENDING', 'MOI', ?, 0, ?, 0, 178.50, NOW(), 1, ?, 1)",
                 [
-                    $requestId,
                     $userId,
                     ($p['DeliveryLicense'] === '1' || $p['DeliveryLicense'] === 'true')
                         ? 'send_to_address' : 'pick_from_office',
                     $p['Channel'] ?? 'MOBILE',
                 ],
             );
+            MoiDB::execute(
+                'UPDATE mn_idl_requests SET request_id = ? WHERE auto_id = ?',
+                [sprintf('IDL-ATC-%s/%s', date('Ymd'), $autoId), $autoId],
+            );
 
+            // mn_idl_request_user has no email/mobile_no columns of its own — those live
+            // on mn_users (already stored via findOrCreateUser() above) and are joined
+            // back in by the main portal's own queries.
             MoiDB::execute(
                 "INSERT INTO mn_idl_request_user
-                 (request_auto_id, user_id, first_name, last_name, email, mobile_no,
+                 (request_auto_id, user_id, first_name, last_name,
                   dob, nationality, sex, emirates_id, address_in_uae, po_box,
                   home_country_address, license_no, place_of_birth, place_of_issue,
                   issued_date, expiry_date, type_of_dl, emirate, first_idl,
                   registered_date)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURDATE())",
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURDATE())",
                 [
                     $autoId, $userId,
-                    $p['FirstName'], $p['LastName'], $p['Email'], $p['Mobile'],
+                    $p['FirstName'], $p['LastName'],
                     date('Y-m-d', strtotime($p['BirthDate'])),
                     $p['NationalityId'], $p['Sex'], $p['EmiratesID'],
                     $p['UAEAddress'], $p['POBox'], $p['HomeAddress'],
@@ -269,9 +277,6 @@ final class MoiRepository
 
     public static function createCPDRequest(array $p): string
     {
-        $seq       = (int) MoiDB::scalar('SELECT COUNT(*)+1 FROM mn_cpd_requests');
-        $requestId = sprintf('CPD-ATC-%s/%d', date('Ymd'), $seq);
-
         MoiDB::beginTransaction();
         try {
             $userId = self::findOrCreateUser([
@@ -283,6 +288,9 @@ final class MoiRepository
                 'NationalityId' => $p['OwnerNationality'],
             ]);
 
+            // request_id is filled in below via UPDATE once the real auto_id is known —
+            // see the matching comment in createIDLRequest() for why a pre-generated
+            // COUNT(*)+1 sequence is unsafe here.
             $autoId = MoiDB::insert(
                 "INSERT INTO mn_cpd_requests
                  (request_id, request_type, belonging_user_id,
@@ -292,29 +300,35 @@ final class MoiRepository
                   extra_owner1_name, extra_owner2_name,
                   guarantee_amount, booking_channel, request_status,
                   information_verified, requested_datetime)
-                 VALUES (?, 'MOI', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, NOW())",
+                 VALUES ('PENDING', 'MOI', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, NOW())",
                 [
-                    $requestId, $userId,
+                    $userId,
                     $p['VehicleMake'], $p['VehicleModel'], $p['RegistrationNo'],
                     $p['MulkiyaNo'], $p['ChassisNo'], $p['EngineNo'],
                     $p['ManufacturingYear'], $p['Color'], $p['BodyType'],
                     $p['NoOfCylinders'], $p['NoOfSeats'], $p['HorsePower'],
                     $p['Weight'], $p['ExtraOwner1'] ?? '', $p['ExtraOwner2'] ?? '',
                     $p['GuaranteeAmount'] ?? 0,
-                    $p['Channel'] ?? 'MOI', 1,
+                    $p['Channel'] ?? 'MOI',
                 ],
             );
+            MoiDB::execute(
+                'UPDATE mn_cpd_requests SET request_id = ? WHERE auto_id = ?',
+                [sprintf('CPD-ATC-%s/%s', date('Ymd'), $autoId), $autoId],
+            );
 
+            // mn_cpd_request_user has no email/mobile_no columns of its own — those live
+            // on mn_users (already stored via findOrCreateUser() above).
             MoiDB::execute(
                 "INSERT INTO mn_cpd_request_user
-                 (request_auto_id, user_id, first_name, last_name, email, mobile_no,
+                 (request_auto_id, user_id, first_name, last_name,
                   nationality_id, city, dob, uae_address, po_box, license_no,
                   emirates_id, registered_date)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,CURDATE())",
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,CURDATE())",
                 [
                     $autoId, $userId,
-                    $p['OwnerFirstName'], $p['OwnerLastName'], $p['OwnerEmail'],
-                    $p['OwnerPhoneNo'], $p['OwnerNationality'], $p['OwnerCity'],
+                    $p['OwnerFirstName'], $p['OwnerLastName'],
+                    $p['OwnerNationality'], $p['OwnerCity'],
                     $p['OwnerDOB'] ?? null, $p['OwnerAddressInUAE'],
                     $p['OwnerPOBox'], $p['OwnerLIcenseNo'], $p['OwnerEmiratesID'],
                 ],
@@ -485,15 +499,14 @@ final class MoiRepository
 
         return MoiDB::insert(
             "INSERT INTO mn_users (email, first_name, last_name, mobile_no, emirates_id,
-              nationality, user_type, is_active, registered_date)
-             VALUES (?, ?, ?, ?, ?, ?, 2, 1, CURDATE())",
+              user_type, is_active, date_created)
+             VALUES (?, ?, ?, ?, ?, 2, 1, CURDATE())",
             [
                 $p['Email']         ?? '',
                 $p['FirstName']     ?? '',
                 $p['LastName']      ?? '',
                 $p['Mobile']        ?? '',
                 $p['EmiratesID']    ?? '',
-                $p['NationalityId'] ?? null,
             ],
         );
     }
