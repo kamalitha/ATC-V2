@@ -230,7 +230,7 @@ final class MoiSoapHandler
         return $this->svc->updatePaymentStatus($TransactionSequence, $ApplicationID, $PaymentReference);
     }
 
-    public function GetIDLPrintPDFString(string $TransactionSequence): array
+    public function GetIDLPrintView(string $TransactionSequence): array
     {
         return $this->svc->generateIDLPrint($TransactionSequence);
     }

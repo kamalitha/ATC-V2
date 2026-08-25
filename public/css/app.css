@@ -144,15 +144,21 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
      the same size regardless of container width — previously this used
      aspect-ratio (253:50) to derive height from width, which only matched
      .login-btn's height at one specific container width and looked
-     mismatched everywhere else. background-size:contain still preserves the
-     UAE PASS artwork's own aspect ratio inside the fixed box. */
-  width: 100%; height: 48px; cursor: pointer;
+     mismatched everywhere else. background-size was `contain`, which
+     preserves the UAE PASS artwork's own aspect ratio (253:50) inside the
+     box — but the login card's actual content width (~316px) is much wider
+     relative to 48px than that ratio, so `contain` letterboxed the artwork
+     down to ~243px wide, centered with empty space on both sides, making it
+     visibly narrower than .login-btn even though the box itself was full
+     width. `100% 100%` stretches the artwork to fill the box exactly, so
+     both buttons are always identically sized. */
+  width: 100%; height: 55px; cursor: pointer;
   background-color: transparent; border: none; padding: 0;
   background-image: url('../images/uae-pass/login-with/Active.svg');
-  background-size: contain; background-repeat: no-repeat; background-position: center;
+  background-size: 100% 100%; background-repeat: no-repeat; background-position: center;
   transition: transform .1s;
 }
-.btn-uae-pass:hover:not(:disabled)  { background-image: url('../images/uae-pass/login-with/Focus.svg'); transform: scale(1.01); }
+/*.btn-uae-pass:hover:not(:disabled)  { background-image: url('../images/uae-pass/login-with/Focus.svg'); transform: scale(1.01); }*/
 .btn-uae-pass:active:not(:disabled) { background-image: url('../images/uae-pass/login-with/Pressed.svg'); transform: scale(0.99); }
 .btn-uae-pass:disabled {
   background-image: url('../images/uae-pass/login-with/Disabled.svg');
@@ -1940,11 +1946,14 @@ table.dataTable .badge {
 .pub-identity-rows { display: flex; flex-direction: column; }
 .pub-identity-row {
   display: grid;
-  /* The 4th (error-message) track was `auto`, which sizes to the message's
-     unwrapped width — a long validation message (e.g. the Emirates ID format
-     hint) could squeeze the input track down to a few unusable pixels. Capping
-     it forces the message to wrap instead of stealing the input's space. */
-  grid-template-columns: 28px 160px minmax(60px, 1fr) minmax(0, 180px);
+  /* The 4th (error-message) track is `auto` (sizes to content, so it collapses
+     to ~0 when empty — the normal case). `.field-error`'s own max-width:180px
+     caps it once there IS a message, forcing long text to wrap instead of
+     stealing the input's space — using minmax(0,180px) here instead reserves
+     the full 180px even when the message is empty, which is fine in the
+     single-column layout but starves the input column in the 2-col/bycol
+     layouts below (each row gets roughly half the width). */
+  grid-template-columns: 28px 160px minmax(60px, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
@@ -1952,6 +1961,10 @@ table.dataTable .badge {
   font-size: .84rem;
 }
 .pub-identity-row:last-child { border-bottom: none; }
+/* Caps a long validation message (e.g. the Emirates ID format hint) from
+   stealing the input column's width — scoped here rather than on the base
+   .field-error rule so other, non-grid uses of that class are unaffected. */
+.pub-identity-row .field-error { max-width: 180px; }
 
 /* Side-by-side (2-column) row layout, used by CPD's Identity/Vehicle steps */
 .pub-identity-rows-2col {
@@ -1959,7 +1972,7 @@ table.dataTable .badge {
   grid-template-columns: 1fr 1fr;
 }
 .pub-identity-rows-2col .pub-identity-row {
-  grid-template-columns: 24px 130px minmax(60px, 1fr) minmax(0, 180px);
+  grid-template-columns: 24px 130px minmax(60px, 1fr) auto;
   border-bottom: 1px solid var(--border);
   border-right: 1px solid var(--border);
 }
@@ -1985,7 +1998,7 @@ table.dataTable .badge {
 .pub-identity-rows-bycol-4 { grid-auto-flow: column; grid-template-rows: repeat(4, auto); }
 .pub-identity-rows-bycol-3 .pub-identity-row,
 .pub-identity-rows-bycol-4 .pub-identity-row {
-  grid-template-columns: 24px 130px minmax(60px, 1fr) minmax(0, 180px);
+  grid-template-columns: 24px 130px minmax(60px, 1fr) auto;
   border-bottom: 1px solid var(--border);
   border-right: 1px solid var(--border);
 }

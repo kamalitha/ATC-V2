@@ -1093,141 +1093,147 @@ export async function renderCPDDetail(param) {
       <div class="page-actions">${actionsHtml}</div>
     </div>
 
-    <div class="section-card">
-      <div class="section-card-header">Applicant</div>
-      <div class="section-card-body">
+    <div class="rv-section">
+      <div class="rv-section-header">
+        <span class="rv-section-title">Applicant Information</span>
+      </div>
+      <div class="rv-identity-rows">
+        ${identityRow('fa-regular fa-user',        'Full Name',     `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim())}
+        ${identityRow('fa-regular fa-id-card',     'Emirates ID',   r.emirates_id)}
+        ${identityRow('fa-solid fa-flag',          'Nationality',   r.nationality)}
+        ${identityRow('fa-solid fa-venus-mars',    'Gender',        r.sex)}
+        ${identityRow('fa-solid fa-mobile-screen', 'Mobile Number', r.mobile_no)}
+        ${identityRow('fa-regular fa-envelope',    'Email Address', r.email)}
+      </div>
+    </div>
+
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:12px">Additional Information</div>
+      <div class="rv-extra-rows">
+        ${extraRow('Date of Birth', r.dob ? formatDate(r.dob) : '')}
+        ${extraRow('Passport Number', r.passport_no)}
+        ${extraRow('PO Box', r.po_box)}
+        ${extraRow('City', r.city)}
+        ${extraRow('UAE Address', r.uae_address)}
+        ${(r.extra_owner1_name || r.extra_owner1_eid || r.extra_owner1_passport) ? `
+        ${extraRow('Extra Driver 1 Full Name',       r.extra_owner1_name)}
+        ${extraRow('Extra Driver 1 Emirates ID',     r.extra_owner1_eid)}
+        ${extraRow('Extra Driver 1 Passport Number', r.extra_owner1_passport)}` : ''}
+        ${(r.extra_owner2_name || r.extra_owner2_eid || r.extra_owner2_passport) ? `
+        ${extraRow('Extra Driver 2 Full Name',       r.extra_owner2_name)}
+        ${extraRow('Extra Driver 2 Emirates ID',     r.extra_owner2_eid)}
+        ${extraRow('Extra Driver 2 Passport Number', r.extra_owner2_passport)}` : ''}
+      </div>
+    </div>
+
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:14px">Driving Licence Details</div>
+      <div class="rv-identity-rows">
+        ${identityRow('fa-solid fa-id-card',            'Licence Number', r.license_no)}
+        ${identityRow('fa-regular fa-calendar-xmark',   'Licence Expiry', r.license_expiry ? formatDate(r.license_expiry) : '')}
+      </div>
+    </div>
+
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:14px">Vehicle Details</div>
+      <div class="rv-identity-rows">
+        ${identityRow('fa-solid fa-hashtag',       'Vehicle Plate Number',  r.registration_no)}
+        ${identityRow('fa-regular fa-file-lines',  'Traffic File Number',   r.mulkiya_no)}
+        ${identityRow('fa-solid fa-car',           'Vehicle Make',          r.vehicle_make)}
+        ${identityRow('fa-solid fa-car-side',      'Vehicle Model',         r.vehicle_model)}
+        ${identityRow('fa-solid fa-sack-dollar',   'Vehicle Value (AED)',   r.vehicle_value ? formatCurrency(r.vehicle_value) : '')}
+        ${identityRow('fa-solid fa-location-dot',  'Vehicle Registered In', r.vehicle_registered_in)}
+        ${identityRow('fa-solid fa-shapes',        'Body Type',             r.body_type)}
+        ${identityRow('fa-regular fa-calendar',    'Year of Manufacture',   r.manuf_year)}
+        ${identityRow('fa-solid fa-palette',       'Color as per Mulkiya',  r.color)}
+        ${identityRow('fa-solid fa-weight-hanging','Net Weight (Empty Load)', r.net_weight ? r.net_weight + ' kg' : '')}
+        ${identityRow('fa-solid fa-barcode',       'Chassis No',            r.chassis_no)}
+        ${identityRow('fa-solid fa-gears',         'Engine No',             r.engine_no)}
+        ${identityRow('fa-solid fa-gauge-high',    'Horse Power',           r.horse_power ? r.horse_power + ' HP' : '')}
+        ${identityRow('fa-solid fa-layer-group',   'No of Cylinders',       r.no_of_cylinders)}
+        ${identityRow('fa-solid fa-chair',         'Upholstery',            r.upholstery)}
+        ${identityRow('fa-solid fa-users',         'No of Seats',           r.no_of_seats)}
+        ${identityRow('fa-solid fa-radio',         'Radio',                 r.radio)}
+        ${identityRow('fa-solid fa-ring',          'Spare Tyre',            r.spare_tyre)}
+        ${identityRow('fa-regular fa-calendar-check', 'Mulkiya Expiry',     r.mulkiya_expiry ? formatDate(r.mulkiya_expiry) : '')}
+        ${identityRow('fa-solid fa-building',      'Usage Type',            r.usage_type === 'COMPANY' ? 'Company Use' : 'Personal Use')}
+      </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--bg-base)">
+        <div class="rv-extra-rows">
+          ${extraRow('Additional Remarks', r.additional_remarks)}
+          ${extraRow('Other Particulars / Extra Items (1)', r.others1)}
+          ${extraRow('Other Particulars / Extra Items (2)', r.others2)}
+          ${extraRow('Reference 1 in UAE Full Name',            r.uae_refree1)}
+          ${extraRow('Reference 1 in UAE Mobile Number',        r.uae_refree1_mobile)}
+          ${extraRow('Reference 2 in UAE Full Name',            r.uae_refree2)}
+          ${extraRow('Reference 2 in UAE Mobile Number',        r.uae_refree2_mobile)}
+          ${extraRow('Reference 1 in Destination Full Name',    r.destination_refree1)}
+          ${extraRow('Reference 1 in Destination Mobile Number',r.destination_refree1_mobile)}
+          ${extraRow('Reference 2 in Destination Full Name',    r.destination_refree2)}
+          ${extraRow('Reference 2 in Destination Mobile Number',r.destination_refree2_mobile)}
+        </div>
+      </div>
+    </div>
+
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:12px">Delivery &amp; Payment</div>
+      <div class="rv-extra-rows">
+        ${extraRow('Delivery Option', r.delivery_option === 'home_delivery' ? 'Home Delivery'
+            : r.delivery_option === 'pick_from_dubai_office' ? 'Collection — Dubai Office'
+            : r.delivery_option === 'pick_from_abudhabi_office' ? 'Collection — Abu Dhabi Office'
+            : r.delivery_option)}
+        ${r.delivery_option === 'home_delivery' ? extraRow('Delivery Address', r.delivery_address) : ''}
+      </div>
+    </div>
+
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:12px">Trip Details</div>
+      <div class="rv-extra-rows">
+        ${extraRow('Destination Countries', (r.countries ?? []).map(c => c.nationality).join(', '))}
+      </div>
+    </div>
+
+    <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border);background:var(--bg-surface)">
+      <div class="section-card-header" style="font-size:.82rem">Application Summary</div>
+      <div class="section-card-body" style="padding:16px 20px">
         <div class="detail-grid">
-          ${detail('Full Name',         `${r.first_name} ${r.last_name}`)}
-          ${detail('Date of Birth',     r.dob ? formatDate(r.dob) : '—')}
-          ${detail('Nationality',       r.nationality || '—')}
-          ${detail('Gender',            r.sex || '—')}
-          ${detail('Email',             r.email)}
-          ${detail('Mobile',            r.mobile_no)}
-          ${detail('Emirates ID',       r.emirates_id)}
-          ${detail('Passport No',       r.passport_no)}
-          ${detail('PO Box',            r.po_box)}
-          ${detail('City',              r.city)}
-          ${detail('UAE Address',       r.uae_address)}
-          ${detail('Extra Driver 1 Full Name',       r.extra_owner1_name     || '—')}
-          ${detail('Extra Driver 1 Emirates ID',     r.extra_owner1_eid      || '—')}
-          ${detail('Extra Driver 1 Passport Number', r.extra_owner1_passport || '—')}
-          ${detail('Extra Driver 2 Full Name',       r.extra_owner2_name     || '—')}
-          ${detail('Extra Driver 2 Emirates ID',     r.extra_owner2_eid      || '—')}
-          ${detail('Extra Driver 2 Passport Number', r.extra_owner2_passport || '—')}
-        </div>
-      </div>
-    </div>
-
-    <div class="section-card">
-      <div class="section-card-header">Vehicle</div>
-      <div class="section-card-body">
-        <div class="detail-grid">
-          ${detail('Licence Number',    r.license_no || '—')}
-          ${detail('Licence Expiry',    r.license_expiry ? formatDate(r.license_expiry) : '—')}
-          ${detail('Plate No',          r.registration_no)}
-          ${detail('Make',              r.vehicle_make)}
-          ${detail('Model',             r.vehicle_model)}
-          ${detail('Registered In',     r.vehicle_registered_in || '—')}
-          ${detail('Chassis No',        r.chassis_no)}
-          ${detail('Engine No',         r.engine_no)}
-          ${detail('Year',              r.manuf_year)}
-          ${detail('Color',             r.color)}
-          ${detail('Body Type',         r.body_type)}
-          ${detail('Cylinders',         r.no_of_cylinders)}
-          ${detail('Horsepower',        r.horse_power ? r.horse_power + ' HP' : '—')}
-          ${detail('Net Weight',        r.net_weight  ? r.net_weight  + ' kg' : '—')}
-          ${detail('Value',             formatCurrency(r.vehicle_value))}
-          ${detail('Mulkiya No',        r.mulkiya_no)}
-          ${detail('Mulkiya Expiry',    formatDate(r.mulkiya_expiry))}
-          ${detail('Upholstery',        r.upholstery || '—')}
-          ${detail('No of Seats',       r.no_of_seats || '—')}
-          ${detail('Radio',             r.radio       || '—')}
-          ${detail('Spare Tyre',        r.spare_tyre  || '—')}
-          ${detail('Usage Type',        r.usage_type === 'COMPANY' ? 'Company Use' : 'Personal Use')}
-        </div>
-        ${r.additional_remarks || r.others1 || r.others2 || r.uae_refree1 || r.destination_refree1 || r.uae_refree2 || r.destination_refree2 ? `
-        <div class="detail-grid" style="margin-top:12px">
-          ${r.additional_remarks  ? detail('Additional Remarks',                 r.additional_remarks)  : ''}
-          ${r.others1             ? detail('Other Particulars / Extra Items (1)', r.others1)             : ''}
-          ${r.others2             ? detail('Other Particulars / Extra Items (2)', r.others2)             : ''}
-          ${r.uae_refree1         ? detail('Reference 1 in UAE Full Name',        r.uae_refree1)         : ''}
-          ${r.uae_refree1_mobile  ? detail('Reference 1 in UAE Mobile Number',    r.uae_refree1_mobile)  : ''}
-          ${r.uae_refree2         ? detail('Reference 2 in UAE Full Name',        r.uae_refree2)         : ''}
-          ${r.uae_refree2_mobile  ? detail('Reference 2 in UAE Mobile Number',    r.uae_refree2_mobile)  : ''}
-          ${r.destination_refree1        ? detail('Reference 1 in Destination Full Name',     r.destination_refree1)        : ''}
-          ${r.destination_refree1_mobile ? detail('Reference 1 in Destination Mobile Number', r.destination_refree1_mobile) : ''}
-          ${r.destination_refree2        ? detail('Reference 2 in Destination Full Name',     r.destination_refree2)        : ''}
-          ${r.destination_refree2_mobile ? detail('Reference 2 in Destination Mobile Number', r.destination_refree2_mobile) : ''}
-        </div>` : ''}
-      </div>
-    </div>
-
-    <div class="section-card">
-      <div class="section-card-header">Delivery / Pick-up</div>
-      <div class="section-card-body">
-        <div class="detail-grid">
-          ${detail('Delivery Method', r.delivery_option === 'home_delivery' ? 'Home Delivery'
-              : r.delivery_option === 'pick_from_dubai_office' ? 'Collection — Dubai Office'
-              : r.delivery_option === 'pick_from_abudhabi_office' ? 'Collection — Abu Dhabi Office'
-              : (r.delivery_option || '—'))}
-          ${r.delivery_option === 'home_delivery' ? detail('Delivery Address', r.delivery_address || '—') : ''}
-        </div>
-      </div>
-    </div>
-
-    <div class="section-card">
-      <div class="section-card-header">Countries</div>
-      <div class="section-card-body">
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${(r.countries ?? []).map(c => `<span class="badge badge-info">${c.nationality}</span>`).join('') || '—'}
-        </div>
-      </div>
-    </div>
-
-    <div class="section-card">
-      <div class="section-card-header">Financials</div>
-      <div class="section-card-body">
-        <div class="detail-grid" style="margin-bottom:12px">
           ${detail('Category',  r.request_category)}
           ${detail('Submitted', formatDateTime(r.requested_datetime))}
         </div>
       </div>
+    </div>
+
+    <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border);background:var(--bg-surface)">
+      <div class="section-card-header" style="font-size:.82rem">
+        <i class="fa-solid fa-calculator" style="color:var(--accent);margin-right:6px"></i>
+        Fee Breakdown
+      </div>
       <div class="section-card-body" style="padding:0">
         <table style="width:100%;border-collapse:collapse">
           <tbody>
-            <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted);width:50%">Payment Method</td>
-              <td style="padding:10px 16px;font-weight:500">${r.method_of_payment ? r.method_of_payment.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) : '—'}</td>
-            </tr>
-            <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">Guarantee Fee</td>
-              <td style="padding:10px 16px;font-weight:500">${formatCurrency(r.guarantee_amount)}</td>
-            </tr>
-            <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">Booking Fee</td>
-              <td style="padding:10px 16px;font-weight:500">${formatCurrency(r.booking_fee)}</td>
-            </tr>
-            <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">Extra Fees</td>
-              <td style="padding:10px 16px;font-weight:500">${r.extra_fees != null ? formatCurrency(r.extra_fees) : 'AED 0.00'}</td>
-            </tr>
-            <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">VAT (5%)</td>
-              <td style="padding:10px 16px;font-weight:500">${formatCurrency(r.vat_amount)}</td>
-            </tr>
-            <tr style="border-bottom:1px solid var(--border);background:var(--accent-dim)">
-              <td style="padding:12px 16px;font-weight:700">Total Amount</td>
-              <td style="padding:12px 16px;font-weight:700;color:var(--accent)">${formatCurrency(r.total_amount)}</td>
-            </tr>
-            ${r.order_ref_no ? `
-            <tr>
-              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">Payment Reference</td>
-              <td style="padding:10px 16px;font-weight:500;font-family:monospace">${r.order_ref_no}</td>
-            </tr>` : ''}
+            ${cpdFeeRow('Guarantee Fee', r.guarantee_amount)}
+            ${cpdFeeRow('Processing Fee (2.5% of Guarantee Fee)', r.processing_fee)}
+            ${cpdFeeRow('Booking Fee', r.booking_fee)}
+            ${cpdFeeRow('Extra Fees', r.extra_fees)}
+            ${cpdFeeRow('VAT (5%)', r.vat_amount)}
+            ${cpdFeeRow('Total Amount', r.total_amount, true, true)}
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border);background:var(--bg-surface)">
+      <div class="section-card-header" style="font-size:.82rem">
+        <i class="fa-solid fa-wallet" style="color:var(--accent);margin-right:6px"></i>
+        Payment
+      </div>
+      <div class="section-card-body">
+        <div class="detail-grid">
+          ${detail('Payment Method',   r.method_of_payment ? r.method_of_payment.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) : '—')}
+          ${r.order_ref_no ? detail('Payment Reference', `<span style="font-family:monospace">${r.order_ref_no}</span>`) : ''}
+        </div>
         ${r.booking_fee_status == 1 ? `
-        <div style="margin:12px 16px 16px;padding:12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:var(--radius)">
+        <div style="margin-top:12px;padding:12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:var(--radius)">
           <div style="font-size:.78rem;font-weight:700;color:var(--success,#22c55e);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">
             <i class="fa-solid fa-circle-check"></i> Payment Received
           </div>
@@ -1309,21 +1315,10 @@ export async function renderCPDDetail(param) {
     </div>` : ''}
 
     ${docs && docs.length ? `
-    <div class="section-card" style="margin-top:16px">
-      <div class="section-card-header">Documents</div>
-      <div class="section-card-body">
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
-          ${docs.map(doc => `
-          <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
-            <div style="width:100%;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);
-              cursor:zoom-in" data-lightbox="${doc.base64}" data-label="${doc.label}">
-              <img src="${doc.base64}" alt="${doc.label}"
-                style="width:100%;height:110px;object-fit:cover;display:block" />
-            </div>
-            <span style="font-size:.75rem;font-weight:500;text-transform:uppercase;letter-spacing:.04em;
-              color:var(--text-muted);text-align:center">${doc.label}</span>
-          </div>`).join('')}
-        </div>
+    <div class="rv-section" style="margin-top:16px">
+      <div class="rv-section-title">Documents Attached</div>
+      <div class="rv-docs-grid">
+        ${docs.map(cpdDocThumb).join('')}
       </div>
     </div>` : ''}
 
@@ -2482,6 +2477,32 @@ async function cpdPrintAWB(id) {
 
 function detail(label, value) {
   return `<div class="detail-item"><label>${label}</label><div class="detail-val">${value ?? '—'}</div></div>`;
+}
+
+// ── Shared with the public wizard's "Review & Pay" step — same icon-row / card
+// look for the officer-side CPD detail view's read-only info sections. ──
+function identityRow(icon, label, value) {
+  return `<div class="rv-identity-row"><span class="rv-id-icon"><i class="${icon}"></i></span><span class="rv-id-label">${label}</span><span class="rv-id-value">${value || '—'}</span></div>`;
+}
+function extraRow(label, value) {
+  return `<div class="rv-extra-row"><span class="rv-extra-label">${label}</span><span class="rv-extra-value">${value || '—'}</span></div>`;
+}
+function cpdFeeRow(label, value, bold = false, accent = false) {
+  const fmt = n => 'AED ' + Number(n ?? 0).toLocaleString('en-AE', { minimumFractionDigits: 2 });
+  return `
+    <tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:10px 16px;font-size:.875rem${bold ? ';font-weight:700' : ''}">${label}</td>
+      <td style="padding:10px 16px;text-align:right;font-weight:${bold ? '700' : '500'};font-size:${bold ? '1rem' : '.875rem'};${accent ? 'color:var(--accent)' : ''}">${fmt(value)}</td>
+    </tr>`;
+}
+function cpdDocThumb(doc) {
+  return `
+    <div class="rv-doc-item">
+      <div class="rv-doc-thumb rv-doc-thumb-clickable" data-lightbox="${doc.base64}" data-label="${doc.label}">
+        <img src="${doc.base64}" alt="${doc.label}" />
+      </div>
+      <div class="rv-doc-label">${doc.label}</div>
+    </div>`;
 }
 
 async function cpdOfficerCreateReturn(id) {

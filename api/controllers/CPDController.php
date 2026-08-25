@@ -1979,6 +1979,12 @@ class CPDController
             'cpd_owner_visa'        => 'Visa Page',
             'cpd_trade_license'     => 'Trade License',
             'cpd_noc'               => 'NOC',
+            'cpd_extra1_eid_front'  => 'Extra Driver 1 - Emirates ID Front',
+            'cpd_extra1_eid_back'   => 'Extra Driver 1 - Emirates ID Back',
+            'cpd_extra1_passport'   => 'Extra Driver 1 - Passport Copy',
+            'cpd_extra2_eid_front'  => 'Extra Driver 2 - Emirates ID Front',
+            'cpd_extra2_eid_back'   => 'Extra Driver 2 - Emirates ID Back',
+            'cpd_extra2_passport'   => 'Extra Driver 2 - Passport Copy',
         ];
 
         $docs = [];
@@ -2717,6 +2723,12 @@ class CPDController
             'visa_page'      => 'cpd_owner_visa',
             'trade_license'  => 'cpd_trade_license',
             'noc'            => 'cpd_noc',
+            'extra1_eid_front' => 'cpd_extra1_eid_front',
+            'extra1_eid_back'  => 'cpd_extra1_eid_back',
+            'extra1_passport'  => 'cpd_extra1_passport',
+            'extra2_eid_front' => 'cpd_extra2_eid_front',
+            'extra2_eid_back'  => 'cpd_extra2_eid_back',
+            'extra2_passport'  => 'cpd_extra2_passport',
         ];
 
         $saved  = [];

@@ -377,8 +377,8 @@
   </message>
   <message name="UpdatePaymentStatusResponse"><part name="UpdatePaymentStatusResult" type="tns:ServiceStatus"/></message>
 
-  <message name="GetIDLPrintPDFStringRequest">  <part name="TransactionSequence" type="xsd:string"/></message>
-  <message name="GetIDLPrintPDFStringResponse"> <part name="GetIDLPrintPDFStringResult" type="tns:IDL"/></message>
+  <message name="GetIDLPrintViewRequest">  <part name="TransactionSequence" type="xsd:string"/></message>
+  <message name="GetIDLPrintViewResponse"> <part name="GetIDLPrintViewResult" type="tns:IDL"/></message>
 
   <message name="GetAllIDLStatusesRequest"/>
   <message name="GetAllIDLStatusesResponse"><part name="GetAllIDLStatusesResult" type="tns:ArrayOfIDLStatusBindingView"/></message>
@@ -502,7 +502,7 @@
     <operation name="CreateMOIRequest">            <input message="tns:CreateMOIRequestRequest"/>            <output message="tns:CreateMOIRequestResponse"/></operation>
     <operation name="DeleteMOIRequest">            <input message="tns:DeleteMOIRequestRequest"/>            <output message="tns:DeleteMOIRequestResponse"/></operation>
     <operation name="UpdatePaymentStatus">         <input message="tns:UpdatePaymentStatusRequest"/>         <output message="tns:UpdatePaymentStatusResponse"/></operation>
-    <operation name="GetIDLPrintPDFString">        <input message="tns:GetIDLPrintPDFStringRequest"/>        <output message="tns:GetIDLPrintPDFStringResponse"/></operation>
+    <operation name="GetIDLPrintView">        <input message="tns:GetIDLPrintViewRequest"/>        <output message="tns:GetIDLPrintViewResponse"/></operation>
     <operation name="GetAllIDLStatuses">           <input message="tns:GetAllIDLStatusesRequest"/>           <output message="tns:GetAllIDLStatusesResponse"/></operation>
     <operation name="CreateCPDRequest">            <input message="tns:CreateCPDRequestRequest"/>            <output message="tns:CreateCPDRequestResponse"/></operation>
     <operation name="UpdateCPDRequestPaymentStatus"><input message="tns:UpdateCPDRequestPaymentStatusRequest"/><output message="tns:UpdateCPDRequestPaymentStatusResponse"/></operation>
@@ -533,7 +533,7 @@
     <operation name="CreateMOIRequest">             <soap:operation soapAction="CreateMOIRequest"/>             <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="DeleteMOIRequest">             <soap:operation soapAction="DeleteMOIRequest"/>             <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="UpdatePaymentStatus">          <soap:operation soapAction="UpdatePaymentStatus"/>          <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
-    <operation name="GetIDLPrintPDFString">         <soap:operation soapAction="GetIDLPrintPDFString"/>         <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="GetIDLPrintView">         <soap:operation soapAction="GetIDLPrintView"/>         <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="GetAllIDLStatuses">            <soap:operation soapAction="GetAllIDLStatuses"/>            <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="CreateCPDRequest">             <soap:operation soapAction="CreateCPDRequest"/>             <input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="UpdateCPDRequestPaymentStatus"><soap:operation soapAction="UpdateCPDRequestPaymentStatus"/><input><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></input>  <output><soap:body use="literal" namespace="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>

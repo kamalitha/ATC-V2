@@ -1982,14 +1982,14 @@ export async function renderPublicApplyCPD(param = null) {
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
             <span class="pub-id-label">Full Name</span>
-            <input name="full_name" class="pub-id-inline-input" placeholder="Full name" />
+            <input name="full_name" class="pub-id-inline-input" placeholder="Full name" value="${formData.full_name || ''}" />
             <div class="field-error" id="err-full_name" style="margin:0"></div>
           </div>
 
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
             <span class="pub-id-label">Emirates ID</span>
-            <input name="emirates_id" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
+            <input name="emirates_id" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" value="${formData.emirates_id || ''}" />
             <div class="field-error" id="err-emirates_id" style="margin:0"></div>
           </div>
 
@@ -1998,7 +1998,7 @@ export async function renderPublicApplyCPD(param = null) {
             <span class="pub-id-label">Nationality</span>
             <select name="nationality" class="pub-id-inline-select">
               <option value="">Select nationality</option>
-              ${nationalities.map(n => `<option value="${n.nationality_id}">${n.nationality}</option>`).join('')}
+              ${nationalities.map(n => `<option value="${n.nationality_id}" ${String(n.nationality_id) === String(formData.nationality) ? 'selected' : ''}>${n.nationality}</option>`).join('')}
             </select>
             <div class="field-error" id="err-nationality" style="margin:0"></div>
           </div>
@@ -2008,8 +2008,8 @@ export async function renderPublicApplyCPD(param = null) {
             <span class="pub-id-label">Gender</span>
             <select name="sex" class="pub-id-inline-select">
               <option value="">Select</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
+              <option value="Male" ${formData.sex === 'Male' ? 'selected' : ''}>Male</option>
+              <option value="Female" ${formData.sex === 'Female' ? 'selected' : ''}>Female</option>
             </select>
             <div class="field-error" id="err-sex" style="margin:0"></div>
           </div>
@@ -2017,14 +2017,14 @@ export async function renderPublicApplyCPD(param = null) {
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
             <span class="pub-id-label">Mobile Number</span>
-            <input name="mobile_no" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
+            <input name="mobile_no" class="pub-id-inline-input" placeholder="05X XXX XXXX" value="${formData.mobile_no || ''}" />
             <div class="field-error" id="err-mobile_no" style="margin:0"></div>
           </div>
 
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-regular fa-envelope"></i></span>
             <span class="pub-id-label">Email Address</span>
-            <input name="email" type="email" class="pub-id-inline-input" placeholder="your@email.com" />
+            <input name="email" type="email" class="pub-id-inline-input" placeholder="your@email.com" value="${formData.email || ''}" />
             <div class="field-error" id="err-email" style="margin:0"></div>
           </div>
 
@@ -2410,6 +2410,11 @@ export async function renderPublicApplyCPD(param = null) {
             <input name="extra_owner1_passport" class="pub-id-inline-input" placeholder="Passport number" />
           </div>
         </div>
+        <div class="doc-upload-grid" style="margin-top:14px">
+          ${cpdDocZone('extra1_eid_front', 'Extra Driver 1 - Emirates ID (Front)')}
+          ${cpdDocZone('extra1_eid_back',  'Extra Driver 1 - Emirates ID (Back)')}
+          ${cpdDocZone('extra1_passport',  'Extra Driver 1 - Passport Copy')}
+        </div>
       </div>
 
       <div id="cpd-extra-driver-2-fields" style="display:${showExtra2 ? '' : 'none'}">
@@ -2434,6 +2439,11 @@ export async function renderPublicApplyCPD(param = null) {
             <span class="pub-id-label">Extra Driver 2 Passport Number</span>
             <input name="extra_owner2_passport" class="pub-id-inline-input" placeholder="Passport number" />
           </div>
+        </div>
+        <div class="doc-upload-grid" style="margin-top:14px">
+          ${cpdDocZone('extra2_eid_front', 'Extra Driver 2 - Emirates ID (Front)')}
+          ${cpdDocZone('extra2_eid_back',  'Extra Driver 2 - Emirates ID (Back)')}
+          ${cpdDocZone('extra2_passport',  'Extra Driver 2 - Passport Copy')}
         </div>
       </div>
     </div>`;
@@ -2610,6 +2620,12 @@ export async function renderPublicApplyCPD(param = null) {
           ${isCompany ? docThumb('visa_page',     'Visa Page of Owner') : ''}
           ${isCompany ? docThumb('trade_license', 'Trade License') : ''}
           ${isCompany ? docThumb('noc',           'NOC from Company Owner') : ''}
+          ${formData.extra_owner1_name ? docThumb('extra1_eid_front', 'Extra Driver 1 - Emirates ID (Front)') : ''}
+          ${formData.extra_owner1_name ? docThumb('extra1_eid_back',  'Extra Driver 1 - Emirates ID (Back)') : ''}
+          ${formData.extra_owner1_name ? docThumb('extra1_passport',  'Extra Driver 1 - Passport Copy') : ''}
+          ${formData.extra_owner2_name ? docThumb('extra2_eid_front', 'Extra Driver 2 - Emirates ID (Front)') : ''}
+          ${formData.extra_owner2_name ? docThumb('extra2_eid_back',  'Extra Driver 2 - Emirates ID (Back)') : ''}
+          ${formData.extra_owner2_name ? docThumb('extra2_passport',  'Extra Driver 2 - Passport Copy') : ''}
         </div>
       </div>
 
@@ -2937,7 +2953,7 @@ export async function renderPublicApplyCPD(param = null) {
 
     return `
       <!-- Application summary -->
-      <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border)">
+      <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border);background:var(--bg-surface)">
         <div class="section-card-header" style="font-size:.82rem">Application Summary</div>
         <div class="section-card-body" style="padding:16px 20px">
           <div class="detail-grid">
@@ -2963,7 +2979,7 @@ export async function renderPublicApplyCPD(param = null) {
 
       <!-- Guarantee group breakdown -->
       ${breakdown.length ? `
-      <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border)">
+      <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border);background:var(--bg-surface)">
         <div class="section-card-header" style="font-size:.82rem">
           <i class="fa-solid fa-earth-americas" style="color:var(--accent);margin-right:6px"></i>
           Guarantee by Destination
@@ -3000,14 +3016,14 @@ export async function renderPublicApplyCPD(param = null) {
           </div>` : ''}
         </div>
       </div>` : `
-      <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border)">
+      <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border);background:var(--bg-surface)">
         <div class="section-card-body" style="padding:20px;color:var(--text-muted);font-size:.88rem">
           No countries selected — please go back to Step 3.
         </div>
       </div>`}
 
       <!-- Fee breakdown -->
-      <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border)">
+      <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border);background:var(--bg-surface)">
         <div class="section-card-header" style="font-size:.82rem">
           <i class="fa-solid fa-calculator" style="color:var(--accent);margin-right:6px"></i>
           Fee Breakdown
@@ -3028,7 +3044,7 @@ export async function renderPublicApplyCPD(param = null) {
       </div>
 
       <!-- Payment method -->
-      <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border)">
+      <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border);background:var(--bg-surface)">
         <div class="section-card-header" style="font-size:.82rem">
           <i class="fa-solid fa-wallet" style="color:var(--accent);margin-right:6px"></i>
           Payment Method
@@ -3154,7 +3170,9 @@ export async function renderPublicApplyCPD(param = null) {
     // Capture document File objects before this step's DOM is destroyed
     if (CPD_STEPS[currentStep].id === 'vehicle') {
       const slots = ['eid_front','eid_back','dl_front','dl_back','traffic_front','traffic_back',
-                     'passport_photo','visa_page','trade_license','noc'];
+                     'passport_photo','visa_page','trade_license','noc',
+                     'extra1_eid_front','extra1_eid_back','extra1_passport',
+                     'extra2_eid_front','extra2_eid_back','extra2_passport'];
       slots.forEach(slot => {
         const input = document.querySelector(`input[data-cpd-doc="${slot}"]`);
         if (input?.files?.[0]) savedDocs[slot] = input.files[0];
@@ -3239,6 +3257,9 @@ export async function renderPublicApplyCPD(param = null) {
         const el = document.querySelector(`[name="${key}"]`);
         if (el) el.value = '';
         delete formData[key];
+      });
+      ['eid_front', 'eid_back', 'passport'].forEach(suffix => {
+        delete savedDocs[`extra${n}_${suffix}`];
       });
       const errEl = document.getElementById(`err-extra_owner${n}_eid`);
       if (errEl) errEl.textContent = '';
@@ -3421,9 +3442,32 @@ export async function renderPublicApplyCPD(param = null) {
 
     document.querySelector('.btn-uae-pass-continue')?.addEventListener('click', () => {
       showUaePassLoader(
-        () => {
+        async () => {
           uaePassJustVerified = true;
           uaePassRejected     = false;
+          // "Continue with UAE PASS" jumps straight to step 2 without ever going through
+          // btn-cpd-next's saveCPDStep() call — so anything the user had typed here was
+          // being silently dropped, and full_name/mobile_no/email/sex were never captured
+          // at all (there's no real UAE PASS API call behind this loader — it's a fixed
+          // 5s delay). That left required identity fields permanently empty, which the
+          // frontend never re-checks after step 1 but the backend does — surfacing only
+          // as a generic "Validation failed" at final submit. Save whatever's in the DOM
+          // first, then backfill from the account's full profile (standing in for what a
+          // real UAE PASS response would supply) wherever the user didn't already fill it
+          // in. currentUser itself can't be trusted here — a fresh interactive login only
+          // ever populates it from the slim /auth/login response, which omits mobile_no —
+          // so re-fetch the full profile via /auth/me instead.
+          saveCPDStep();
+          try {
+            const profile = await api.auth.me();
+            if (!formData.full_name && (profile.first_name || profile.last_name)) {
+              formData.full_name  = [profile.first_name, profile.last_name].filter(Boolean).join(' ');
+              formData.first_name = profile.first_name ?? '';
+              formData.last_name  = profile.last_name  ?? '';
+            }
+            if (!formData.mobile_no) formData.mobile_no = profile.mobile_no ?? '';
+            if (!formData.email)     formData.email     = profile.email     ?? '';
+          } catch { /* fall back to whatever saveCPDStep() already captured */ }
           currentStep = 1;
           renderCPDWizard();
         },
@@ -3606,7 +3650,9 @@ export async function renderPublicApplyCPD(param = null) {
 
       // Upload documents
       const slots  = ['eid_front','eid_back','dl_front','dl_back','traffic_front','traffic_back',
-                       'passport_photo','visa_page','trade_license','noc'];
+                       'passport_photo','visa_page','trade_license','noc',
+                       'extra1_eid_front','extra1_eid_back','extra1_passport',
+                       'extra2_eid_front','extra2_eid_back','extra2_passport'];
       const fd     = new FormData();
       let hasFiles = false;
       slots.forEach(slot => {
@@ -3646,7 +3692,15 @@ export async function renderPublicApplyCPD(param = null) {
       }
 
     } catch (err) {
-      errEl.textContent = err.message;
+      // err.errors is {field: [messages]} from the backend validator — surface the
+      // actual missing/invalid fields instead of the generic "Validation failed", since
+      // a field can pass every per-step frontend check yet still be empty at submit time
+      // (e.g. Identity fields never got saved because "Continue with UAE PASS" skipped
+      // straight to step 2 without going through the usual save-on-Next path).
+      const fieldMsgs = err.errors ? Object.values(err.errors).flat() : [];
+      errEl.textContent = fieldMsgs.length
+        ? `${fieldMsgs.join(' ')} Please go back and complete any missing fields.`
+        : err.message;
       errEl?.classList.remove('hidden');
       btn.disabled = false;
       btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Submit Application';
@@ -4192,6 +4246,25 @@ async function renderPublicCPDView(autoId) {
   const payMap = { CREDIT_CARD:'Credit Card', CASH:'Cash', CARD:'Card', ONLINE:'Online', CHEQUE:'Cheque' };
   const aed = n => n != null ? 'AED ' + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '—';
 
+  // ── Same icon-row / card look as the wizard's "Review & Pay" step and the
+  // officer-side CPD detail view — kept uniform across every CPD view screen. ──
+  const identityRow = (icon, label, value) => `
+    <div class="rv-identity-row"><span class="rv-id-icon"><i class="${icon}"></i></span><span class="rv-id-label">${label}</span><span class="rv-id-value">${esc(value) || '—'}</span></div>`;
+  const extraRow = (label, value) => `
+    <div class="rv-extra-row"><span class="rv-extra-label">${label}</span><span class="rv-extra-value">${esc(value) || '—'}</span></div>`;
+  const cpdFeeRow = (label, value, bold = false, accent = false) => `
+    <tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:10px 16px;font-size:.875rem${bold ? ';font-weight:700' : ''}">${label}</td>
+      <td style="padding:10px 16px;text-align:right;font-weight:${bold ? '700' : '500'};font-size:${bold ? '1rem' : '.875rem'};${accent ? 'color:var(--accent)' : ''}">${aed(value)}</td>
+    </tr>`;
+  const cpdDocThumb = doc => `
+    <div class="rv-doc-item">
+      <div class="rv-doc-thumb rv-doc-thumb-clickable" data-doc-url="${doc.base64}" data-doc-label="${doc.label}">
+        <img src="${doc.base64}" alt="${doc.label}" />
+      </div>
+      <div class="rv-doc-label">${doc.label}</div>
+    </div>`;
+
   const countries    = (r.countries ?? []).map(c => esc(c.nationality)).join(', ') || '&#8212;';
   const payMethodKey = (r.method_of_payment ?? '').toUpperCase();
   const payMethodLabel = payMap[payMethodKey] || esc(r.method_of_payment) || '&#8212;';
@@ -4237,21 +4310,32 @@ async function renderPublicCPDView(autoId) {
         </form>
       </div>
     </div>` : `
-    <div class="section-card">
-      <div class="section-card-header">Owner Details</div>
-      <div class="section-card-body">
-        <div class="detail-grid">
-          ${d('Full Name', [r.title, r.first_name, r.last_name].filter(Boolean).join(' '))}
-          ${d('Emirates ID', esc(r.emirates_id))}
-          ${d('Mobile', esc(r.mobile_no))}
-          ${d('Email', esc(r.email))}
-          ${d('Passport No', esc(r.passport_no))}
-          ${d('PO Box', esc(r.po_box))}
-          ${d('City', esc(r.city))}
-          ${d('UAE Address', esc(r.uae_address))}
-          ${d('Extra Driver 1 Name', esc(r.extra_owner1_name) || '—')}
-          ${d('Extra Driver 2 Name', esc(r.extra_owner2_name) || '—')}
-        </div>
+    <div class="rv-section">
+      <div class="rv-section-header">
+        <span class="rv-section-title">Owner Details</span>
+      </div>
+      <div class="rv-identity-rows">
+        ${identityRow('fa-regular fa-user',        'Full Name',     [r.title, r.first_name, r.last_name].filter(Boolean).join(' '))}
+        ${identityRow('fa-regular fa-id-card',     'Emirates ID',   r.emirates_id)}
+        ${identityRow('fa-solid fa-mobile-screen', 'Mobile Number', r.mobile_no)}
+        ${identityRow('fa-regular fa-envelope',    'Email Address', r.email)}
+      </div>
+    </div>
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:12px">Additional Information</div>
+      <div class="rv-extra-rows">
+        ${extraRow('Passport Number', r.passport_no)}
+        ${extraRow('PO Box', r.po_box)}
+        ${extraRow('City', r.city)}
+        ${extraRow('UAE Address', r.uae_address)}
+        ${(r.extra_owner1_name || r.extra_owner1_eid || r.extra_owner1_passport) ? `
+        ${extraRow('Extra Driver 1 Full Name',       r.extra_owner1_name)}
+        ${extraRow('Extra Driver 1 Emirates ID',     r.extra_owner1_eid)}
+        ${extraRow('Extra Driver 1 Passport Number', r.extra_owner1_passport)}` : ''}
+        ${(r.extra_owner2_name || r.extra_owner2_eid || r.extra_owner2_passport) ? `
+        ${extraRow('Extra Driver 2 Full Name',       r.extra_owner2_name)}
+        ${extraRow('Extra Driver 2 Emirates ID',     r.extra_owner2_eid)}
+        ${extraRow('Extra Driver 2 Passport Number', r.extra_owner2_passport)}` : ''}
       </div>
     </div>`;
 
@@ -4290,57 +4374,70 @@ async function renderPublicCPDView(autoId) {
     ${ownerSection}
 
     <!-- Vehicle Information -->
-    <div class="section-card">
-      <div class="section-card-header">Vehicle Information</div>
-      <div class="section-card-body">
-        <div class="detail-grid">
-          ${d('Traffic File No', esc(r.mulkiya_no))}
-          ${d('Registration No', esc(r.registration_no))}
-          ${d('Make', esc(r.vehicle_make))}
-          ${d('Model', esc(r.vehicle_model))}
-          ${d('Year', esc(r.manuf_year))}
-          ${d('Color', esc(r.color))}
-          ${d('Body Type', esc(r.body_type))}
-          ${d('Chassis No', esc(r.chassis_no))}
-          ${d('Engine No', esc(r.engine_no))}
-          ${d('Horse Power', esc(r.horse_power))}
-          ${d('Cylinders', esc(r.no_of_cylinders))}
-          ${d('Net Weight', esc(r.net_weight))}
-          ${d('Vehicle Value', r.vehicle_value != null ? 'AED ' + Number(r.vehicle_value).toLocaleString() : '—')}
-          ${d('Registered In', esc(r.vehicle_registered_in))}
-          ${d('Upholstery', esc(r.upholstery))}
-          ${d('No of Seats', esc(r.no_of_seats))}
-          ${d('Radio', esc(r.radio))}
-          ${d('Spare Tyre', esc(r.spare_tyre))}
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:14px">Vehicle Details</div>
+      <div class="rv-identity-rows">
+        ${identityRow('fa-solid fa-hashtag',       'Vehicle Plate Number',  r.registration_no)}
+        ${identityRow('fa-regular fa-file-lines',  'Traffic File Number',   r.mulkiya_no)}
+        ${identityRow('fa-solid fa-car',           'Vehicle Make',          r.vehicle_make)}
+        ${identityRow('fa-solid fa-car-side',      'Vehicle Model',         r.vehicle_model)}
+        ${identityRow('fa-solid fa-sack-dollar',   'Vehicle Value (AED)',   r.vehicle_value != null ? Number(r.vehicle_value).toLocaleString() : '')}
+        ${identityRow('fa-solid fa-location-dot',  'Vehicle Registered In', r.vehicle_registered_in)}
+        ${identityRow('fa-solid fa-shapes',        'Body Type',             r.body_type)}
+        ${identityRow('fa-regular fa-calendar',    'Year of Manufacture',   r.manuf_year)}
+        ${identityRow('fa-solid fa-palette',       'Color as per Mulkiya',  r.color)}
+        ${identityRow('fa-solid fa-weight-hanging','Net Weight (Empty Load)', r.net_weight ? r.net_weight + ' kg' : '')}
+        ${identityRow('fa-solid fa-barcode',       'Chassis No',            r.chassis_no)}
+        ${identityRow('fa-solid fa-gears',         'Engine No',             r.engine_no)}
+        ${identityRow('fa-solid fa-gauge-high',    'Horse Power',           r.horse_power ? r.horse_power + ' HP' : '')}
+        ${identityRow('fa-solid fa-layer-group',   'No of Cylinders',       r.no_of_cylinders)}
+        ${identityRow('fa-solid fa-chair',         'Upholstery',            r.upholstery)}
+        ${identityRow('fa-solid fa-users',         'No of Seats',           r.no_of_seats)}
+        ${identityRow('fa-solid fa-radio',         'Radio',                 r.radio)}
+        ${identityRow('fa-solid fa-ring',          'Spare Tyre',            r.spare_tyre)}
+      </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--bg-base)">
+        <div class="rv-extra-rows">
+          ${extraRow('Additional Remarks', r.additional_remarks)}
+          ${extraRow('Other Particulars / Extra Items (1)', r.others1)}
+          ${extraRow('Other Particulars / Extra Items (2)', r.others2)}
+          ${extraRow('Reference 1 in UAE Full Name',            r.uae_refree1)}
+          ${extraRow('Reference 1 in UAE Mobile Number',        r.uae_refree1_mobile)}
+          ${extraRow('Reference 2 in UAE Full Name',            r.uae_refree2)}
+          ${extraRow('Reference 2 in UAE Mobile Number',        r.uae_refree2_mobile)}
+          ${extraRow('Reference 1 in Destination Full Name',    r.destination_refree1)}
+          ${extraRow('Reference 1 in Destination Mobile Number',r.destination_refree1_mobile)}
+          ${extraRow('Reference 2 in Destination Full Name',    r.destination_refree2)}
+          ${extraRow('Reference 2 in Destination Mobile Number',r.destination_refree2_mobile)}
         </div>
-        <div class="detail-grid" style="margin-top:12px">
-          ${r.additional_remarks   ? d('Additional Remarks',                         esc(r.additional_remarks))   : ''}
-          ${r.others1              ? d('Other Particulars / Extra Items (1)',         esc(r.others1))              : ''}
-          ${r.others2              ? d('Other Particulars / Extra Items (2)',         esc(r.others2))              : ''}
-          ${r.uae_refree1          ? d('Reference 1 (UAE) Name / Contact',            esc(r.uae_refree1))          : ''}
-          ${r.destination_refree1  ? d('Reference 1 (Destination) Name / Contact',   esc(r.destination_refree1))  : ''}
-          ${r.uae_refree2          ? d('Reference 2 (UAE) Name / Contact',            esc(r.uae_refree2))          : ''}
-          ${r.destination_refree2  ? d('Reference 2 (Destination) Name / Contact',   esc(r.destination_refree2))  : ''}
-        </div>
+      </div>
+    </div>
+
+    <!-- Delivery -->
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:12px">Delivery &amp; Payment</div>
+      <div class="rv-extra-rows">
+        ${extraRow('Delivery Option', r.delivery_option === 'home_delivery' ? 'Home Delivery'
+            : r.delivery_option === 'pick_from_dubai_office' ? 'Collection — Dubai Office'
+            : r.delivery_option === 'pick_from_abudhabi_office' ? 'Collection — Abu Dhabi Office'
+            : r.delivery_option)}
+        ${r.delivery_option === 'home_delivery' ? extraRow('Delivery Address', r.delivery_address) : ''}
       </div>
     </div>
 
     <!-- Trip Details -->
-    <div class="section-card">
-      <div class="section-card-header">Trip Details</div>
-      <div class="section-card-body">
-        <div class="detail-grid">
-          ${d('Destination Countries', countries)}
-        </div>
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:12px">Trip Details</div>
+      <div class="rv-extra-rows">
+        ${extraRow('Destination Countries', countries.replace(/&#8212;/, ''))}
       </div>
     </div>
 
     <!-- Documents -->
-    <div class="section-card">
-      <div class="section-card-header">Uploaded Documents
-        ${isSentForCorrections ? '<span style="font-size:.75rem;font-weight:400;opacity:.7"> (You may replace any document below)</span>' : ''}
+    <div class="rv-section">
+      <div class="rv-section-title" style="margin-bottom:12px">Documents Attached
+        ${isSentForCorrections ? '<span style="font-size:.75rem;font-weight:400;opacity:.7;text-transform:none;letter-spacing:normal"> (You may replace any document below)</span>' : ''}
       </div>
-      <div class="section-card-body">
         ${isSentForCorrections ? `
         <div id="cpd-doc-upload-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
           ${[
@@ -4373,58 +4470,42 @@ async function renderPublicCPDView(autoId) {
           }).join('')}
         </div>` : `
         ${docs && docs.length ? `
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
-          ${docs.map(doc => `
-          <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
-            <a href="${doc.base64}" target="_blank" rel="noopener"
-               style="display:block;width:100%;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)">
-              <img src="${doc.base64}" alt="${doc.label}"
-                style="width:100%;height:110px;object-fit:cover;display:block" />
-            </a>
-            <span style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
-              color:var(--text-muted);text-align:center">${doc.label}</span>
-          </div>`).join('')}
+        <div class="rv-docs-grid">
+          ${docs.map(cpdDocThumb).join('')}
         </div>` : '<p style="color:var(--text-muted)">No documents uploaded.</p>'}`}
+    </div>
+
+    <!-- Fee Breakdown -->
+    <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border);background:var(--bg-surface)">
+      <div class="section-card-header" style="font-size:.82rem">
+        <i class="fa-solid fa-calculator" style="color:var(--accent);margin-right:6px"></i>
+        Fee Breakdown
+      </div>
+      <div class="section-card-body" style="padding:0">
+        <table style="width:100%;border-collapse:collapse">
+          <tbody>
+            ${cpdFeeRow('Guarantee Fee', r.guarantee_amount)}
+            ${cpdFeeRow('Processing Fee (2.5% of Guarantee Fee)', r.processing_fee)}
+            ${cpdFeeRow('Booking Fee', r.booking_fee)}
+            ${cpdFeeRow('Extra Fees', r.extra_fees)}
+            ${cpdFeeRow('VAT (5%)', r.vat_amount)}
+            ${cpdFeeRow('Total Amount', r.total_amount, true, true)}
+          </tbody>
+        </table>
       </div>
     </div>
 
     <!-- Payment Details -->
-    <div class="section-card">
-      <div class="section-card-header">Payment Details</div>
-      <div class="section-card-body" style="padding:0">
-        <table style="width:100%;border-collapse:collapse">
-          <tbody>
-            <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted);width:50%">Payment Method</td>
-              <td style="padding:10px 16px;font-weight:500">${payMethodLabel}</td>
-            </tr>
-            <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">Guarantee Fee</td>
-              <td style="padding:10px 16px;font-weight:500">${aed(r.guarantee_amount)}</td>
-            </tr>
-            <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">Booking Fee</td>
-              <td style="padding:10px 16px;font-weight:500">${aed(r.booking_fee)}</td>
-            </tr>
-            <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">Extra Fees</td>
-              <td style="padding:10px 16px;font-weight:500">${r.extra_fees != null ? aed(r.extra_fees) : 'AED 0.00'}</td>
-            </tr>
-            <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">VAT (5%)</td>
-              <td style="padding:10px 16px;font-weight:500">${aed(r.vat_amount)}</td>
-            </tr>
-            <tr style="border-bottom:1px solid var(--border);background:var(--accent-dim)">
-              <td style="padding:12px 16px;font-weight:700">Total Amount</td>
-              <td style="padding:12px 16px;font-weight:700;color:var(--accent)">${aed(r.total_amount)}</td>
-            </tr>
-            ${r.order_ref_no ? `
-            <tr>
-              <td style="padding:10px 16px;font-size:.875rem;color:var(--text-muted)">Payment Reference</td>
-              <td style="padding:10px 16px;font-weight:500;font-family:monospace">${esc(r.order_ref_no)}</td>
-            </tr>` : ''}
-          </tbody>
-        </table>
+    <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border);background:var(--bg-surface)">
+      <div class="section-card-header" style="font-size:.82rem">
+        <i class="fa-solid fa-wallet" style="color:var(--accent);margin-right:6px"></i>
+        Payment
+      </div>
+      <div class="section-card-body">
+        <div class="detail-grid">
+          ${d('Payment Method', payMethodLabel)}
+          ${r.order_ref_no ? d('Payment Reference', `<span style="font-family:monospace">${esc(r.order_ref_no)}</span>`) : ''}
+        </div>
       </div>
     </div>
 
@@ -4508,6 +4589,17 @@ async function renderPublicCPDView(autoId) {
 
   document.getElementById('btn-back-cpd-history').addEventListener('click', () => navigate('public-history', { tab: 'cpd' }));
   document.getElementById('btn-back-cpd-footer')?.addEventListener('click', () => navigate('public-history', { tab: 'cpd' }));
+
+  document.querySelectorAll('.rv-doc-thumb[data-doc-url]').forEach(thumbEl => {
+    thumbEl.addEventListener('click', () => {
+      const { docUrl, docLabel } = thumbEl.dataset;
+      openModal({
+        title: docLabel,
+        body: `<img src="${docUrl}" alt="${docLabel}" style="display:block;max-width:100%;max-height:75vh;margin:0 auto;border-radius:var(--radius)" />`,
+        size: 'lg',
+      });
+    });
+  });
 
   // Return Carnet handler (status=3 only)
   const openReturnCarnetModal = () => openCPDReturnModal(autoId, () => {
