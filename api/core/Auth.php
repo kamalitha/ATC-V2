@@ -55,7 +55,10 @@ class Auth
             [$username, $username],
         );
 
-        if ($user === null || !(bool)$user['is_active']) {
+        // password is nullable — a UAE-PASS-only account (no local password ever set)
+        // must not reach password_verify(), which deprecation-warns on a null hash arg
+        // in PHP 8.1 and can never match anyway.
+        if ($user === null || !(bool)$user['is_active'] || $user['password'] === null) {
             return null;
         }
 
@@ -78,11 +81,117 @@ class Auth
 
         if (!$matched) return null;
 
+        return static::establishSession((int) $user['user_id'], viaUaePass: false);
+    }
+
+    /**
+     * UAE PASS login — matches (or provisions) an mn_users row from a verified
+     * UAE PASS userinfo payload, then establishes a session identically to attempt().
+     * @param array<string,mixed> $userInfo raw response from UaePassClient::getUserInfo()
+     */
+    public static function attemptViaUaePass(array $userInfo): array
+    {
+        $uuid        = (string)($userInfo['uuid'] ?? $userInfo['sub'] ?? '');
+        $emiratesId  = (string)($userInfo['idn'] ?? '');
+        $mobile      = (string)($userInfo['mobile'] ?? '');
+        // SOP1 accounts (basic verification) don't carry an Emirates ID, and none of the
+        // SOP levels return a date of birth — only gender/nationality are always present.
+        $sex         = (string)($userInfo['gender'] ?? '');
+        $nationality = static::nationalityIdFor((string)($userInfo['nationalityEN'] ?? ''));
+
+        $user = static::$db->queryOne(
+            'SELECT user_id, first_name, last_name, email, username, user_type, is_active
+             FROM mn_users WHERE uaepass_uuid = ? LIMIT 1',
+            [$uuid],
+        );
+
+        if ($user === null && $emiratesId !== '') {
+            // First UAE PASS login for an account that previously registered the normal
+            // way — match by Emirates ID and link the UUID for next time.
+            $user = static::$db->queryOne(
+                'SELECT user_id, first_name, last_name, email, username, user_type, is_active
+                 FROM mn_users WHERE emirates_id = ? LIMIT 1',
+                [$emiratesId],
+            );
+            if ($user !== null) {
+                static::$db->execute('UPDATE mn_users SET uaepass_uuid = ? WHERE user_id = ?', [$uuid, $user['user_id']]);
+            }
+        }
+
+        if ($user === null) {
+            $email = (string)($userInfo['email'] ?? '');
+            $userId = static::$db->insert(
+                'INSERT INTO mn_users
+                 (first_name, last_name, email, emirates_id, mobile_no, nationality, sex, username, password, user_type, is_active, date_created, uaepass_uuid)
+                 VALUES (?,?,?,?,?,?,?,?,NULL,?,1,CURDATE(),?)',
+                [
+                    (string)($userInfo['firstnameEN'] ?? ''),
+                    (string)($userInfo['lastnameEN'] ?? ''),
+                    $email,
+                    $emiratesId,
+                    $mobile,
+                    $nationality,
+                    $sex !== '' ? $sex : null,
+                    $email !== '' ? $email : $uuid,
+                    static::ROLE_MAP['public'],
+                    $uuid,
+                ],
+            );
+            $user = [
+                'user_id'    => $userId,
+                'first_name' => $userInfo['firstnameEN'] ?? '',
+                'last_name'  => $userInfo['lastnameEN'] ?? '',
+                'email'      => $email,
+                'user_type'  => static::ROLE_MAP['public'],
+                'is_active'  => 1,
+            ];
+        } else {
+            // Backfill anything UAE PASS knows that the stored profile is still missing —
+            // never overwrite a value the customer or an officer already filled in/corrected.
+            static::$db->execute(
+                'UPDATE mn_users SET
+                    mobile_no   = COALESCE(NULLIF(mobile_no, \'\'), ?),
+                    emirates_id = COALESCE(NULLIF(emirates_id, \'\'), ?),
+                    nationality = COALESCE(nationality, ?),
+                    sex         = COALESCE(NULLIF(sex, \'\'), ?)
+                 WHERE user_id = ?',
+                [$mobile, $emiratesId, $nationality, $sex !== '' ? $sex : null, $user['user_id']],
+            );
+        }
+
+        if (!(bool)$user['is_active']) return null;
+
+        return static::establishSession((int) $user['user_id'], viaUaePass: true);
+    }
+
+    /** Maps UAE PASS's ISO-3 `nationalityEN` (e.g. "LKA") to mn_nationalities.nationality_id. */
+    private static function nationalityIdFor(string $isoCode): ?int
+    {
+        if ($isoCode === '') return null;
+        $row = static::$db->queryOne(
+            'SELECT nationality_id FROM mn_nationalities WHERE emirates_id_code = ? LIMIT 1',
+            [$isoCode],
+        );
+        return $row !== null ? (int)$row['nationality_id'] : null;
+    }
+
+    private static function establishSession(int $userId, bool $viaUaePass): array
+    {
+        // Re-fetch fresh from the DB rather than trusting the caller's array — picks up
+        // any profile fields (mobile/emirates_id/nationality/sex) a UAE PASS backfill
+        // UPDATE or new-account INSERT just wrote, without duplicating that shape here.
+        $user = static::$db->queryOne(
+            'SELECT user_id, first_name, last_name, email, emirates_id, mobile_no,
+                    nationality, sex, dob, user_type
+             FROM mn_users WHERE user_id = ?',
+            [$userId],
+        );
+
         $csrf = bin2hex(random_bytes(32));
         $_SESSION['user_id']      = (int) $user['user_id'];
         $_SESSION['role']         = (int) $user['user_type'];
         $_SESSION['csrf_token']   = $csrf;
-        $_SESSION['via_uae_pass'] = false; // only login path today is username/password
+        $_SESSION['via_uae_pass'] = $viaUaePass;
         session_regenerate_id(true);
 
         return [
@@ -90,11 +199,16 @@ class Auth
             'first_name'   => $user['first_name'],
             'last_name'    => $user['last_name'],
             'email'        => $user['email'],
+            'emirates_id'  => $user['emirates_id'],
+            'mobile_no'    => $user['mobile_no'],
+            'nationality'  => $user['nationality'] !== null ? (int) $user['nationality'] : null,
+            'sex'          => $user['sex'],
+            'dob'          => $user['dob'],
             'role_id'      => (int) $user['user_type'],
             'role_name'    => static::roleNameFor((int) $user['user_type']),
             'csrf_token'   => $csrf,
             'modules'      => static::accessibleModules((int) $user['user_type']),
-            'via_uae_pass' => false,
+            'via_uae_pass' => $viaUaePass,
         ];
     }
 
@@ -107,8 +221,9 @@ class Auth
     {
         if (!static::check()) return null;
         $u = static::$db->queryOne(
-            'SELECT user_id, first_name, last_name, email, username,
-                    user_type, is_active, date_created, last_logged_in, address, mobile_no
+            'SELECT user_id, first_name, last_name, email, username, emirates_id,
+                    nationality, sex, dob, user_type, is_active, date_created,
+                    last_logged_in, address, mobile_no
              FROM mn_users WHERE user_id = ?',
             [static::id()],
         );

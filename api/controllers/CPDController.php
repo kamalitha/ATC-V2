@@ -86,7 +86,7 @@ class CPDController
              LEFT JOIN (SELECT DISTINCT request_id FROM mn_cpd_return_guarantee_details) g
                        ON g.request_id = r.auto_id
              {$where}
-             ORDER BY r.auto_id DESC";
+             ORDER BY (r.paid_date IS NULL), r.paid_date DESC, r.requested_datetime DESC";
 
         $countSql = "SELECT COUNT(*) FROM mn_cpd_requests r {$where}";
 
@@ -138,7 +138,8 @@ class CPDController
                     COALESCE(cru.home_country_address, cu.home_country_address) AS home_country_address,
                     COALESCE(cru.uae_address,          cu.uae_address)          AS uae_address,
                     COALESCE(cru.po_box,               cu.po_box)               AS po_box,
-                    n.nationality
+                    n.nationality,
+                    (u.uaepass_uuid IS NOT NULL) AS applicant_via_uae_pass
              FROM mn_cpd_requests r
              LEFT JOIN mn_cpd_statuses     s   ON s.carnet_status_id = r.request_status
              LEFT JOIN mn_users            u   ON u.user_id          = r.belonging_user_id
@@ -288,6 +289,8 @@ class CPDController
             unset($_SESSION['telr_cart_id'], $_SESSION['telr_request_id'], $_SESSION['telr_module']);
 
             Logger::info("CPD payment verified: auto_id={$autoId}, ref=" . ($telrRef ?? $orderRef));
+
+            $this->sendCpdPaymentConfirmedEmail((int)$autoId);
 
             Response::success([
                 'paid'     => true,
@@ -565,6 +568,7 @@ class CPDController
                        'uae_refree1','uae_refree1_mobile','destination_refree1','destination_refree1_mobile',
                        'uae_refree2','uae_refree2_mobile','destination_refree2','destination_refree2_mobile')
             ->validate();
+        $this->validateExtraDriversRequired($body);
 
         $userId = Auth::id();
 
@@ -790,6 +794,7 @@ class CPDController
             ->required('vehicle_make','vehicle_model','registration_no','chassis_no','manuf_year','method_of_payment')
             ->numeric('vehicle_value')->numeric('guarantee_amount')->numeric('booking_fee')
             ->validate();
+        $this->validateExtraDriversRequired($body);
 
         // user_id: from EID lookup hidden field, or fall back to logged-in officer
         $userId = !empty($body['user_id']) ? (int)$body['user_id'] : Auth::id();
@@ -937,10 +942,40 @@ class CPDController
                 $binds[] = $body[$f];
             }
         }
-        if (empty($sets)) Response::error('No updatable fields provided');
+        // Identity fields — same UAE-PASS lock concept as IDL: not editable once the
+        // applicant supplied them via UAE PASS. Emirates ID is deliberately excluded
+        // (identity match key), same precedent as IDLController::update().
+        $identityAllowed = ['first_name', 'last_name', 'sex', 'nationality'];
+        $identitySets  = [];
+        $identityBinds = [];
+        foreach ($identityAllowed as $f) {
+            if (array_key_exists($f, $body)) {
+                $column = $f === 'nationality' ? 'nationality_id' : $f;
+                $identitySets[]  = "{$column}=?";
+                $identityBinds[] = $body[$f];
+            }
+        }
+        if (!empty($identitySets)) {
+            $viaUaePass = (bool) $this->db->scalar(
+                'SELECT u.uaepass_uuid IS NOT NULL FROM mn_cpd_requests r
+                 JOIN mn_users u ON u.user_id = r.belonging_user_id WHERE r.auto_id=?',
+                [$params['id']],
+            );
+            if ($viaUaePass) Response::error('This applicant was verified via UAE PASS — identity fields cannot be edited', 422);
 
-        $binds[] = $params['id'];
-        $this->db->execute("UPDATE mn_cpd_requests SET " . implode(',', $sets) . " WHERE auto_id=?", $binds);
+            $identityBinds[] = $params['id'];
+            $this->db->execute(
+                "UPDATE mn_cpd_request_user SET " . implode(',', $identitySets) . " WHERE request_auto_id=?",
+                $identityBinds,
+            );
+        }
+
+        if (empty($sets) && empty($identitySets)) Response::error('No updatable fields provided');
+
+        if (!empty($sets)) {
+            $binds[] = $params['id'];
+            $this->db->execute("UPDATE mn_cpd_requests SET " . implode(',', $sets) . " WHERE auto_id=?", $binds);
+        }
         $this->logEvent('UPDATE', $params['id']);
         Response::success(null, 'Request updated');
     }
@@ -1000,6 +1035,34 @@ class CPDController
         }
 
         $this->logEvent('REJECT', $id, $comment);
+
+        // Correction-needed email — best-effort, doesn't block the send-back itself.
+        $req = $this->db->queryOne(
+            "SELECT COALESCE(cru.first_name, u.first_name) AS first_name,
+                    COALESCE(cru.last_name,  u.last_name)  AS last_name,
+                    r.request_id, u.email
+             FROM mn_cpd_requests r
+             LEFT JOIN mn_cpd_request_user cru ON cru.request_auto_id = r.auto_id
+             LEFT JOIN mn_users u              ON u.user_id            = r.belonging_user_id
+             WHERE r.auto_id = ?",
+            [$id],
+        );
+        if ($req && !empty($req['email'])) {
+            try {
+                (new MailHandler())->sendBasicMailViaMailJet(
+                    Config::MJ_CPD_CORRECTION_NEEDED_TEMPLATE,
+                    $req['email'],
+                    [
+                        'customer_name' => trim(($req['first_name'] ?? '') . ' ' . ($req['last_name'] ?? '')),
+                        'request_id'    => $req['request_id'] ?? '',
+                        'comment'       => $comment,
+                    ],
+                );
+            } catch (\Throwable $e) {
+                Logger::error('CPD correction-needed email failed: ' . $e->getMessage());
+            }
+        }
+
         Response::success(null, 'Request sent for corrections');
     }
 
@@ -1069,18 +1132,24 @@ class CPDController
 
         // Get the return request to find the cpd request_id and the carnet being returned
         $ret = $this->db->queryOne(
-            'SELECT return_id, request_id, carnet_id FROM mn_cpd_carnet_returns WHERE return_id = ?',
+            'SELECT return_id, request_id, carnet_id, return_payment_method FROM mn_cpd_carnet_returns WHERE return_id = ?',
             [$returnId],
         );
         if (!$ret) Response::notFound('Return request not found');
 
-        // Check return guarantee exists
-        $guarantee = $this->db->queryOne(
-            'SELECT guarantee_cheque_id FROM mn_cpd_return_guarantee_details WHERE request_id = ? LIMIT 1',
-            [$ret['request_id']],
-        );
-        if (!$guarantee) {
-            Response::error('Return Guarantee is not updated. Please contact Finance office.', 422);
+        // Cheque-based returns still need the bank/cheque details captured somewhere
+        // (mn_cpd_return_guarantee_details, now filled in by the CSO directly — see
+        // returnCheque() — rather than a separate cheque-officer role). Online Transfer
+        // returns already have their bank details on mn_cpd_carnet_returns.cus_bank_information
+        // from submission, so this check no longer applies to them.
+        if (in_array($ret['return_payment_method'], ['CHEQUE_DEPOSIT', 'COLLECT_CHEQUE'], true)) {
+            $guarantee = $this->db->queryOne(
+                'SELECT guarantee_cheque_id FROM mn_cpd_return_guarantee_details WHERE request_id = ? LIMIT 1',
+                [$ret['request_id']],
+            );
+            if (!$guarantee) {
+                Response::error('Cheque details have not been entered for this return yet.', 422);
+            }
         }
 
         $this->db->beginTransaction();
@@ -1108,7 +1177,76 @@ class CPDController
         }
 
         $this->logEvent('RETURN', $ret['request_id']);
+
+        // Return-approved email — best-effort, doesn't block the approval itself.
+        $custReq = $this->db->queryOne(
+            "SELECT COALESCE(cru.first_name, u.first_name) AS first_name,
+                    COALESCE(cru.last_name,  u.last_name)  AS last_name,
+                    r.request_id, r.guarantee_amount, u.email,
+                    rr.penalty_amount, rr.return_amount, rr.cus_bank_information
+             FROM mn_cpd_requests r
+             LEFT JOIN mn_cpd_request_user cru  ON cru.request_auto_id = r.auto_id
+             LEFT JOIN mn_users u               ON u.user_id            = r.belonging_user_id
+             LEFT JOIN mn_cpd_carnet_returns rr ON rr.return_id         = ?
+             WHERE r.auto_id = ?",
+            [$returnId, $ret['request_id']],
+        );
+        if ($custReq && !empty($custReq['email'])) {
+            $bankInfo = $custReq['cus_bank_information'] ? json_decode($custReq['cus_bank_information'], true) : [];
+            $returnAmount = $custReq['return_amount'] !== null && $custReq['return_amount'] !== ''
+                ? (float)$custReq['return_amount']
+                : (float)$custReq['guarantee_amount'] - (float)($custReq['penalty_amount'] ?? 0);
+            try {
+                (new MailHandler())->sendBasicMailViaMailJet(
+                    Config::MJ_CPD_RETURN_APPROVED_TEMPLATE,
+                    $custReq['email'],
+                    [
+                        'customer_name'    => trim(($custReq['first_name'] ?? '') . ' ' . ($custReq['last_name'] ?? '')),
+                        'request_id'       => $custReq['request_id']            ?? '',
+                        'guarantee_amount' => number_format((float)$custReq['guarantee_amount'], 2),
+                        'penalty_amount'   => number_format((float)($custReq['penalty_amount'] ?? 0), 2),
+                        'return_amount'    => number_format($returnAmount, 2),
+                        'account_no'       => $bankInfo['account_no'] ?? '',
+                        'bank_name'        => $bankInfo['bank_name']  ?? '',
+                    ],
+                );
+            } catch (\Throwable $e) {
+                Logger::error('CPD return-approved email failed: ' . $e->getMessage());
+            }
+        }
+
         Response::success(null, 'Return request approved successfully');
+    }
+
+    /**
+     * PUT /api/cpd/return-requests/{id}/fine
+     * Officer enters (or clears) a fine for a pending return — the return amount is
+     * simply guarantee_amount minus the fine, recomputed here from the parent request's
+     * stored guarantee_amount so it can't drift from whatever the client displayed.
+     */
+    public function saveReturnFine(array $params, array $body, array $query): void
+    {
+        $returnId = (int) $params['id'];
+        $penalty  = isset($body['penalty_amount']) ? (float)$body['penalty_amount'] : 0.0;
+        if ($penalty < 0) Response::error('Fine cannot be negative', 422);
+
+        $ret = $this->db->queryOne(
+            'SELECT rr.return_id, rr.confirmed_by, r.guarantee_amount
+             FROM mn_cpd_carnet_returns rr
+             JOIN mn_cpd_requests r ON r.auto_id = rr.request_id
+             WHERE rr.return_id = ?',
+            [$returnId],
+        );
+        if (!$ret) Response::notFound('Return request not found');
+        if ((int)$ret['confirmed_by'] !== 0) Response::error('This return has already been approved', 422);
+
+        $returnAmount = (float)$ret['guarantee_amount'] - $penalty;
+        $this->db->execute(
+            'UPDATE mn_cpd_carnet_returns SET penalty_amount=?, return_amount=? WHERE return_id=?',
+            [$penalty, $returnAmount, $returnId],
+        );
+
+        Response::success(['penalty_amount' => $penalty, 'return_amount' => $returnAmount], 'Fine and return amount saved');
     }
 
     /**
@@ -1159,15 +1297,80 @@ class CPDController
         }
 
         $relativePath = "returns/{$returnId}/deposit_slip.{$ext}";
+        $refNumber = trim($_POST['reference_number'] ?? '');
+        $sets  = 'deposit_slip_path = ?, deposit_slip_uploaded_by = ?, deposit_slip_uploaded_datetime = NOW()';
+        $binds = [$relativePath, Auth::id()];
+        if ($refNumber !== '') {
+            $sets   .= ', order_ref = ?';
+            $binds[] = $refNumber;
+        }
+        $binds[] = $returnId;
         $this->db->execute(
-            "UPDATE mn_cpd_carnet_returns
-             SET deposit_slip_path = ?, deposit_slip_uploaded_by = ?, deposit_slip_uploaded_datetime = NOW()
-             WHERE return_id = ?",
-            [$relativePath, Auth::id(), $returnId],
+            "UPDATE mn_cpd_carnet_returns SET {$sets} WHERE return_id = ?",
+            $binds,
         );
 
         $this->logEvent('DEPOSIT_SLIP_UPLOADED', $ret['return_id'] ?? $returnId, "return_id={$returnId}");
         Response::success(['deposit_slip_path' => $relativePath], 'Deposit slip uploaded');
+    }
+
+    /**
+     * POST /api/cpd/return-requests/{id}/notes
+     * Multiple document attachments + a comment on a pending return — reuses
+     * mn_cpd_officer_comments (already used by reject()) for the text, and the same
+     * multi-file-upload pattern as addClaimNote() for the attachments.
+     */
+    public function addReturnNote(array $params, array $body, array $query): void
+    {
+        $returnId = (int) $params['id'];
+        $comment  = trim($_POST['comment'] ?? '');
+
+        $ret = $this->db->queryOne('SELECT return_id, request_id FROM mn_cpd_carnet_returns WHERE return_id = ?', [$returnId]);
+        if (!$ret) Response::notFound('Return request not found');
+
+        $commentId = $this->db->insert(
+            'INSERT INTO mn_cpd_officer_comments (request_id, comment, added_by, added_datetime, read_flag)
+             VALUES (?, ?, ?, NOW(), 0)',
+            [$ret['request_id'], $comment !== '' ? $comment : '(attachment only)', Auth::id()],
+        );
+
+        $saved  = [];
+        $errors = [];
+        if (!empty($_FILES['documents'])) {
+            $files = $_FILES['documents'];
+            if (!is_array($files['name'])) {
+                foreach (['name','tmp_name','error','size','type'] as $k) $files[$k] = [$files[$k]];
+            }
+            $count = count($files['name']);
+            $dir   = API_ROOT . DIRECTORY_SEPARATOR . Config::CPD_IMAGE_PATH
+                   . DIRECTORY_SEPARATOR . 'returns' . DIRECTORY_SEPARATOR . $returnId
+                   . DIRECTORY_SEPARATOR . 'notes'   . DIRECTORY_SEPARATOR . $commentId;
+            if ($count > 0 && !is_dir($dir) && !mkdir($dir, 0755, true)) {
+                Response::serverError('Could not create upload directory');
+            }
+            for ($i = 0; $i < $count; $i++) {
+                if ($files['error'][$i] === UPLOAD_ERR_NO_FILE) continue;
+                if ($files['error'][$i] !== UPLOAD_ERR_OK) {
+                    $errors[] = "File {$files['name'][$i]}: upload error {$files['error'][$i]}"; continue;
+                }
+                $mime = mime_content_type($files['tmp_name'][$i]);
+                if (!in_array($mime, ['image/jpeg', 'image/png', 'application/pdf'], true)) {
+                    $errors[] = "File {$files['name'][$i]}: only JPG, PNG or PDF files are accepted"; continue;
+                }
+                if ($files['size'][$i] > Config::UPLOAD_MAX_BYTES) {
+                    $errors[] = "File {$files['name'][$i]}: exceeds file size limit"; continue;
+                }
+                $safeName = preg_replace('/[^a-zA-Z0-9_\-\.]/', '_', $files['name'][$i]);
+                if (move_uploaded_file($files['tmp_name'][$i], $dir . DIRECTORY_SEPARATOR . $safeName)) {
+                    $saved[] = $safeName;
+                } else {
+                    $errors[] = "File {$files['name'][$i]}: failed to save";
+                }
+            }
+        }
+
+        $this->logEvent('RETURN_NOTE_ADDED', $ret['request_id'], "return_id={$returnId}");
+        Response::created(['comment_id' => $commentId, 'saved' => $saved, 'errors' => $errors]);
     }
 
     /**
@@ -1439,7 +1642,7 @@ class CPDController
         $paymentOption  = $body['payment_option'];
 
         if (!in_array($deliveryOption, ['ARAMAX', 'DELIVER_BY_HAND'], true)) Response::error('Invalid delivery option', 422);
-        if (!in_array($paymentOption,  ['BANK_DEPOSIT', 'COLLECT_CHEQUE'], true)) Response::error('Invalid payment option', 422);
+        if (!in_array($paymentOption,  ['BANK_DEPOSIT', 'CHEQUE_DEPOSIT', 'COLLECT_CHEQUE'], true)) Response::error('Invalid payment option', 422);
 
         $req = $this->db->queryOne(
             'SELECT auto_id, belonging_user_id, request_status FROM mn_cpd_requests WHERE auto_id = ?',
@@ -1460,11 +1663,13 @@ class CPDController
             [$id],
         );
 
-        $aramexFee = $deliveryOption === 'ARAMAX' ? Config::CPD_DELIVERY_FEE : null;
-        $penaltyAmount = $this->calcReturnPenalty($issuedCarnet['issued_datetime'] ?? null);
+        $aramexFee = $deliveryOption === 'ARAMAX' ? Config::CPD_RETURN_PICKUP_FEE : null;
+        // Not auto-charged — the officer enters a real fine (if any) in the Guarantee
+        // Return section once reviewing the return; this is advisory-only at submission.
+        $isLate = $this->calcReturnPenalty($issuedCarnet['issued_datetime'] ?? null) > 0;
 
         $bankInfo = null;
-        if ($paymentOption === 'BANK_DEPOSIT') {
+        if (in_array($paymentOption, ['BANK_DEPOSIT', 'CHEQUE_DEPOSIT'], true)) {
             $bankInfo = json_encode([
                 'bank_name'   => $body['bank_name']   ?? '',
                 'account_no'  => $body['account_no']  ?? '',
@@ -1476,8 +1681,8 @@ class CPDController
         $returnId = $this->db->insert(
             "INSERT INTO mn_cpd_carnet_returns
              (carnet_id, request_id, remarks, delivery_method, return_payment_method,
-              delivery_fee, penalty_amount, cus_bank_information, added_by, added_datetime, confirmed_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 0)",
+              delivery_fee, cus_bank_information, added_by, added_datetime, confirmed_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), 0)",
             [
                 $issuedCarnet['carnet_id'] ?? null,
                 $id,
@@ -1485,13 +1690,17 @@ class CPDController
                 $deliveryOption,
                 $paymentOption,
                 $aramexFee,
-                $penaltyAmount,
                 $bankInfo,
                 Auth::id(),
             ],
         );
 
-        Response::created(['return_id' => $returnId, 'penalty_amount' => $penaltyAmount], 'Return carnet request submitted successfully');
+        Response::created(
+            ['return_id' => $returnId, 'is_late' => $isLate],
+            $isLate
+                ? 'Return submitted — late return charges will apply as per the terms and conditions'
+                : 'Return carnet request submitted successfully',
+        );
     }
 
     /** A return is late (and incurs Config::CPD_PENALTY) once the carnet has been out for over 364 days. */
@@ -1500,6 +1709,28 @@ class CPDController
         if (!$issuedDatetime) return 0.0;
         $isLate = strtotime($issuedDatetime) + (364 * 86400) < time();
         return $isLate ? Config::CPD_PENALTY : 0.0;
+    }
+
+    /**
+     * Once any field for an extra driver is filled in, all 3 fields become required —
+     * enforced server-side so this can't be bypassed by calling the API directly.
+     * Mirrors the client-side check in public.js's validateCPDStep().
+     */
+    private function validateExtraDriversRequired(array $body): void
+    {
+        foreach ([1, 2] as $n) {
+            $name = trim($body["extra_owner{$n}_name"]     ?? '');
+            $eid  = trim($body["extra_owner{$n}_eid"]      ?? '');
+            $pass = trim($body["extra_owner{$n}_passport"] ?? '');
+            if ($name === '' && $eid === '' && $pass === '') continue;
+            $missing = [];
+            if ($name === '') $missing[] = 'full name';
+            if ($eid  === '') $missing[] = 'Emirates ID';
+            if ($pass === '') $missing[] = 'passport number';
+            if ($missing) {
+                Response::error("Extra Driver {$n}: " . implode(', ', $missing) . ' required', 422);
+            }
+        }
     }
 
     // ── Officer: Create Return (bypasses customer ownership check) ────────────
@@ -1512,7 +1743,7 @@ class CPDController
         $paymentOption  = $body['payment_option'];
 
         if (!in_array($deliveryOption, ['ARAMAX', 'DELIVER_BY_HAND'], true)) Response::error('Invalid delivery option', 422);
-        if (!in_array($paymentOption,  ['BANK_DEPOSIT', 'COLLECT_CHEQUE'], true)) Response::error('Invalid payment option', 422);
+        if (!in_array($paymentOption,  ['BANK_DEPOSIT', 'CHEQUE_DEPOSIT', 'COLLECT_CHEQUE'], true)) Response::error('Invalid payment option', 422);
 
         $req = $this->db->queryOne(
             'SELECT auto_id, request_status FROM mn_cpd_requests WHERE auto_id = ?',
@@ -1532,11 +1763,13 @@ class CPDController
             [$id],
         );
 
-        $aramexFee = $deliveryOption === 'ARAMAX' ? Config::CPD_DELIVERY_FEE : null;
-        $penaltyAmount = $this->calcReturnPenalty($issuedCarnet['issued_datetime'] ?? null);
+        $aramexFee = $deliveryOption === 'ARAMAX' ? Config::CPD_RETURN_PICKUP_FEE : null;
+        // Not auto-charged — the officer enters a real fine (if any) in the Guarantee
+        // Return section once reviewing the return; this is advisory-only at submission.
+        $isLate = $this->calcReturnPenalty($issuedCarnet['issued_datetime'] ?? null) > 0;
 
         $bankInfo = null;
-        if ($paymentOption === 'BANK_DEPOSIT') {
+        if (in_array($paymentOption, ['BANK_DEPOSIT', 'CHEQUE_DEPOSIT'], true)) {
             $bankInfo = json_encode([
                 'bank_name'   => $body['bank_name']   ?? '',
                 'account_no'  => $body['account_no']  ?? '',
@@ -1548,8 +1781,8 @@ class CPDController
         $returnId = $this->db->insert(
             "INSERT INTO mn_cpd_carnet_returns
              (carnet_id, request_id, remarks, delivery_method, return_payment_method,
-              delivery_fee, penalty_amount, cus_bank_information, added_by, added_datetime, confirmed_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 0)",
+              delivery_fee, cus_bank_information, added_by, added_datetime, confirmed_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), 0)",
             [
                 $issuedCarnet['carnet_id'] ?? null,
                 $id,
@@ -1557,14 +1790,18 @@ class CPDController
                 $deliveryOption,
                 $paymentOption,
                 $aramexFee,
-                $penaltyAmount,
                 $bankInfo,
                 Auth::id(),
             ],
         );
 
         $this->logEvent('OFFICER_RETURN', $id, "return_id:{$returnId}");
-        Response::created(['return_id' => $returnId], 'Return request created');
+        Response::created(
+            ['return_id' => $returnId, 'is_late' => $isLate],
+            $isLate
+                ? 'Return created — late return charges will apply as per the terms and conditions'
+                : 'Return request created',
+        );
     }
 
     // ── Public User: Request Cancellation ────────────────────────────────────
@@ -1740,6 +1977,7 @@ class CPDController
             'booking_fees'      => $bookingFees,
             'extra_driver_fee'  => Config::CPD_EXTRA_DRIVER_FEE,
             'delivery_fee'      => Config::CPD_DELIVERY_FEE,
+            'return_pickup_fee' => Config::CPD_RETURN_PICKUP_FEE,
         ]);
     }
 
@@ -1968,13 +2206,16 @@ class CPDController
         $dir    = API_ROOT . DIRECTORY_SEPARATOR . Config::CPD_IMAGE_PATH
                 . DIRECTORY_SEPARATOR . $autoId;
 
+        // Order matches the online wizard's own upload order (public.js) so both the
+        // customer's History view and the officer's detail view show documents the
+        // same way the customer originally uploaded them.
         $slotLabels = [
-            'cpd_mulkiya_front'     => 'Traffic File Front',
-            'cpd_mulkiya_back'      => 'Traffic File Back',
             'cpd_emirates_id_front' => 'Emirates ID Front',
             'cpd_emirates_id_back'  => 'Emirates ID Back',
             'cpd_dl_front'          => 'Driving License Front',
             'cpd_dl_back'           => 'Driving License Back',
+            'cpd_mulkiya_front'     => 'Traffic File Front',
+            'cpd_mulkiya_back'      => 'Traffic File Back',
             'cpd_passport'          => 'Passport Photo',
             'cpd_owner_visa'        => 'Visa Page',
             'cpd_trade_license'     => 'Trade License',
@@ -2039,7 +2280,76 @@ class CPDController
         );
 
         $this->logEvent('CASHIER_PAYMENT', $id, $method);
+        $this->sendCpdPaymentConfirmedEmail($id);
         Response::success(null, 'Payment recorded');
+    }
+
+    /** Best-effort payment-confirmation email — never blocks the payment action itself. */
+    private function sendCpdPaymentConfirmedEmail(int $autoId): void
+    {
+        $req = $this->db->queryOne(
+            "SELECT COALESCE(cru.first_name, u.first_name) AS first_name,
+                    COALESCE(cru.last_name,  u.last_name)  AS last_name,
+                    r.request_id, u.email
+             FROM mn_cpd_requests r
+             LEFT JOIN mn_cpd_request_user cru ON cru.request_auto_id = r.auto_id
+             LEFT JOIN mn_users u              ON u.user_id            = r.belonging_user_id
+             WHERE r.auto_id = ?",
+            [$autoId],
+        );
+        if (!$req || empty($req['email'])) return;
+        try {
+            (new MailHandler())->sendBasicMailViaMailJet(
+                Config::MJ_CPD_PAYMENT_CONFIRMED_TEMPLATE,
+                $req['email'],
+                [
+                    'customer_name' => trim(($req['first_name'] ?? '') . ' ' . ($req['last_name'] ?? '')),
+                    'request_id'    => $req['request_id'] ?? '',
+                ],
+            );
+        } catch (\Throwable $e) {
+            Logger::error('CPD payment-confirmation email failed: ' . $e->getMessage());
+        }
+    }
+
+    // ── Mark Dispatched (home-delivery orders) — mirrors IDLController::markDispatched() ──
+
+    public function markDispatched(array $params, array $body, array $query): void
+    {
+        $id = (int) $params['id'];
+        $this->db->execute(
+            "UPDATE mn_cpd_requests SET request_status=9, airway_bill_no=? WHERE auto_id=?",
+            [$body['air_bill_no'] ?? '', $id],
+        );
+        $this->logEvent('DISPATCH', $id);
+
+        $req = $this->db->queryOne(
+            "SELECT COALESCE(cru.first_name, u.first_name) AS first_name,
+                    COALESCE(cru.last_name,  u.last_name)  AS last_name,
+                    r.request_id, r.airway_bill_no, u.email
+             FROM mn_cpd_requests r
+             LEFT JOIN mn_cpd_request_user cru ON cru.request_auto_id = r.auto_id
+             LEFT JOIN mn_users u              ON u.user_id            = r.belonging_user_id
+             WHERE r.auto_id = ?",
+            [$id],
+        );
+        if ($req && !empty($req['email'])) {
+            try {
+                (new MailHandler())->sendBasicMailViaMailJet(
+                    Config::MJ_CPD_DISPATCHED_TEMPLATE,
+                    $req['email'],
+                    [
+                        'customer_name' => trim(($req['first_name'] ?? '') . ' ' . ($req['last_name'] ?? '')),
+                        'request_id'    => $req['request_id']     ?? '',
+                        'air_bill_no'   => $req['airway_bill_no'] ?? '',
+                    ],
+                );
+            } catch (\Throwable $e) {
+                Logger::error('CPD dispatched email failed: ' . $e->getMessage());
+            }
+        }
+
+        Response::success(null, 'Marked as dispatched');
     }
 
     // ── Print AWB — Create Aramex Shipment ────────────────────────────────────
@@ -2254,7 +2564,7 @@ class CPDController
         // Save air bill number back to the request
         if ($airBillNo) {
             $this->db->execute(
-                'UPDATE mn_cpd_requests SET air_bill_no = ? WHERE auto_id = ?',
+                'UPDATE mn_cpd_requests SET airway_bill_no = ? WHERE auto_id = ?',
                 [$airBillNo, $id],
             );
         }
@@ -2648,6 +2958,24 @@ class CPDController
             }
         }
 
+        // Vehicle / delivery fields — these live directly on mn_cpd_requests, not
+        // mn_cpd_request_user. A corrections request may have been sent back for a
+        // vehicle-detail error, not just an owner-detail one, so both need to be editable.
+        $allowedRequestFields = [
+            'registration_no', 'mulkiya_no', 'vehicle_make', 'vehicle_model', 'vehicle_value',
+            'vehicle_registered_in', 'body_type', 'manuf_year', 'color', 'net_weight',
+            'chassis_no', 'engine_no', 'horse_power', 'no_of_cylinders',
+            'delivery_option', 'delivery_address',
+        ];
+        $requestFields = [];
+        $requestBinds  = [];
+        foreach ($allowedRequestFields as $f) {
+            if (array_key_exists($f, $body)) {
+                $requestFields[] = "`{$f}` = ?";
+                $requestBinds[]  = $body[$f];
+            }
+        }
+
         // Look up queue position for CPD_Officer from workflow table
         $wf = $this->db->queryOne(
             "SELECT next_role FROM mn_workflows_actions
@@ -2680,13 +3008,15 @@ class CPDController
                 );
             }
 
-            // Set status=2 (Processing) and route back to CPD Officer queue
+            // Corrected vehicle/delivery fields, plus status=2 (Processing) and route
+            // back to CPD Officer queue, in the same statement.
+            $requestFields[] = 'request_status = 2';
+            $requestFields[] = 'current_queue_position = ?';
+            $requestBinds[]  = $queuePosition;
+            $requestBinds[]  = $id;
             $this->db->execute(
-                "UPDATE mn_cpd_requests
-                 SET request_status = 2,
-                     current_queue_position = ?
-                 WHERE auto_id = ?",
-                [$queuePosition, $id],
+                "UPDATE mn_cpd_requests SET " . implode(', ', $requestFields) . " WHERE auto_id = ?",
+                $requestBinds,
             );
 
             $this->db->commit();
@@ -2768,6 +3098,7 @@ class CPDController
             ->required('vehicle_make','vehicle_model','registration_no','chassis_no','manuf_year','method_of_payment')
             ->numeric('vehicle_value')->numeric('guarantee_amount')->numeric('booking_fee')
             ->validate();
+        $this->validateExtraDriversRequired($body);
 
         $sourceAutoId = (int)($body['parent_request_id'] ?? 0);
         if (!$sourceAutoId) Response::error('parent_request_id is required', 422);

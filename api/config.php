@@ -27,7 +27,8 @@ final class Config
     public const CPD_EXTRA_DRIVER_FEE   = 50.00;
     public const DELIVERY_FEE  = 15.00;   // delivery surcharge when send_to_address / home_delivery
     public const CPD_PENALTY           = 150.00;
-    public const CPD_DELIVERY_FEE = 25.00;
+    public const CPD_DELIVERY_FEE = 25.00;   // new-carnet home delivery — separate from the return pickup fee below
+    public const CPD_RETURN_PICKUP_FEE = 100.00;   // Aramex pickup fee when returning a carnet
 
     /** Directory where IDL appointment document uploads are stored (relative to API root) */
     public const UPLOADS_DIR    = 'appointment-requests';
@@ -54,6 +55,15 @@ final class Config
     public const MJ_IDL_PAYMENT_CONFIRMED_TEMPLATE    = 7203055;
     public const MJ_IDL_READY_FOR_COLLECTION_TEMPLATE = 887450;
     public const MJ_IDL_DISPATCHED_TEMPLATE           = 865908;
+    // CPD had zero email notifications before this batch — no legacy template IDs exist
+    // to port. These are PLACEHOLDERS (0 = deliberately invalid) — replace with real
+    // Mailjet template IDs once created. Every send call wraps this in try/catch and
+    // logs on failure rather than breaking the underlying action, same as the IDL calls
+    // above, so a placeholder ID here is safe to ship.
+    public const MJ_CPD_PAYMENT_CONFIRMED_TEMPLATE  = 0;
+    public const MJ_CPD_DISPATCHED_TEMPLATE         = 0;
+    public const MJ_CPD_CORRECTION_NEEDED_TEMPLATE  = 0;
+    public const MJ_CPD_RETURN_APPROVED_TEMPLATE    = 0;
     /** Resolve a config value from ENV first, then fall back to constant */
     public static function env(string $key, mixed $default = null): mixed
     {
@@ -74,6 +84,17 @@ final class Config
     public static function telrReturnUrl(): string  { return self::frontendUrl() . '/payment-success'; }
     public static function telrDeclineUrl(): string { return self::frontendUrl() . '/payment-declined'; }
     public static function telrCancelUrl(): string  { return self::frontendUrl() . '/payment-cancelled'; }
+
+    // ── UAE PASS (staging) ──────────────────────────────────────────────────────
+    // Authentication (OIDC login) only — the Digital Vault (document-sharing) product
+    // used by the IDL/CPD wizard's "Continue with UAE PASS" step is separate and not
+    // wired up yet; UAEPASS_DV_SECRET is stored here for that future work.
+    public const UAEPASS_CLIENT_ID     = 'atcuae_emso_web_stage';
+    public const UAEPASS_CLIENT_SECRET = 'bupdaiXezhPsZfwW';
+    public const UAEPASS_DV_SECRET     = '0061b32b9b3372e4ef224d2ec54fc2c4';
+    public const UAEPASS_BASE_URL      = 'https://stg-id.uaepass.ae'; // production: https://id.uaepass.ae
+
+    public static function uaePassRedirectUri(): string { return self::frontendUrl() . '/uaepass-auth-success'; }
 }
 
 // ── Aramex Shipment API ───────────────────────────────────────────────────────

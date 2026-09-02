@@ -192,7 +192,8 @@ export function navigate(route, param = null) {
   const hasDirectItem = !!directItem && directItem.offsetParent !== null;
   const navRoute = hasDirectItem ? route : (NAV_PARENT_MAP[route] ?? route);
 
-  const modeParam = (typeof param === 'object' && param?.mode) ? param.mode : null;
+  const modeParam      = (typeof param === 'object' && param?.mode)       ? param.mode       : null;
+  const usageTypeParam = (typeof param === 'object' && param?.usageType) ? param.usageType : null;
 
   if (typeFilter) {
     const subitem = document.querySelector(`[data-route="${navRoute}"][data-filter-type="${typeFilter}"]`);
@@ -200,8 +201,11 @@ export function navigate(route, param = null) {
   } else if (modeParam) {
     const subitem = document.querySelector(`[data-route="${navRoute}"][data-mode="${modeParam}"]`);
     subitem?.classList.add('active');
+  } else if (usageTypeParam) {
+    const subitem = document.querySelector(`[data-route="${navRoute}"][data-usage-type="${usageTypeParam}"]`);
+    subitem?.classList.add('active');
   } else {
-    const active = document.querySelector(`[data-route="${navRoute}"]:not([data-filter-type]):not([data-mode])`);
+    const active = document.querySelector(`[data-route="${navRoute}"]:not([data-filter-type]):not([data-mode]):not([data-usage-type])`);
     active?.classList.add('active');
   }
 
@@ -232,7 +236,7 @@ function applyNavVisibility(modules) {
 
   ['nav-idl','nav-cpd','nav-admin','nav-reports','nav-public',
    'nav-idl-online','nav-cpd-online','nav-idl-walkin','nav-cpd-walkin',
-   'nav-cpd-cheque','nav-cpd-cashier','nav-idl-cashier','nav-cpd-branch','nav-cpd-finance',
+   'nav-cpd-cashier','nav-idl-cashier','nav-cpd-branch','nav-cpd-finance',
    'nav-cpd-claims'].forEach(hide);
 
   const role = currentUser?.role_name;
@@ -245,9 +249,6 @@ function applyNavVisibility(modules) {
   } else if (role === 'idl_cpd_walkin') {
     show('nav-idl-walkin');
     show('nav-cpd-walkin');
-  // cpd_cheque: CPD Requests only — no New Request, no Carnet Stock, no Dashboard
-  } else if (role === 'cpd_cheque') {
-    show('nav-cpd-cheque');
   // idl_cpd_cashier: CPD Requests (queue filtered) + IDL Requests (queue filtered)
   } else if (role === 'idl_cpd_cashier') {
     show('nav-cpd-cashier');
@@ -292,7 +293,7 @@ function applyNavVisibility(modules) {
   }
 
   // Hide Dashboard for IDL officer roles, CPD officer, and public users
-  const idlOfficerRoles = ['idl_officer','idl_cpd_cashier','idl_cpd_walkin','idl_cpd_online','idl_cpd_branch','cpd_officer','cpd_cheque','cpd_branch','cpd_super_user'];
+  const idlOfficerRoles = ['idl_officer','idl_cpd_cashier','idl_cpd_walkin','idl_cpd_online','idl_cpd_branch','cpd_officer','cpd_branch','cpd_super_user'];
   if (idlOfficerRoles.includes(role) || modules.includes('public')) {
     hide('nav-dashboard');
   } else {
@@ -339,7 +340,8 @@ function initSidebar() {
     const route      = item.dataset.route;
     const filterType = item.dataset.filterType ?? null;
     const mode       = item.dataset.mode ?? null;
-    navigate(route, filterType ? { type: filterType } : mode ? { mode } : null);
+    const usageType  = item.dataset.usageType ?? null;
+    navigate(route, filterType ? { type: filterType } : mode ? { mode } : usageType ? { usageType } : null);
   });
 
   document.getElementById('logout-btn').addEventListener('click', handleLogout);
@@ -423,12 +425,6 @@ export async function refreshBadges() {
       const cs = cpd.value;
       if (cs.pending > 0) { cpdEl.textContent = cs.pending; cpdEl.style.display = ''; }
       else if (cpdEl)      cpdEl.style.display = 'none';
-      // cpd_cheque badge
-      const cpdChequeEl = document.getElementById('badge-cpd-cheque-pending');
-      if (cpdChequeEl) {
-        if (cs.pending > 0) { cpdChequeEl.textContent = cs.pending; cpdChequeEl.style.display = ''; }
-        else                  cpdChequeEl.style.display = 'none';
-      }
       const cpdCashierEl = document.getElementById('badge-cpd-cashier-pending');
       if (cpdCashierEl) {
         if (cs.cashier_pending > 0) { cpdCashierEl.textContent = cs.cashier_pending; cpdCashierEl.style.display = ''; }
@@ -501,7 +497,6 @@ function defaultRoute(roleName) {
     idl_cpd_cashier:'cpd-requests', idl_cpd_walkin:'idl-requests', idl_cpd_online:'idl-requests',
     cpd_finance:'cpd-requests', cpd_branch:'cpd-stock-request', finance:'reports',
     management:'dashboard', idl_distributor:'idl-requests',
-    cpd_cheque:'cpd-requests',
     public: 'public-history',
   };
   return map[roleName] ?? 'dashboard';
@@ -524,7 +519,16 @@ async function handleLogin(e) {
     setToken(data.csrf_token);
     populateUserInfo(data);
     showApp();
-    navigate(data.role_name === 'public' ? 'public-select-service' : defaultRoute(data.role_name));
+    // Resuming a walk-in IDL/CPD request after the customer verified via UAE PASS on
+    // this same device (see handleUaePassCallback) — go straight back to the prefilled
+    // form instead of this officer's normal landing page.
+    if (sessionStorage.getItem('idl_walkin_prefill')) {
+      navigate('idl-new');
+    } else if (sessionStorage.getItem('cpd_walkin_prefill')) {
+      navigate('cpd-new');
+    } else {
+      navigate(data.role_name === 'public' ? 'public-select-service' : defaultRoute(data.role_name));
+    }
     refreshBadges();
   } catch (err) {
     errEl.textContent = err.message ?? 'Login failed';
@@ -534,6 +538,63 @@ async function handleLogin(e) {
     btn.disabled = false;
     btn.querySelector('.btn-text').classList.remove('hidden');
     btn.querySelector('.btn-spinner').classList.add('hidden');
+  }
+}
+
+// Lands here after UAE PASS redirects back with ?code=&state=. Runs before any
+// session exists, so this replaces boot()'s normal session-restore branch entirely.
+async function handleUaePassCallback() {
+  showLogin();
+  const box = document.querySelector('.login-box');
+  const formEl = document.getElementById('login-form');
+  formEl.classList.add('hidden');
+  const loadingEl = document.createElement('div');
+  loadingEl.style.cssText = 'text-align:center;padding:24px 0;color:#fff';
+  loadingEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size:1.4rem;margin-bottom:10px;display:block"></i>Signing you in with UAE PASS…';
+  box.insertBefore(loadingEl, formEl);
+
+  const params = new URLSearchParams(window.location.search);
+  const code  = params.get('code');
+  const state = params.get('state');
+  history.replaceState(null, '', window.location.pathname); // drop code/state from the visible URL
+
+  try {
+    if (!code || !state) throw new Error('Missing UAE PASS response — please try again');
+    const data = await api.auth.uaepassCallback(code, state);
+
+    // Walk-in "hand the device" flow (IDL or CPD): an officer sent the customer here
+    // mid-request to verify via UAE PASS. This login just established the CUSTOMER's
+    // session — capture their profile client-side and hand the device back to the
+    // officer rather than dropping into the customer's own portal.
+    const pendingKey = sessionStorage.getItem('idl_walkin_uaepass_pending') ? 'idl'
+      : sessionStorage.getItem('cpd_walkin_uaepass_pending') ? 'cpd' : null;
+    if (pendingKey) {
+      sessionStorage.removeItem(`${pendingKey}_walkin_uaepass_pending`);
+      sessionStorage.setItem(`${pendingKey}_walkin_prefill`, JSON.stringify({
+        first_name: data.first_name, last_name: data.last_name, email: data.email,
+        mobile_no: data.mobile_no, nationality: data.nationality, sex: data.sex,
+        emirates_id: data.emirates_id,
+      }));
+      loadingEl.remove();
+      formEl.classList.remove('hidden');
+      const bannerEl = document.createElement('div');
+      bannerEl.style.cssText = 'background:rgba(76,175,80,.15);color:#4caf50;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:.85rem;display:flex;gap:8px;align-items:center';
+      bannerEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> Customer verified via UAE PASS. Please hand the device back to the officer to log in and continue.';
+      box.insertBefore(bannerEl, formEl);
+      return;
+    }
+
+    setToken(data.csrf_token);
+    populateUserInfo(data);
+    showApp();
+    navigate(data.role_name === 'public' ? 'public-select-service' : defaultRoute(data.role_name));
+    refreshBadges();
+  } catch (err) {
+    loadingEl.remove();
+    formEl.classList.remove('hidden');
+    const errEl = document.getElementById('login-error');
+    errEl.textContent = err.message ?? 'UAE PASS login failed — please try again';
+    errEl.classList.remove('hidden');
   }
 }
 
@@ -681,6 +742,21 @@ async function boot() {
     inp.type = inp.type === 'password' ? 'text' : 'password';
   });
   window.addEventListener('auth:expired', () => { showLogin(); toast('Session expired. Please sign in again.', 'error', 5000); });
+
+  document.getElementById('btn-uae-pass')?.addEventListener('click', () => {
+    window.location.href = api.auth.uaepassLoginUrl();
+  });
+  document.getElementById('btn-uae-pass-signup')?.addEventListener('click', () => {
+    window.location.href = api.auth.uaepassLoginUrl();
+  });
+
+  // UAE PASS redirects back here with ?code=&state= — no session exists yet at this
+  // point (the callback exchange is what creates one), so this has to run before the
+  // session-restore attempt below, not alongside the payment-success-style routes.
+  if (window.location.pathname.split('/').filter(Boolean).pop() === 'uaepass-auth-success') {
+    await handleUaePassCallback();
+    return;
+  }
 
   // Attempt session restore
   try {

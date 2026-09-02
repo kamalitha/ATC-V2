@@ -90,6 +90,8 @@ const api = {
     forgotPassword: (email) => request('POST', '/auth/forgot-password', { body: { email } }),
     register:    (b) => request('POST', '/auth/register', { body: b }),
     captchaUrl:  ()   => `${API_BASE}/auth/captcha?t=${Date.now()}`,
+    uaepassLoginUrl: () => `${API_BASE}/auth/uaepass/start`, // full-page redirect target, not fetched
+    uaepassCallback: (code, state) => request('POST', '/auth/uaepass/callback', { body: { code, state } }),
   },
 
   // Users
@@ -110,7 +112,7 @@ const api = {
     get:            (id)=> request('GET',  `/idl/requests/${id}`),
     create:         (b) => request('POST', '/idl/requests',              { body: b }),
     update:     (id, b) => request('PUT',  `/idl/requests/${id}`,        { body: b }),
-    approve:        (id, body={})=> request('POST', `/idl/requests/${id}/approve`, body),
+    approve:        (id, body={})=> request('POST', `/idl/requests/${id}/approve`, { body }),
     reject:     (id, b) => request('POST', `/idl/requests/${id}/reject`, { body: b }),
     issue:      (id, b) => request('POST', `/idl/requests/${id}/issue`,  { body: b }),
     voidRequest:(id, b) => request('POST', `/idl/requests/${id}/void`,   { body: b }),
@@ -121,6 +123,7 @@ const api = {
     chartData:      ()    => request('GET',  '/idl/chart-data'),
     myRequests:     (p=1) => request('GET',  `/idl/my-requests?page=${p}`),
     getReceipt:     (id)  => request('GET',  `/idl/requests/${id}/receipt`),
+    createReceipt:  (id)  => request('POST', `/idl/requests/${id}/receipt`, { body: {} }),
     telrInit:       (id)  => request('POST', `/idl/requests/${id}/telr-init`),
     telrVerify:     ()    => request('POST', '/idl/telr-verify'),
     searchByEid:    (eid) => request('GET',  `/idl/search-by-eid?eid=${encodeURIComponent(eid)}`),
@@ -198,9 +201,12 @@ const api = {
     cancellations:      (p)     => request('GET',  '/cpd/cancellations',    { params: p }),
     returnRequests:         (p)     => request('GET',  '/cpd/return-requests',          { params: p }),
     approveReturnRequest:   (id)    => request('POST', `/cpd/return-requests/${id}/approve`, { body: {} }),
+    saveReturnFine:         (id, b) => request('PUT',  `/cpd/return-requests/${id}/fine`,    { body: b }),
+    addReturnNote:          (id, fd) => requestUpload(`/cpd/return-requests/${id}/notes`, fd),
     uploadDepositSlip:      (id, fd) => requestUpload(`/cpd/return-requests/${id}/deposit-slip`, fd),
     depositSlipUrl:         (id)    => `${API_BASE}/cpd/return-requests/${id}/deposit-slip`,
     printAwb:           (id)    => request('POST', `/cpd/requests/${id}/print-awb`,     { body: {} }),
+    markDispatched:     (id, b) => request('POST', `/cpd/requests/${id}/dispatch`,      { body: b }),
     printCarnetUrl:     (id)    => `${window.location.origin}${API_BASE}/cpd/requests/${id}/print-carnet`,
     getReturnCheque:    (id)    => request('GET',  `/cpd/requests/${id}/return-cheque`),
     updateReturnCheque: (id, b) => request('PUT',  `/cpd/requests/${id}/return-cheque`, { body: b }),

@@ -1396,11 +1396,12 @@ class IDLController
         $page         = $v->int('page', 1);
         $search       = trim($v->get('search', ''));
         $type         = $v->get('type', '');
+        $location     = $v->get('location', '');
         $roleId       = Auth::roleId();
         $isIDLOfficer = in_array($roleId, [8, 22, 23, 24, 25], true);
         $statusParam  = $v->get('status', '');
 
-        [$where, $binds] = $this->buildFilters($search, $statusParam, $type, $isIDLOfficer, $roleId);
+        [$where, $binds] = $this->buildFilters($search, $statusParam, $type, $isIDLOfficer, $roleId, $location);
 
         $dataSql = "SELECT r.auto_id, r.request_id, r.request_type, r.request_status,
                     r.requested_datetime, r.paid_status, r.total_amount,
@@ -1412,7 +1413,7 @@ class IDLController
              LEFT JOIN mn_idl_request_user iru ON iru.request_auto_id = r.auto_id
              LEFT JOIN mn_idl_status s         ON s.status_id         = r.request_status
              {$where}
-             ORDER BY r.auto_id DESC";
+             ORDER BY (r.paid_date IS NULL), r.paid_date DESC, r.requested_datetime DESC";
 
         // COUNT — iru not needed in WHERE anymore (search uses IN() subresult)
         $countSql = "SELECT COUNT(*) FROM mn_idl_requests r {$where}";
@@ -1441,6 +1442,7 @@ class IDLController
         $r = $this->db->queryOne(
             "SELECT r.*, iru.*,
                     u.email, u.mobile_no,
+                    (u.uaepass_uuid IS NOT NULL) AS applicant_via_uae_pass,
                     n.nationality,
                     iru.nationality        AS nationality_id,
                     r.issued_date          AS idl_issued_date,
@@ -1477,13 +1479,20 @@ class IDLController
 
     public function store(array $params, array $body, array $query): void
     {
+        // payment_method is captured by the cashier at approval time for walk-in
+        // requests now (not by the CSO at creation) — still required for every other
+        // request source, which pays upfront (e.g. the online wizard's Telr flow).
+        $isWalkinRequest = ($body['request_type'] ?? 'WALKIN') === 'WALKIN';
+
         Validator::make($body)
-            ->required('delivery_option', 'payment_method')
+            ->required('delivery_option')
             ->in('delivery_option', [
                 'pick_from_office', 'send_to_address', 'home_delivery',
                 'pick_from_dubai_office', 'pick_from_abudhabi_office',
             ])
             ->in('payment_method', ['CASH', 'CARD', 'ONLINE', 'CHEQUE', 'CREDIT_CARD'])
+            ->custom('payment_method', fn($v) => (!$isWalkinRequest && ($v === null || $v === ''))
+                ? 'Payment method is required' : null)
             ->custom('expiry_date', fn($v) => ($v && strtotime($v) < strtotime(date('Y-m-d')))
                 ? 'Driving licence has expired — enter a valid, unexpired licence' : null)
             ->validate();
@@ -1573,7 +1582,7 @@ class IDLController
                     $body['delivery_address'] ?? '',
                     $totalAmount,
                     $paidStatus,
-                    $body['payment_method'],
+                    $body['payment_method'] ?? null,
                     $publicRole ? 'WEB' : 'OFFICER',
                     $queuePosition,
                 ],
@@ -1723,13 +1732,18 @@ class IDLController
             );
             $nextQueue = $wf['next_role'] ?? null;
 
-            $this->db->execute(
-                "UPDATE mn_idl_requests
-                 SET request_status=2, paid_status=1, paid_date=NOW(),
-                     current_queue_position=?, processed_by=?
-                 WHERE auto_id=?",
-                [$nextQueue, Auth::id(), $params['id']],
-            );
+            // Payment method is now captured by the cashier here, not by the CSO at
+            // request creation — only overwrite it when the cashier actually sent one.
+            $paymentMethod = $body['payment_method'] ?? null;
+            $sets  = 'request_status=2, paid_status=1, paid_date=NOW(), current_queue_position=?, processed_by=?';
+            $binds = [$nextQueue, Auth::id()];
+            if ($paymentMethod !== null) {
+                $sets    .= ', payment_method=?';
+                $binds[]  = $paymentMethod;
+            }
+            $binds[] = $params['id'];
+
+            $this->db->execute("UPDATE mn_idl_requests SET {$sets} WHERE auto_id=?", $binds);
             $this->logEvent('CASHIER_APPROVE', $params['id']);
             Response::success(['next_queue' => $nextQueue], 'Payment accepted — request sent to IDL Officer');
         } else {
@@ -2017,11 +2031,14 @@ class IDLController
         $ch = curl_init(ARAMAX_CREATE_SHIPMENT_URL);
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode($data),
+            // JSON_UNESCAPED_UNICODE — without it, Arabic characters in the delivery
+            // address/name are escaped to \uXXXX sequences that Aramex doesn't reliably
+            // re-decode, printing garbled Arabic on the AWB label.
+            CURLOPT_POSTFIELDS     => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_SSL_VERIFYHOST => false,
             CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json; charset=utf-8'],
             CURLOPT_TIMEOUT        => 30,
             CURLOPT_VERBOSE        => true,
             CURLOPT_STDERR         => $verboseLog,
@@ -2212,7 +2229,10 @@ class IDLController
         if (!$isStaff && !$isOwner) {
             Response::forbidden('Access denied');
         }
-        if ((int)$r['request_status'] !== 4) {
+        // Status 5 (Dispatched) is issued too — a home-delivery IDL moves 4 → 5 once
+        // markDispatched() runs and the customer must still be able to view it (matches
+        // the frontend's own [4,5] check and how voidIdl() already treats both statuses).
+        if (!in_array((int)$r['request_status'], [4, 5], true)) {
             Response::error('IDL can only be printed once it has been issued', 409);
         }
 
@@ -2657,13 +2677,18 @@ class IDLController
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private function buildFilters(string $search, string $status, string $type, bool $defaultPending = false, ?int $roleId = null): array
+    private function buildFilters(string $search, string $status, string $type, bool $defaultPending = false, ?int $roleId = null, string $location = ''): array
     {
         $where = 'WHERE r.is_active=1';
         $binds = [];
 
-        // Roles 23 (idl_cpd_walkin) and 25 (idl_cpd_cashier) can only see requests in their queue
-        if ($roleId === 23 || $roleId === 25) {
+        // Roles 23 (idl_cpd_walkin) and 25 (idl_cpd_cashier) default to their pending
+        // queue, but an explicit non-default status filter (approved/dispatched/all) or
+        // a search term (e.g. looking up an already-approved request) drops this
+        // restriction — otherwise a request becomes permanently unsearchable the moment
+        // it leaves the cashier's queue.
+        $isDefaultQueueView = $status === '' || $status === 'pending';
+        if (($roleId === 23 || $roleId === 25) && $isDefaultQueueView && $search === '') {
             $where   .= ' AND r.current_queue_position=?';
             $binds[]  = 'IDL_CPD_Cashier';
         }
@@ -2712,6 +2737,16 @@ class IDLController
                 $where   .= ' AND r.request_type=?';
                 $binds[]  = $type;
             }
+        }
+
+        // Dubai/Abu Dhabi split — no structured delivery-emirate column exists, so this
+        // buckets by delivery_option per the feedback's own rule: Abu Dhabi is only the
+        // Abu Dhabi office-pickup option; every other option (Dubai pickup, legacy
+        // Dubai-only pickup, and all courier deliveries) counts as Dubai.
+        if ($location === 'AUH') {
+            $where .= " AND r.delivery_option='pick_from_abudhabi_office'";
+        } elseif ($location === 'DXB') {
+            $where .= " AND r.delivery_option!='pick_from_abudhabi_office'";
         }
 
         return [$where, $binds];

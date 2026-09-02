@@ -34,6 +34,15 @@ function showUaePassLoader(onDone, onCancel) {
 // ── Select Service (shown once, right after a public user logs in) ────────────
 export async function renderPublicSelectService() {
   const content = document.getElementById('page-content');
+
+  // Surface any CPD application sent back for corrections right on login — the
+  // customer already gets an email, but this catches anyone who logs in first.
+  let correctionsNeeded = [];
+  try {
+    const res = await api.cpd.myRequests();
+    correctionsNeeded = (res?.data ?? []).filter(r => String(r.request_status) === '8');
+  } catch { /* non-critical — skip the banner if this fails */ }
+
   content.innerHTML = `
     <div class="page-header">
       <div class="page-title-block">
@@ -41,6 +50,15 @@ export async function renderPublicSelectService() {
         <p class="page-subtitle">Which service would you like to use today?</p>
       </div>
     </div>
+
+    ${correctionsNeeded.length ? `
+    <div class="rv-info-banner" style="background:rgba(234,179,8,.12);border-color:rgba(234,179,8,.4);margin-bottom:16px;cursor:pointer" id="corrections-needed-banner">
+      <i class="fa-solid fa-triangle-exclamation rv-info-icon" style="color:var(--warning,#ca8a04)"></i>
+      <div class="rv-info-lines">
+        <div><strong>${correctionsNeeded.length} CPD application${correctionsNeeded.length > 1 ? 's need' : ' needs'} your attention.</strong></div>
+        <div>${correctionsNeeded.map(r => r.request_id).join(', ')} — corrections were requested. Click to review and resubmit.</div>
+      </div>
+    </div>` : ''}
 
     <div class="del-method-grid" style="max-width:720px">
       <label class="del-method-card" id="select-service-idl">
@@ -69,6 +87,7 @@ export async function renderPublicSelectService() {
   document.getElementById('select-service-idl').addEventListener('click', () => navigate('public-apply-idl'));
   document.getElementById('select-service-cpd').addEventListener('click', () => navigate('public-apply-cpd'));
   document.getElementById('select-service-cpd-company').addEventListener('click', () => navigate('public-apply-cpd', { usageType: 'COMPANY' }));
+  document.getElementById('corrections-needed-banner')?.addEventListener('click', () => navigate('public-history'));
 }
 
 // ── Wizard step definitions ────────────────────────────────────────────────────
@@ -111,50 +130,147 @@ const VC_CAT_INFO = [
   { code:'E', icon:'fa-trailer',     name:'Car with Heavy Trailer', desc:'For combination of vehicles in category B, C or D.' },
 ];
 
-// ── Delivery areas, grouped by emirate (Dubai & Abu Dhabi for now — more emirates
-// to follow; other emirates fall back to the free-text "Other" option below) ────
+// ── Delivery areas, grouped by emirate — sourced from "Areas per Emirates.xlsx" for
+// all 7 emirates. Keys match mn_emirates.emirate exactly (incl. hyphenated forms) so
+// the emirate → area lookup below keeps matching. ──────────────────────────────────
 const AREAS_BY_EMIRATE = {
   'Dubai': [
-    'Al Barsha (1, 2, 3, South)', 'Al Quoz (1, 2, 3, 4, Industrial Areas)', 'Al Satwa',
-    'Al Safa (1 & 2)', 'Al Wasl', 'Jumeirah (1, 2, 3)', 'Umm Suqeim (1, 2, 3)',
-    'Dubai Marina', 'Jumeirah Beach Residence (JBR)', 'Bluewaters Island', 'Palm Jumeirah',
-    'Dubai Harbour', 'Dubai Internet City', 'Dubai Media City', 'Dubai Knowledge Park',
-    'Barsha Heights (Tecom)', 'The Greens', 'The Views', 'Emirates Hills', 'The Lakes',
-    'The Meadows', 'The Springs', 'Jumeirah Islands', 'Jumeirah Park',
-    'Jumeirah Village Circle (JVC)', 'Jumeirah Village Triangle (JVT)', 'Dubai Hills Estate',
-    'Arabian Ranches (1, 2, 3)', 'DAMAC Hills', 'DAMAC Hills 2', 'Motor City',
-    'Dubai Sports City', 'Studio City', 'Tilal Al Ghaf', 'Town Square', 'Mudon', 'Remraam',
-    'Mira', 'Mira Oasis', 'Villanova', 'The Villa', 'Falcon City', 'Nad Al Sheba',
-    'Nad Al Hamar', 'Ras Al Khor', 'Dubai Creek Harbour', 'Dubai Festival City',
-    'Al Warqa (1–5)', 'Mirdif', 'Mushrif', 'Al Mizhar (1 & 2)', 'Al Khawaneej',
-    'Al Twar (1–4)', 'Muhaisnah (1–4)', 'Al Qusais (1–3)', 'Al Nahda Dubai', 'Hor Al Anz',
-    'Abu Hail', 'Al Mamzar', 'Deira', 'Port Saeed', 'Al Rigga', 'Naif', 'Al Ras',
-    'Baniyas Square', 'Bur Dubai', 'Oud Metha', 'Karama', 'Zabeel', 'DIFC', 'Downtown Dubai',
-    'Business Bay', 'City Walk', 'Al Jaddaf', 'Sheikh Zayed Road', 'Meydan',
-    'Dubai Design District (d3)', 'Dubai South', 'Expo City Dubai',
-    'Dubai Investment Park (DIP 1 & 2)', 'Green Community', 'Jebel Ali', 'Jebel Ali Village',
-    'JAFZA', 'Al Furjan', 'Discovery Gardens', 'The Gardens', 'Ibn Battuta Area',
-    'Dubai Silicon Oasis', 'Academic City', 'International City (Clusters)', 'Liwan',
-    'Dubai Land', 'Living Legends', 'Majan', 'Arjan', 'Dubai Science Park', 'Al Sufouh',
-    'Umm Ramool', 'Al Garhoud', 'Al Awir', 'Warsan', 'Wadi Al Safa', 'Saih Shuaib',
-    'Madinat Hind',
+    'Downtown Dubai', 'Business Bay', 'DIFC', 'City Walk', 'Sheikh Zayed Road', 'Al Wasl',
+    'Al Safa 1', 'Al Safa 2', 'Al Bada\'a', 'Jumeirah 1', 'Jumeirah 2', 'Jumeirah 3',
+    'Bur Dubai', 'Al Mankhool', 'Al Karama', 'Al Raffa', 'Al Hudaiba', 'Al Hamriya',
+    'Umm Hurair 1', 'Umm Hurair 2', 'Al Satwa', 'Al Jafiliya', 'Al Fahidi', 'Al Souq Al Kabir',
+    'Deira', 'Al Rigga', 'Al Muraqqabat', 'Al Khabaisi', 'Abu Hail', 'Hor Al Anz',
+    'Hor Al Anz East', 'Al Baraha', 'Al Murar', 'Naif', 'Al Buteen', 'Al Ras', 'Port Saeed',
+    'Al Garhoud', 'Dubai Marina', 'Jumeirah Beach Residence (JBR)',
+    'Jumeirah Lakes Towers (JLT)', 'Bluewaters Island', 'Palm Jumeirah', 'Dubai Harbour',
+    'Umm Suqeim 1', 'Umm Suqeim 2', 'Umm Suqeim 3', 'Al Sufouh 1', 'Al Sufouh 2',
+    'Dubai Media City', 'Dubai Internet City', 'Knowledge Village', 'Al Barsha 1',
+    'Al Barsha 2', 'Al Barsha 3', 'Al Barsha South', 'Barsha Heights (TECOM)', 'The Greens',
+    'The Views', 'Dubai Science Park', 'Arjan', 'Jumeirah Village Circle (JVC)',
+    'Jumeirah Village Triangle (JVT)', 'Dubai Hills Estate', 'Jumeirah Golf Estates',
+    'Dubai Sports City', 'Motor City', 'Jebel Ali', 'Jebel Ali Village',
+    'Jebel Ali Industrial Area', 'Discovery Gardens', 'The Gardens', 'Ibn Battuta area',
+    'Dubai Investment Park (DIP)', 'Dubai South', 'Expo City Dubai', 'Al Furjan', 'Wasl Gate',
+    'Mirdif', 'Al Warqa 1', 'Al Warqa 2', 'Al Warqa 3', 'Al Warqa 4', 'Al Warqa 5',
+    'International City', 'International City Phase 2', 'Warsan 1', 'Warsan 2', 'Nad Al Sheba',
+    'Ras Al Khor', 'Dubai Silicon Oasis', 'Academic City', 'Dubai International Airport area',
+    'Al Qusais 1', 'Al Qusais 2', 'Al Qusais 3', 'Al Twar 1', 'Al Twar 2', 'Al Twar 3',
+    'Al Nahda Dubai', 'Muhaisnah 1', 'Muhaisnah 2', 'Muhaisnah 3', 'Muhaisnah 4',
+    'Al Khawaneej 1', 'Al Khawaneej 2', 'Al Mizhar 1', 'Al Mizhar 2', 'Nad Al Hamar',
+    'Al Awir', 'Dubai Land', 'Liwan', 'The Villa', 'Damac Hills', 'Damac Hills 2',
+    'Arabian Ranches', 'Arabian Ranches 2', 'Mudon', 'Town Square', 'Mira', 'Reem', 'Remraam',
+    'Al Qudra', 'Hatta',
   ],
   'Abu Dhabi': [
-    'Al Zahiyah', 'Al Markaziyah', 'Al Khalidiyah', 'Al Bateen',
-    'Al Mushrif', 'Al Manhal', 'Al Nahyan', 'Al Reem Island', 'Al Maryah Island',
-    'Saadiyat Island', 'Yas Island', 'Jubail Island', 'Al Raha Beach', 'Al Raha Gardens',
-    'Al Muneera', 'Al Bandar', 'Al Zeina', 'Al Reef', 'Masdar City', 'Khalifa City A',
-    'Khalifa City B', 'Shakhbout City', 'Mohammed Bin Zayed City (MBZ)', 'Mussafah',
-    'ICAD (Industrial City)', 'Rabdan', 'Bain Al Jessrain', 'Al Maqtaa', 'Al Shahama',
-    'Al Bahia', 'Al Falah', 'Al Shamkha', 'Al Wathba', 'Madinat Zayed', 'Corniche',
-    'Mina Zayed', 'Tourist Club Area (TCA)', 'Al Danah', 'Electra Street', 'Hamdan Street',
-    'Airport Road', 'Defence Road', 'Corniche Road', 'Marina Village', 'Marina Mall Area',
-    'Hudayriyat Island', 'Al Hudayriat', 'Al Gurm', 'Al Raha Golf Gardens', 'Al Ain City',
+    'Abu Dhabi City', 'Al Danah', 'Al Zahiyah', 'Al Markaziyah', 'Al Khalidiyah', 'Al Bateen',
+    'Al Mushrif', 'Al Manhal', 'Al Nahyan', 'Al Rawdah', 'Al Karamah', 'Al Hisn', 'Al Zaab',
+    'Al Maqta', 'Al Rowdah', 'Al Wahdah', 'Al Falah', 'Al Reem Island', 'Shams Abu Dhabi',
+    'Marina Square', 'Najmat Abu Dhabi', 'City of Lights', 'Saadiyat Island', 'Saadiyat Beach',
+    'Saadiyat Cultural District', 'Saadiyat Lagoons', 'Yas Island', 'Yas Bay', 'Yas Acres',
+    'West Yas', 'Yas Links', 'Yas Creative Hub', 'Al Raha Beach', 'Al Raha Gardens',
+    'Al Bandar', 'Al Zeina', 'Al Muneera', 'Khalifa City A', 'Khalifa City B',
+    'Shakhbout City', 'Zayed City', 'Mohammed Bin Zayed City (MBZ)', 'Mussafah',
+    'Mussafah Shabiya', 'Mussafah Industrial Area', 'ICAD 1', 'ICAD 2', 'ICAD 3', 'Al Shamkha',
+    'Al Shawamekh', 'Baniyas', 'Baniyas East', 'Baniyas West', 'Al Wathba', 'Al Nahda',
+    'Al Shamkhah', 'Al Ain City', 'Al Jimi', 'Al Muwaiji', 'Al Mutaredh', 'Al Towayya',
+    'Al Foah', 'Al Markhaniya', 'Al Hili', 'Al Maqam', 'Al Ain Oasis', 'Zakher', 'Al Yahar',
+    'Al Khabisi', 'Al Ain Industrial Area', 'Madinat Zayed', 'Ghayathi', 'Ruwais', 'Al Sila',
+    'Tarif', 'Mirfa', 'Liwa', 'Mezaira\'a', 'Delma Island', 'Sir Bani Yas Island',
+    'Hudayriyat Island', 'Al Jubail Island', 'Nurai Island', 'Al Hudayriat',
+    'Al Maryah Island', 'Lulu Island',
+  ],
+  'Sharjah': [
+    'Al Majaz 1', 'Al Majaz 2', 'Al Majaz 3', 'Al Khan', 'Al Qasimia', 'Al Mahatta', 'Al Nud',
+    'Al Ghuwair', 'Al Yarmook', 'Al Nabba', 'Al Shuwaiheen', 'Al Mareija', 'Al Manakh',
+    'Al Ghubaiba', 'Al Jazzat', 'Al Ghafia', 'Al Azra', 'Al Ramaqiya', 'Al Nahda Sharjah',
+    'Al Taawun', 'Al Mamzar Sharjah', 'Al Qasba', 'Muwaileh', 'Muwaileh Commercial',
+    'New Muwaileh', 'Al Juraina', 'Al Noaf', 'University City', 'Al Gharayen', 'Al Rahmaniya',
+    'Industrial Area 1', 'Industrial Area 2', 'Industrial Area 3', 'Industrial Area 4',
+    'Industrial Area 5', 'Industrial Area 6', 'Industrial Area 7', 'Industrial Area 8',
+    'Industrial Area 9', 'Industrial Area 10', 'Industrial Area 11', 'Industrial Area 12',
+    'Industrial Area 13', 'Industrial Area 14', 'Industrial Area 15', 'Industrial Area 17',
+    'Industrial Area 18', 'Al Falaj', 'Al Ramla', 'Al Fisht', 'Al Goaz', 'Al Sweihat',
+    'Al Nekhailat', 'Al Tai', 'Al Suyoh', 'Al Zahia', 'Al Helio', 'Al Mamzar', 'Al Majaz',
+    'Al Layyah', 'Al Heera', 'Al Rifah', 'Al Dhaid', 'Al Madam', 'Maliha', 'Al Batayeh',
+    'Al Hamriyah', 'Al Sajaa', 'Mleiha', 'Al Zubair', 'Wasit', 'Khor Fakkan', 'Al Gharb',
+    'Al Mudaifi', 'Hay Al Bahar', 'Al Bardi', 'Al Haray', 'Al Luluyah', 'Kalba', 'Al Qasimiya',
+    'Al Ghail', 'Al Tareef', 'Al Haffiya', 'Al Wadi', 'Dibba Al-Hisn', 'Al Hay Al Jadeed',
+  ],
+  'Ras al-Khaimah': [
+    'Al Nakheel', 'Al Qusaidat', 'Al Dhait North', 'Al Dhait South', 'Al Dhait', 'Al Mamourah',
+    'Al Mairid', 'Al Seer', 'Al Rams', 'Al Qurm', 'Al Hudaybah', 'Al Uraibi', 'Al Faseel',
+    'Al Jazirah Al Hamra', 'Al Hamra Village', 'Al Hamra Waterfront', 'Al Hamra Marina',
+    'Al Marjan Island', 'Mina Al Arab', 'Pacific', 'Lagoon Walk', 'Falcon Island',
+    'Al Jazeera Al Hamra', 'Marbella Villas', 'Flamingo Villas', 'Al Muntasir', 'Al Ghail',
+    'Al Kharran', 'Al Felya', 'Al Hail', 'Al Aamra', 'Khuzam', 'Al Zaitoun',
+    'Al Jazeera Al Hamra Industrial Area', 'Al Ghail Industrial Area',
+    'Al Hamra Industrial Area', 'Al Nakheel Industrial Area', 'Al Qusaidat Industrial Area',
+    'Al Dhait Industrial Area', 'Al Hulaila Industrial Area', 'RAK Economic Zone (RAKEZ)',
+    'Khatt', 'Masafi', 'Wadi Shah', 'Wadi Al Qor', 'Al Shuhada', 'Sha\'am', 'Ghalila', 'Rams',
+    'Al Jeer', 'Seih Al Burairat', 'Seih Al Harf', 'Al Hamraniya', 'Al Wadi',
+  ],
+  'Ajman': [
+    'Al Nuaimiya 1', 'Al Nuaimiya 2', 'Al Nuaimiya 3', 'Al Rashidiya 1', 'Al Rashidiya 2',
+    'Al Rashidiya 3', 'Al Nakheel 1', 'Al Nakheel 2', 'Al Nakheel 3', 'Al Rumailah 1',
+    'Al Rumailah 2', 'Al Rumailah 3', 'Al Bustan', 'Al Muwaihat', 'Al Jurf', 'Al Rawda',
+    'Al Jurf 1', 'Al Jurf 2', 'Al Jurf 3', 'Al Jurf Industrial 1', 'Al Jurf Industrial 2',
+    'Al Jurf Industrial 3', 'Al Jurf Industrial 4', 'Ajman Industrial Area', 'Al Hamidiya',
+    'Al Hamidiya 1', 'Al Hamidiya 2', 'Al Rawda 1', 'Al Rawda 2', 'Al Rawda 3', 'Al Rawda 4',
+    'Al Mowaihat 1', 'Al Mowaihat 2', 'Al Mowaihat 3', 'Al Mowaihat 4', 'Al Yasmeen',
+    'Al Zahya', 'Al Helio 1', 'Al Helio 2', 'Al Bahia', 'Al Amerah', 'Ajman Corniche',
+    'Al Rumailah', 'Al Nakhil', 'Al Rashidiya', 'Al Owan', 'Al Zorah', 'Al Zorah Waterfront',
+    'Al Zahra', 'Al Helio', 'Al Ameera Village', 'Al Yasmeen 1', 'Al Yasmeen 2',
+    'Al Yasmeen 3', 'Al Mowaihat', 'Al Manama', 'Masfout', 'Al Hamidiyah', 'Al Zubair',
+    'Al Nuaimiya',
+  ],
+  'Fujairah': [
+    'Fujairah City', 'Al Faseel', 'Al Gurfa', 'Al Faseel Corniche', 'Al Hail', 'Al Mahatta',
+    'Al Sharia', 'Al Hayl', 'Al Owaid', 'Al Taween', 'Al Gurfah', 'Sakamkam', 'Madhab',
+    'Fujairah Free Zone', 'Fujairah Industrial Area', 'Umbrella Beach', 'Fujairah Corniche',
+    'Al Aqah', 'Al Bidya', 'Al Badiyah', 'Dibba Al-Fujairah', 'Sharm', 'Dadna', 'Qidfa',
+    'Al Fiqait', 'Khor Fakkan border area', 'Murashid', 'Al Ghail', 'Wadi Al Siji', 'Masafi',
+    'Wadi Siji', 'Siji', 'Wadi Al Abadilah', 'Al Bithnah', 'Awhala', 'Al Aqah Beach',
+    'Snoopy Island area', 'Mirbah', 'Fujairah Port', 'Al Hayl Industrial Area',
+    'Al Faseel Industrial Area', 'Madhab Industrial Area',
+  ],
+  'Umm al-Quwain': [
+    'Umm Al Quwain City', 'Al Raas', 'Al Ras', 'Al Salamah', 'Al Riqqah', 'Al Haditha',
+    'Al Dar Al Baida', 'Al Humrah', 'Al Abraq', 'Al Shuhada', 'Al Rashidiya', 'Al Butain',
+    'Al Nabghah', 'Umm Al Quwain Corniche', 'Old Umm Al Quwain', 'Al Sinniyah Island',
+    'Umm Al Quwain Industrial Area', 'New Industrial Area', 'Al Humaidiyah Industrial Area',
+    'UAQ Free Zone', 'Umm Al Quwain Port Area', 'Falaj Al Mualla', 'Al Aahad', 'Al Labsa',
+    'Al Ras Al Khaimah Road area', 'Al Shuwaib', 'Al Ghail', 'Al Khor',
   ],
 };
 const AREA_OTHER_VALUE = '__other__';
 // Flat list (all emirates combined) — used by the CPD wizard's simpler free-text/datalist area field.
 const DELIVERY_AREAS = Object.values(AREAS_BY_EMIRATE).flat();
+
+// ── IDL Terms & Conditions modal content ────────────────────────────────────────
+const IDL_TERMS_HTML = `
+  <div style="font-size:.9rem;line-height:1.6;color:var(--text-primary)">
+    <h4 style="margin:0 0 8px">1. License Validity &amp; Requirements</h4>
+    <ul style="margin:0 0 16px;padding-left:20px">
+      <li><strong>Valid UAE Driving License Required</strong>: The applicant must hold a valid, original UAE driving license at the time of application and throughout the period of IDP usage.</li>
+      <li><strong>Supplementary Document</strong>: The IDP is a translation and accompaniment to your national UAE license. It does not replace or stand in lieu of a valid national driving license.</li>
+    </ul>
+    <h4 style="margin:0 0 8px">2. Usage &amp; Territorial Restrictions</h4>
+    <ul style="margin:0 0 16px;padding-left:20px">
+      <li><strong>Foreign Driving Rights</strong>: The IDP allows driving in signatory countries under the 1949/1968 International Conventions on Road Traffic for tourist and temporary visits.</li>
+      <li><strong>UAE &amp; Residence Exclusion</strong>: The IDP cannot be used to drive within the UAE or in any country where the holder establishes permanent residence or employment.</li>
+      <li><strong>Local Laws Compliance</strong>: License holders must comply with the traffic rules, regulations, and vehicle requirements of the host country visited.</li>
+    </ul>
+    <h4 style="margin:0 0 8px">3. Validity Period &amp; Fee Policy</h4>
+    <ul style="margin:0 0 16px;padding-left:20px">
+      <li><strong>1-Year Validity</strong>: The IDP is valid for one (1) year from the date of issue or until the expiry of the underlying national UAE driving license, whichever occurs first.</li>
+      <li><strong>Non-Refundable Fees</strong>: Application, issuance, and delivery fees are non-refundable once the application is submitted or the booklet is generated.</li>
+    </ul>
+    <h4 style="margin:0 0 8px">4. Applicant Responsibility &amp; Declaration</h4>
+    <ul style="margin:0;padding-left:20px">
+      <li><strong>Accuracy of Information</strong>: The applicant warrants that all details, passport numbers, and license photos provided are correct and match official government records.</li>
+      <li><strong>Misuse &amp; Liability</strong>: ATCUAE assumes no liability for fines, license suspensions, or legal rejections caused by invalid national licenses, false declarations, or breach of local traffic laws abroad.</li>
+    </ul>
+  </div>`;
 
 // ── Apply for IDL (wizard) ─────────────────────────────────────────────────────
 export async function renderPublicApplyIDL(param = null) {
@@ -597,7 +713,7 @@ export async function renderPublicApplyIDL(param = null) {
             <div class="del-method-icon-wrap"><i class="fa-solid fa-house"></i></div>
             <div>
               <div class="del-method-title">Home Delivery</div>
-              <div class="del-method-fee">AED ${DELIVERY_FEE.toFixed(2)}</div>
+              <div class="del-method-fee">Delivery Fee - AED ${DELIVERY_FEE.toFixed(2)}</div>
               <div class="del-method-desc">Delivered within 3–5 working days</div>
             </div>
           </label>
@@ -829,17 +945,17 @@ export async function renderPublicApplyIDL(param = null) {
         </div>
       </div>
 
-      <!-- Delivery summary -->
+      <!-- Delivery summary — only the SELECTED method's card renders -->
       <div class="rv-delivery-grid">
 
+        ${isHome ? `
         <div class="rv-delivery-card">
           <div class="rv-delivery-card-header">
             <i class="fa-solid fa-truck" style="color:var(--accent)"></i>
             <span>Delivery Method &amp; Address</span>
           </div>
-          <div class="rv-delivery-method">${isHome ? 'Home Delivery' : 'Collection'}</div>
-          <div class="rv-delivery-desc">${isHome ? 'Delivered within 3–5 working days' : 'You will collect from our office'}</div>
-          ${isHome ? `
+          <div class="rv-delivery-method">Home Delivery</div>
+          <div class="rv-delivery-desc">Delivered within 3–5 working days</div>
           <div class="rv-delivery-rows">
             <div class="rv-delivery-row"><span class="rv-delivery-label">Building / Villa / Floor #</span><span>${formData.del_building || '—'}</span></div>
             <div class="rv-delivery-row"><span class="rv-delivery-label">Street / Road</span><span>${formData.del_street || '—'}</span></div>
@@ -848,9 +964,8 @@ export async function renderPublicApplyIDL(param = null) {
             ${formData.del_extra ? `<div class="rv-delivery-row"><span class="rv-delivery-label">Additional Details</span><span>${formData.del_extra}</span></div>` : ''}
             ${formData.additional_mobile_no ? `<div class="rv-delivery-row"><span class="rv-delivery-label">Additional Phone Number</span><span>${formData.additional_mobile_no}</span></div>` : ''}
             ${formData.additional_email ? `<div class="rv-delivery-row"><span class="rv-delivery-label">Additional Email</span><span>${formData.additional_email}</span></div>` : ''}
-          </div>` : ''}
-        </div>
-
+          </div>
+        </div>` : `
         <div class="rv-delivery-card">
           <div class="rv-delivery-card-header">
             <i class="fa-solid fa-building" style="color:var(--accent)"></i>
@@ -870,7 +985,7 @@ export async function renderPublicApplyIDL(param = null) {
             </div>
           </div>`;
           })()}
-        </div>
+        </div>`}
 
       </div>
 
@@ -902,8 +1017,7 @@ export async function renderPublicApplyIDL(param = null) {
         <div class="rv-section-title" style="margin-bottom:12px">Declaration</div>
         <label class="disclaimer-check" id="disclaimer-check-1">
           <input type="checkbox" name="disclaimer_1" id="disclaimer_1" />
-          <span>I confirm that all the information provided is correct and complete. I understand that once I proceed to payment, I will not be able to make any changes. I agree to the <a href="#" style="color:var(--accent)">terms and conditions</a> and consent to the processing of my data.<br><br>
-          I understand that if I proceed and there is a mistake in the information, I will not hold EMSO responsible and no refund will be provided.</span>
+          <span>I agree to the International Driving Permit (IDP) <a href="#" id="idl-terms-link" style="color:var(--accent)">Terms &amp; Conditions</a>. I confirm that I hold a valid UAE driving license, understand that the IDP is a supplementary translation valid for 1 year (not usable inside the UAE or in countries of permanent residence), and accept that issuance fees are non-refundable.</span>
         </label>
         <div class="field-error" id="err-disclaimer_1"></div>
       </div>
@@ -1503,6 +1617,15 @@ export async function renderPublicApplyIDL(param = null) {
       }
     });
 
+    document.getElementById('idl-terms-link')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      openModal({
+        title: 'International Driving Permit — Terms & Conditions',
+        size: 'lg',
+        body: IDL_TERMS_HTML,
+      });
+    });
+
     // Navigation buttons
     document.querySelector('.btn-uae-pass-continue')?.addEventListener('click', () => {
       showUaePassLoader(
@@ -1902,7 +2025,7 @@ export async function renderPublicApplyCPD(param = null) {
   const UAE_STATES = ['Abu Dhabi','Dubai','Sharjah','Ajman','Umm Al Quwain','Ras Al Khaimah','Fujairah'];
   // "Luxury" is intentionally not a selectable body type — luxury vehicles are
   // auto-detected from the make (see LUXURY_MAKES below) and priced accordingly.
-  const BODY_TYPES = ['Station','Saloon','Motor Cycle','Truck','Trailer','Pickup','Caravan'];
+  const BODY_TYPES = ['Station','Saloon','Motor Cycle','Truck','Trailer','Pickup','Caravan','Hatchback'];
   const COLORS     = ['White','Silver','Black','Grey','Blue','Red','Brown','Green','Other'];
   const YEAR_OPTS  = Array.from({length:41},(_,i)=>2030-i).map(y=>`<option value="${y}">${y}</option>`).join('');
 
@@ -2222,11 +2345,14 @@ export async function renderPublicApplyCPD(param = null) {
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-briefcase"></i></span>
           <span class="pub-id-label">Usage Type</span>
+          ${renewSource ? `
+          <span class="pub-id-value">${usageType === 'COMPANY' ? 'Company Use' : 'Personal Use'}</span>
+          <input type="hidden" name="usage_type" value="${usageType}" />` : `
           <select name="usage_type" id="cpd-usage-type" required class="pub-id-inline-select">
             <option value="">Select</option>
             <option value="PERSONAL" ${usageType === 'PERSONAL' ? 'selected' : ''}>Personal Use</option>
             <option value="COMPANY" ${usageType === 'COMPANY' ? 'selected' : ''}>Company Use</option>
-          </select>
+          </select>`}
           <div class="field-error" id="err-usage_type" style="margin:0"></div>
         </div>
 
@@ -2819,7 +2945,7 @@ export async function renderPublicApplyCPD(param = null) {
     return [...notesSet];
   }
 
-  const STATION_TYPES = ['Station','SUV','-Station','Pickup','Truck','Bus','Trailer','Caravan'];
+  const STATION_TYPES = ['Station','SUV','-Station','Pickup','Truck','Bus','Trailer','Caravan','Hatchback'];
   // "Luxury" is no longer a selectable body type — the tier is inferred from the
   // vehicle make instead. Not specified in the client's request; adjust this list
   // if it doesn't match how the business actually classifies luxury vehicles.
@@ -3563,11 +3689,28 @@ export async function renderPublicApplyCPD(param = null) {
         }
       });
 
+      // Extra driver — once any field for a driver is filled in, all 3 fields and all
+      // 3 documents for that driver become mandatory (removing the driver entirely is
+      // still fine — see removeExtraDriver(), which clears these back out). Docs are
+      // folded into requiredDocSlots below so they share the same error banner.
+      const extraDriverDocSlots = [];
+      [1, 2].forEach(n => {
+        const nameEl = document.querySelector(`[name="extra_owner${n}_name"]`);
+        const eidEl2 = document.querySelector(`[name="extra_owner${n}_eid"]`);
+        const passEl = document.querySelector(`[name="extra_owner${n}_passport"]`);
+        const isShown = !!(nameEl?.value?.trim() || eidEl2?.value?.trim() || passEl?.value?.trim());
+        if (!isShown) return;
+        if (!nameEl?.value?.trim()) { setErrCPD(`extra_owner${n}_name`, 'Extra driver full name is required'); ok = false; }
+        if (!eidEl2?.value?.trim()) { setErrCPD(`extra_owner${n}_eid`, 'Extra driver Emirates ID is required'); ok = false; }
+        if (!passEl?.value?.trim()) { setErrCPD(`extra_owner${n}_passport`, 'Extra driver passport number is required'); ok = false; }
+        extraDriverDocSlots.push(`extra${n}_eid_front`, `extra${n}_eid_back`, `extra${n}_passport`);
+      });
+
       // Supporting documents — all are mandatory (corporate docs only when Usage Type is Company).
       // savedDocs[] is only populated by saveCPDStep() *after* this validation runs, so a file
       // picked on this very visit to the step still only exists in the live <input> element —
       // check both so a fresh upload isn't reported as missing.
-      const requiredDocSlots = ['eid_front', 'eid_back', 'dl_front', 'dl_back', 'traffic_front', 'traffic_back', 'passport_photo'];
+      const requiredDocSlots = ['eid_front', 'eid_back', 'dl_front', 'dl_back', 'traffic_front', 'traffic_back', 'passport_photo', ...extraDriverDocSlots];
       if (formData.usage_type === 'COMPANY') requiredDocSlots.push('visa_page', 'trade_license', 'noc');
       let missingDocs = false;
       requiredDocSlots.forEach(slot => {
@@ -4049,7 +4192,11 @@ function openIdlPreviewModal(autoId) {
 }
 
 // ── Shared "Return Carnet" modal (used by the CPD detail view and the Return list) ──
-function openCPDReturnModal(autoId, onSuccess) {
+async function openCPDReturnModal(autoId, onSuccess, applicantName) {
+  const beneficiaryDefault = applicantName
+    ?? [currentUser?.first_name, currentUser?.last_name].filter(Boolean).join(' ');
+  const guaranteeRules = await api.cpd.guaranteeRules().catch(() => ({}));
+  const returnPickupFee = Number(guaranteeRules.return_pickup_fee ?? 100).toFixed(2);
   openModal({
     title: 'Return Carnet',
     size: 'lg',
@@ -4070,7 +4217,7 @@ function openCPDReturnModal(autoId, onSuccess) {
           background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);border-radius:var(--radius);
           font-size:.88rem;color:var(--warning,#ca8a04)">
           <i class="fa-solid fa-circle-info"></i>
-          An additional charge of <strong>AED 30.00</strong> will apply for Aramex pickup.
+          An additional charge of <strong>AED ${returnPickupFee}</strong> will apply for Aramex pickup.
         </div>
       </div>
 
@@ -4078,16 +4225,30 @@ function openCPDReturnModal(autoId, onSuccess) {
         <label style="display:block;margin-bottom:8px;font-weight:600">Return Payment Option <span style="color:var(--accent)">*</span></label>
         <div style="display:flex;flex-direction:column;gap:8px">
           <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
-            border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;
-            transition:border-color .15s" id="label-pay-bank">
-            <input type="radio" name="return-payment" value="BANK_DEPOSIT" id="pay-bank" checked
+            border:1px solid var(--accent);border-radius:var(--radius);cursor:pointer;
+            transition:border-color .15s" id="label-pay-bank_deposit">
+            <input type="radio" name="return-payment" value="BANK_DEPOSIT" id="pay-bank_deposit" checked
               style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" />
-            <span><strong>Deposit to Bank</strong></span>
+            <span><strong>Online Transfer</strong></span>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+            border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;
+            transition:border-color .15s" id="label-pay-cheque_deposit">
+            <input type="radio" name="return-payment" value="CHEQUE_DEPOSIT" id="pay-cheque_deposit"
+              style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" />
+            <span><strong>Cheque Deposit</strong></span>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+            border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;
+            transition:border-color .15s" id="label-pay-collect_cheque">
+            <input type="radio" name="return-payment" value="COLLECT_CHEQUE" id="pay-collect_cheque"
+              style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" />
+            <span><strong>Cheque Collect from Office</strong></span>
           </label>
         </div>
       </div>
 
-      <!-- Bank Details (shown when Deposit to Bank selected) -->
+      <!-- Bank Details (shown for Online Transfer / Cheque Deposit) -->
       <div id="bank-details-section" style="background:var(--bg-elevated);
         border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px">
         <div style="font-size:.85rem;font-weight:600;color:var(--text-muted);margin-bottom:12px;
@@ -4103,11 +4264,11 @@ function openCPDReturnModal(autoId, onSuccess) {
           </div>
           <div class="field" style="margin:0">
             <label>IBAN Number</label>
-            <input type="text" id="ret-iban" placeholder="AE00 0000 0000 0000 0000 000" />
+            <input type="text" id="ret-iban" value="AE" placeholder="AE00 0000 0000 0000 0000 000" />
           </div>
           <div class="field" style="margin:0">
             <label>Beneficiary Name <span style="color:var(--accent)">*</span></label>
-            <input type="text" id="ret-beneficiary" placeholder="Account holder name" />
+            <input type="text" id="ret-beneficiary" value="${beneficiaryDefault ? beneficiaryDefault.replace(/"/g, '&quot;') : ''}" placeholder="Account holder name" />
           </div>
         </div>
       </div>
@@ -4134,15 +4295,26 @@ function openCPDReturnModal(autoId, onSuccess) {
     });
   };
 
-  // Bank details section — Deposit to Bank is the only option, pre-selected on open
+  // Bank details section — shown for Online Transfer / Cheque Deposit, hidden for
+  // Cheque Collect from Office (no bank account needed to hand over a physical cheque).
   document.querySelectorAll('input[name="return-payment"]').forEach(r => {
     r.addEventListener('change', () => {
       document.getElementById('bank-details-section').style.display =
-        document.getElementById('pay-bank').checked ? '' : 'none';
+        ['BANK_DEPOSIT', 'CHEQUE_DEPOSIT'].includes(r.value) ? '' : 'none';
       highlightOption('return-payment', r.value, 'label-pay-');
     });
   });
   highlightOption('return-payment', 'BANK_DEPOSIT', 'label-pay-');
+
+  // Only UAE bank accounts are accepted for the return deposit — keep "AE" as a
+  // non-removable prefix rather than just a placeholder hint.
+  const ibanEl = document.getElementById('ret-iban');
+  ibanEl.addEventListener('input', () => {
+    if (!ibanEl.value.startsWith('AE')) ibanEl.value = 'AE' + ibanEl.value.replace(/^A?E?/, '');
+  });
+  ibanEl.addEventListener('focus', () => {
+    if (ibanEl.selectionStart < 2) ibanEl.setSelectionRange(2, 2);
+  });
 
   document.getElementById('return-carnet-confirm').onclick = async () => {
     const delivery = document.querySelector('input[name="return-delivery"]:checked')?.value;
@@ -4154,7 +4326,7 @@ function openCPDReturnModal(autoId, onSuccess) {
 
     const body = { remarks, delivery_option: delivery, payment_option: payment };
 
-    if (payment === 'BANK_DEPOSIT') {
+    if (['BANK_DEPOSIT', 'CHEQUE_DEPOSIT'].includes(payment)) {
       const bankName    = document.getElementById('ret-bank-name').value.trim();
       const accountNo   = document.getElementById('ret-account-no').value.trim();
       const iban        = document.getElementById('ret-iban').value.trim();
@@ -4235,11 +4407,14 @@ async function renderPublicCPDView(autoId) {
       <span class="detail-value">${value || '—'}</span>
     </div>`;
 
-  // Editable field helper
+  // Editable field helper. Vehicle/Delivery correction fields live in their own
+  // section-cards, not physically nested inside #cpd-corrections-form — the HTML5
+  // form="..." attribute associates them with it regardless of DOM position, so
+  // they're still picked up by `new FormData(form)` on submit.
   const ef = (label, name, value, type = 'text') => `
     <div class="field">
       <label>${label}</label>
-      <input name="${name}" type="${type}" value="${esc(value)}" />
+      <input name="${name}" type="${type}" value="${esc(value)}" form="cpd-corrections-form" />
     </div>`;
 
   const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -4317,6 +4492,8 @@ async function renderPublicCPDView(autoId) {
       <div class="rv-identity-rows">
         ${identityRow('fa-regular fa-user',        'Full Name',     [r.title, r.first_name, r.last_name].filter(Boolean).join(' '))}
         ${identityRow('fa-regular fa-id-card',     'Emirates ID',   r.emirates_id)}
+        ${identityRow('fa-solid fa-flag',          'Nationality',   r.nationality)}
+        ${identityRow('fa-solid fa-venus-mars',    'Gender',        r.sex)}
         ${identityRow('fa-solid fa-mobile-screen', 'Mobile Number', r.mobile_no)}
         ${identityRow('fa-regular fa-envelope',    'Email Address', r.email)}
       </div>
@@ -4374,6 +4551,28 @@ async function renderPublicCPDView(autoId) {
     ${ownerSection}
 
     <!-- Vehicle Information -->
+    ${isSentForCorrections ? `
+    <div class="section-card">
+      <div class="section-card-header">Vehicle Details <span style="font-size:.75rem;font-weight:400;opacity:.7">(Please correct the fields below)</span></div>
+      <div class="section-card-body">
+        <div class="form-grid" id="cpd-corrections-vehicle-fields">
+          ${ef('Vehicle Plate Number',  'registration_no',  r.registration_no)}
+          ${ef('Traffic File Number',   'mulkiya_no',       r.mulkiya_no)}
+          ${ef('Vehicle Make',          'vehicle_make',     r.vehicle_make)}
+          ${ef('Vehicle Model',         'vehicle_model',    r.vehicle_model)}
+          ${ef('Vehicle Value (AED)',   'vehicle_value',    r.vehicle_value, 'number')}
+          ${ef('Vehicle Registered In', 'vehicle_registered_in', r.vehicle_registered_in)}
+          ${ef('Body Type',             'body_type',        r.body_type)}
+          ${ef('Year of Manufacture',   'manuf_year',       r.manuf_year, 'number')}
+          ${ef('Color as per Mulkiya',  'color',            r.color)}
+          ${ef('Net Weight (Empty Load)', 'net_weight',     r.net_weight)}
+          ${ef('Chassis No',            'chassis_no',       r.chassis_no)}
+          ${ef('Engine No',             'engine_no',        r.engine_no)}
+          ${ef('Horse Power',           'horse_power',      r.horse_power)}
+          ${ef('No of Cylinders',       'no_of_cylinders',  r.no_of_cylinders)}
+        </div>
+      </div>
+    </div>` : `
     <div class="rv-section">
       <div class="rv-section-title" style="margin-bottom:14px">Vehicle Details</div>
       <div class="rv-identity-rows">
@@ -4411,9 +4610,28 @@ async function renderPublicCPDView(autoId) {
           ${extraRow('Reference 2 in Destination Mobile Number',r.destination_refree2_mobile)}
         </div>
       </div>
-    </div>
+    </div>`}
 
     <!-- Delivery -->
+    ${isSentForCorrections ? `
+    <div class="section-card">
+      <div class="section-card-header">Delivery &amp; Payment <span style="font-size:.75rem;font-weight:400;opacity:.7">(Please correct the fields below)</span></div>
+      <div class="section-card-body">
+        <div class="form-grid">
+          <div class="field">
+            <label>Delivery Option</label>
+            <select name="delivery_option" id="cpd-corrections-delivery-option" form="cpd-corrections-form">
+              <option value="home_delivery" ${r.delivery_option === 'home_delivery' ? 'selected' : ''}>Home Delivery</option>
+              <option value="pick_from_dubai_office" ${r.delivery_option === 'pick_from_dubai_office' ? 'selected' : ''}>Collection — Dubai Office</option>
+              <option value="pick_from_abudhabi_office" ${r.delivery_option === 'pick_from_abudhabi_office' ? 'selected' : ''}>Collection — Abu Dhabi Office</option>
+            </select>
+          </div>
+          <div class="field field-full" id="cpd-corrections-delivery-address-field" style="display:${r.delivery_option === 'home_delivery' ? '' : 'none'}">
+            ${ef('Delivery Address', 'delivery_address', r.delivery_address)}
+          </div>
+        </div>
+      </div>
+    </div>` : `
     <div class="rv-section">
       <div class="rv-section-title" style="margin-bottom:12px">Delivery &amp; Payment</div>
       <div class="rv-extra-rows">
@@ -4423,7 +4641,7 @@ async function renderPublicCPDView(autoId) {
             : r.delivery_option)}
         ${r.delivery_option === 'home_delivery' ? extraRow('Delivery Address', r.delivery_address) : ''}
       </div>
-    </div>
+    </div>`}
 
     <!-- Trip Details -->
     <div class="rv-section">
@@ -4441,10 +4659,12 @@ async function renderPublicCPDView(autoId) {
         ${isSentForCorrections ? `
         <div id="cpd-doc-upload-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
           ${[
-            {key:'traffic_front',  label:'Traffic File Front'},
-            {key:'traffic_back',   label:'Traffic File Back'},
             {key:'eid_front',      label:'Emirates ID Front'},
             {key:'eid_back',       label:'Emirates ID Back'},
+            {key:'dl_front',       label:'Driving License Front'},
+            {key:'dl_back',        label:'Driving License Back'},
+            {key:'traffic_front',  label:'Traffic File Front'},
+            {key:'traffic_back',   label:'Traffic File Back'},
             {key:'passport_photo', label:'Passport Photo'},
             {key:'visa_page',      label:'Visa Page'},
             {key:'trade_license',  label:'Trade License'},
@@ -4605,7 +4825,7 @@ async function renderPublicCPDView(autoId) {
   const openReturnCarnetModal = () => openCPDReturnModal(autoId, () => {
     document.getElementById('btn-return-carnet-header')?.setAttribute('disabled', 'true');
     document.getElementById('btn-return-carnet-footer')?.setAttribute('disabled', 'true');
-  });
+  }, [r.title, r.first_name, r.last_name].filter(Boolean).join(' '));
 
   document.getElementById('btn-return-carnet-header')?.addEventListener('click', openReturnCarnetModal);
   document.getElementById('btn-return-carnet-footer')?.addEventListener('click', openReturnCarnetModal);
@@ -4615,6 +4835,11 @@ async function renderPublicCPDView(autoId) {
   if (submitBtn) {
     // Bind doc upload click zones
     if (isSentForCorrections) {
+      document.getElementById('cpd-corrections-delivery-option')?.addEventListener('change', e => {
+        const addrField = document.getElementById('cpd-corrections-delivery-address-field');
+        if (addrField) addrField.style.display = e.target.value === 'home_delivery' ? '' : 'none';
+      });
+
       document.querySelectorAll('.doc-upload-zone[id^="cpd-doc-zone-"]').forEach(zone => {
         zone.addEventListener('click', () => {
           zone.querySelector('.cpd-doc-input')?.click();

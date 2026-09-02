@@ -9,6 +9,7 @@ require_once API_ROOT . '/core/Auth.php';
 require_once API_ROOT . '/core/Validator.php';
 require_once API_ROOT . '/core/Router.php';
 require_once API_ROOT . '/core/MailHandler.php';
+require_once API_ROOT . '/core/UaePassClient.php';
 
 // ── Global error/exception handlers ──────────────────────────────────────────
 set_exception_handler(function (\Throwable $e) {
@@ -71,6 +72,8 @@ set_exception_handler(function (\Throwable $e) {
 $r = new Router();
 // Auth
 $r->post('/api/auth/login',          [AuthController::class,'login']);
+$r->get('/api/auth/uaepass/start',    [AuthController::class,'uaePassStart'],    auth:false);
+$r->post('/api/auth/uaepass/callback',[AuthController::class,'uaePassCallback'], auth:false);
 $r->post('/api/auth/logout',         [AuthController::class,'logout']);
 $r->get('/api/auth/me',              [AuthController::class,'me']);
 $r->post('/api/auth/forgot-password',[AuthController::class,'forgotPassword']);
@@ -154,6 +157,7 @@ $r->get('/api/cpd/requests/{id}/documents',     [CPDController::class,'getDocume
 $r->get('/api/cpd/requests/{id}/comments',      [CPDController::class,'getComments'],     auth:true);
 $r->put('/api/cpd/requests/{id}/public-update', [CPDController::class,'publicUpdate'],    auth:true);
 $r->post('/api/cpd/requests/{id}/print-awb',    [CPDController::class,'printAwb'],    auth:true);
+$r->post('/api/cpd/requests/{id}/dispatch',     [CPDController::class,'markDispatched'], auth:true);
 $r->get('/api/cpd/requests/{id}/print-carnet',  [CPDController::class,'printCarnet'], auth:true);
 $r->post('/api/cpd/requests/{id}/return-cheque',[CPDController::class,'returnCheque'],    auth:true);
 $r->get('/api/cpd/requests/{id}/return-cheque', [CPDController::class,'getReturnCheque'], auth:true);
@@ -170,6 +174,8 @@ $r->get('/api/cpd/requests/{id}/cancel-request', [CPDController::class,'getCance
 $r->get('/api/cpd/cancellations',               [CPDController::class,'indexCancellations'], auth:true);
 $r->get('/api/cpd/return-requests',             [CPDController::class,'indexReturnRequests'],  auth:true);
 $r->post('/api/cpd/return-requests/{id}/approve',[CPDController::class,'approveReturnRequest'], auth:true);
+$r->put('/api/cpd/return-requests/{id}/fine',    [CPDController::class,'saveReturnFine'],       auth:true);
+$r->post('/api/cpd/return-requests/{id}/notes',  [CPDController::class,'addReturnNote'],        auth:true);
 $r->post('/api/cpd/return-requests/{id}/deposit-slip', [CPDController::class,'uploadDepositSlip'], auth:true);
 $r->get('/api/cpd/return-requests/{id}/deposit-slip',  [CPDController::class,'serveDepositSlip'],  auth:true);
 $r->post('/api/cpd/requests/{id}/return-carnet',        [CPDController::class,'returnCarnet'],       auth:true);

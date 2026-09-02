@@ -36,6 +36,58 @@ class AuthController
         Response::success($user, 'Login successful');
     }
 
+    /** GET /api/auth/uaepass/start — redirects the browser to UAE PASS's authorize endpoint. */
+    public function uaePassStart(array $params, array $body, array $query): void
+    {
+        $state = bin2hex(random_bytes(16));
+        $_SESSION['uaepass_state'] = $state;
+
+        header('Location: ' . (new UaePassClient())->getAuthorizeUrl($state));
+        exit;
+    }
+
+    /**
+     * POST /api/auth/uaepass/callback — completes the OIDC flow: exchanges the
+     * authorization code (must happen within UAE PASS's 10s expiry window) for a
+     * token, fetches the verified profile, and logs the user in.
+     */
+    public function uaePassCallback(array $params, array $body, array $query): void
+    {
+        Validator::make($body)->required('code', 'state')->validate();
+
+        $expectedState = $_SESSION['uaepass_state'] ?? null;
+        unset($_SESSION['uaepass_state']); // one-time use regardless of outcome
+
+        if ($expectedState === null || !hash_equals($expectedState, (string)$body['state'])) {
+            Response::error('Invalid or expired UAE PASS session — please try again', 422);
+        }
+
+        $client = new UaePassClient();
+        try {
+            $token    = $client->exchangeCodeForToken((string)$body['code']);
+            $userInfo = $client->getUserInfo((string)$token['access_token']);
+        } catch (\RuntimeException $e) {
+            Logger::error('UAE PASS login failed: ' . $e->getMessage());
+            Response::error('UAE PASS login failed — please try again', 502);
+        }
+
+        $user = Auth::attemptViaUaePass($userInfo);
+
+        $this->db->execute(
+            "INSERT INTO mn_event_logs (log_module, log_action, action_initiator, log_datetime, extra_params)
+             VALUES ('LOGIN', ?, ?, NOW(), 'uae_pass')",
+            [$user ? 'SUCCESS' : 'FAIL', $userInfo['email'] ?? $userInfo['idn'] ?? ''],
+        );
+
+        if ($user === null) {
+            Response::error('This UAE PASS account is inactive — contact support', 403);
+        }
+
+        $this->db->execute('UPDATE mn_users SET last_logged_in = NOW() WHERE user_id = ?', [$user['user_id']]);
+
+        Response::success($user, 'Login successful');
+    }
+
     public function forgotPassword(array $params, array $body, array $query): void
     {
         RateLimit::check(RateLimit::forgotPasswordKey(), maxHits: 5, window: 300);

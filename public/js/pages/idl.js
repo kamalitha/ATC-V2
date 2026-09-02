@@ -63,7 +63,20 @@ export function renderIDLRequests(param = null) {
       searchPlaceholder: 'Search by ID, name, IDL no…',
       searchOnButton:    true,
       defaultFilters,
-      filters: isCashier ? [] : [
+      filters: isCashier ? [
+        { key: 'status', label: 'Pending (default)', options: [
+          { value: 'pending', label: 'Pending in queue' },
+          { value: '2',       label: 'Processing' },
+          { value: '4',       label: 'Approved' },
+          { value: '5',       label: 'Dispatched' },
+          { value: 'all',     label: 'All (incl. processed)' },
+        ]},
+        { key: 'location', label: 'Location', options: [
+          { value: 'DXB', label: 'Dubai' },
+          { value: 'AUH', label: 'Abu Dhabi' },
+          { value: 'all', label: 'All Locations' },
+        ]},
+      ] : [
         { key: 'status', label: isIDLOfficer ? 'Pending (default)' : 'All Statuses', options: [
           { value: 'pending', label: 'Pending (Not Paid + Processing)' },
           { value: '1',       label: 'Not Paid' },
@@ -83,6 +96,11 @@ export function renderIDLRequests(param = null) {
           { value: 'DISTRIBUTOR',    label: 'Distributor' },
           { value: 'ADCONNECT',      label: 'AD Connect' },
           { value: 'all',            label: 'All Types' },
+        ]},
+        { key: 'location', label: 'Location', options: [
+          { value: 'DXB', label: 'Dubai' },
+          { value: 'AUH', label: 'Abu Dhabi' },
+          { value: 'all', label: 'All Locations' },
         ]},
       ],
     },
@@ -168,7 +186,7 @@ function validateIDLForm() {
   }
 
   // Delivery address required when "send to address" is selected
-  const deliveryOpt = document.getElementById('delivery_option')?.value;
+  const deliveryOpt = document.querySelector('input[name="delivery_option"]:checked')?.value;
   if (deliveryOpt === 'send_to_address') {
     const addrEl = document.getElementById('delivery_address');
     if (!addrEl?.value?.trim()) {
@@ -229,6 +247,13 @@ export async function renderIDLNew() {
     api.idl.config(),
   ]);
 
+  // Hand-the-device UAE PASS flow: the officer sent the customer to log in on this
+  // same device (see app.js handleUaePassCallback), then logged back in themselves —
+  // the customer's verified profile is waiting here to prefill this fresh form.
+  const walkinPrefillRaw = sessionStorage.getItem('idl_walkin_prefill');
+  const walkinPrefill    = walkinPrefillRaw ? JSON.parse(walkinPrefillRaw) : null;
+  if (walkinPrefillRaw) sessionStorage.removeItem('idl_walkin_prefill');
+
   content.innerHTML = `
     <div class="page-header">
       <div class="page-title-block">
@@ -246,7 +271,13 @@ export async function renderIDLNew() {
 
       <!-- ── Personal Information ─────────────────────────────────────────── -->
       <div class="section-card">
-        <div class="section-card-header">Personal Information</div>
+        <div class="section-card-header" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Personal Information</span>
+          ${walkinPrefill ? `
+          <span class="badge badge-default"><i class="fa-solid fa-shield-halved"></i> Verified by UAE PASS</span>`
+          : `<button type="button" class="btn btn-ghost btn-sm" id="btn-walkin-uaepass">
+               <i class="fa-solid fa-mobile-screen"></i> Customer will log in with UAE PASS</button>`}
+        </div>
         <div class="section-card-body">
           <div class="form-grid">
             <div class="field"><label>Emirates ID *</label>
@@ -416,58 +447,55 @@ export async function renderIDLNew() {
         <div class="section-card-header">Documents Required</div>
         <div class="section-card-body">
           <div class="doc-upload-grid">
-            ${docUpload('dl_front',      'Drivers License Front Image')}
-            ${docUpload('dl_back',       'Drivers License Back Image')}
             ${docUpload('eid_front',     'Emirates ID Front Image')}
             ${docUpload('eid_back',      'Emirates ID Back Image')}
+            ${docUpload('dl_front',      'Drivers License Front Image')}
+            ${docUpload('dl_back',       'Drivers License Back Image')}
             ${docUpload('passport_photo','Passport Size Photo')}
+            ${docUpload('signature',     'Signature', false, false)}
           </div>
           <div id="doc-upload-error" class="form-error hidden" style="margin-top:8px"></div>
         </div>
       </div>
 
-      <!-- ── Delivery &amp; Payment ───────────────────────────────────────── -->
+      <!-- ── Delivery ──────────────────────────────────────────────────────── -->
       <div class="section-card">
-        <div class="section-card-header">Delivery &amp; Payment</div>
+        <div class="section-card-header">Choose Delivery Method</div>
         <div class="section-card-body">
-          <div class="form-grid">
-            <div class="field">
-              <label>Delivery Option *</label>
-              <select name="delivery_option" id="delivery_option" required>
-                <option value="pick_from_office">Pick from Office</option>
-                <option value="send_to_address">Send to Address</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>Payment Method *</label>
-              <select name="payment_method" required>
-                <option value="CASH">Cash</option>
-                <option value="CARD">Card</option>
-                <option value="ONLINE">Online</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>Request Type</label>
-              <select name="request_type">
-                <option value="WALKIN">Walk-in</option>
-                <option value="ONLINE">Online</option>
-                <option value="DISTRIBUTOR">Distributor</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>Total Fees (AED)</label>
-              <input type="text" id="total-fees-display"
-                readonly style="background:var(--bg-elevated);cursor:default;font-weight:600;color:var(--accent)" />
-            </div>
-            <div class="field field-full" id="delivery-address-field" style="display:none">
-              <label>Delivery Address *</label>
-              <textarea name="delivery_address" id="delivery_address" rows="3"
-                style="width:100%;resize:vertical"
-                placeholder="Full delivery address — building, street, area, emirate, postal code"></textarea>
-              <div class="field-error" id="err-delivery_address"></div>
-            </div>
+          <div class="del-method-grid">
+            <label class="del-method-card del-method-card-active" id="wi-del-card-office">
+              <input type="radio" name="delivery_option" value="pick_from_office" checked style="display:none" />
+              <div class="del-method-radio" id="wi-del-radio-office"><i class="fa-solid fa-circle-dot" style="color:var(--accent)"></i></div>
+              <div class="del-method-icon-wrap"><i class="fa-solid fa-building"></i></div>
+              <div>
+                <div class="del-method-title">Collect from Office</div>
+                <div class="del-method-desc">Free — customer picks up in person</div>
+              </div>
+            </label>
+            <label class="del-method-card" id="wi-del-card-send">
+              <input type="radio" name="delivery_option" value="send_to_address" style="display:none" />
+              <div class="del-method-radio" id="wi-del-radio-send"><i class="fa-regular fa-circle"></i></div>
+              <div class="del-method-icon-wrap"><i class="fa-solid fa-house"></i></div>
+              <div>
+                <div class="del-method-title">Send to Address</div>
+                <div class="del-method-fee">Delivery Fee - AED ${Number(idlCfg.delivery_fee ?? 15.00).toFixed(2)}</div>
+              </div>
+            </label>
+          </div>
+          <div class="field field-full" id="delivery-address-field" style="display:none;margin-top:16px">
+            <label>Delivery Address *</label>
+            <textarea name="delivery_address" id="delivery_address" rows="3"
+              style="width:100%;resize:vertical"
+              placeholder="Full delivery address — building, street, area, emirate, postal code"></textarea>
+            <div class="field-error" id="err-delivery_address"></div>
           </div>
         </div>
+      </div>
+
+      <!-- ── Fee Breakdown ─────────────────────────────────────────────────── -->
+      <div class="rv-section">
+        <div class="rv-section-title" style="margin-bottom:12px">Fee Breakdown</div>
+        <div class="rv-extra-rows" id="wi-fee-breakdown"></div>
       </div>
 
       <!-- ── Disclaimer ────────────────────────────────────────────────────── -->
@@ -503,33 +531,86 @@ export async function renderIDLNew() {
   document.getElementById('btn-new-back').addEventListener('click',   () => navigate('idl-requests'));
   document.getElementById('btn-new-cancel').addEventListener('click', () => navigate('idl-requests'));
 
-  // Show/hide delivery address field based on selected delivery option
-  const deliverySelect = document.getElementById('delivery_option');
-  const deliveryField  = document.getElementById('delivery-address-field');
-  const deliveryInput  = document.getElementById('delivery_address');
+  document.getElementById('btn-walkin-uaepass')?.addEventListener('click', () => {
+    sessionStorage.setItem('idl_walkin_uaepass_pending', '1');
+    window.location.href = api.auth.uaepassLoginUrl();
+  });
 
-  const BASE_AMOUNT   = Number(idlCfg.idl_amount   ?? 160.00);
-  const SERVICE_FEE   = Number(idlCfg.service_fee  ?? 10.00);
-  const DELIVERY_FEE  = Number(idlCfg.delivery_fee ?? 15.00);
-  const totalDisplay  = document.getElementById('total-fees-display');
-
-  function updateTotal() {
-    const isSend      = deliverySelect.value === 'send_to_address';
-    const deliveryFee = isSend ? DELIVERY_FEE : 0;
-    const vat         = Math.round((BASE_AMOUNT + deliveryFee) * 0.05 * 100) / 100;
-    const total       = BASE_AMOUNT + deliveryFee + vat + SERVICE_FEE;
-    if (totalDisplay) {
-      totalDisplay.value = `AED ${total.toFixed(2)} (Base ${BASE_AMOUNT.toFixed(2)}${isSend ? ` + Delivery ${DELIVERY_FEE.toFixed(2)}` : ''} + VAT ${vat.toFixed(2)} + Service ${SERVICE_FEE.toFixed(2)})`;
+  if (walkinPrefill) {
+    // Populate and lock exactly the fields UAE PASS verified — same fields the online
+    // wizard's viaUaePass branch treats as read-only.
+    const lockField = (name, value) => {
+      const el = document.querySelector(`[name="${name}"]`);
+      if (!el || value == null || value === '') return;
+      el.value = value;
+      // A disabled <select> is excluded from FormData on submit — lock it visually
+      // (block interaction) instead, so the verified value still gets submitted.
+      if (el.tagName === 'SELECT') el.style.pointerEvents = 'none';
+      else el.readOnly = true;
+      el.tabIndex = -1;
+      el.style.background = 'var(--bg-elevated)';
+    };
+    lockField('first_name',  walkinPrefill.first_name);
+    lockField('last_name',   walkinPrefill.last_name);
+    lockField('nationality', walkinPrefill.nationality);
+    lockField('sex',         walkinPrefill.sex);
+    lockField('mobile_no',   walkinPrefill.mobile_no);
+    lockField('email',       walkinPrefill.email);
+    if (walkinPrefill.emirates_id) {
+      const eidField = document.getElementById('emirates_id_input');
+      if (eidField) { eidField.value = walkinPrefill.emirates_id; eidField.readOnly = true; eidField.style.background = 'var(--bg-elevated)'; }
     }
   }
 
-  deliverySelect.addEventListener('change', () => {
-    const isSend = deliverySelect.value === 'send_to_address';
+  // Delivery method cards (Collect from Office / Send to Address) + fee breakdown
+  const deliveryRadios = [...document.querySelectorAll('input[name="delivery_option"]')];
+  const deliveryField  = document.getElementById('delivery-address-field');
+  const deliveryInput  = document.getElementById('delivery_address');
+  const feeBreakdownEl = document.getElementById('wi-fee-breakdown');
+
+  const BASE_AMOUNT  = Number(idlCfg.idl_amount   ?? 160.00);
+  const SERVICE_FEE  = Number(idlCfg.service_fee  ?? 10.00);
+  const DELIVERY_FEE = Number(idlCfg.delivery_fee ?? 15.00);
+  const aed          = n => 'AED ' + Number(n).toFixed(2);
+
+  function selectedDeliveryOption() {
+    return deliveryRadios.find(r => r.checked)?.value ?? 'pick_from_office';
+  }
+
+  function updateDeliveryCardStyles() {
+    const isSend = selectedDeliveryOption() === 'send_to_address';
+    document.getElementById('wi-del-card-office').classList.toggle('del-method-card-active', !isSend);
+    document.getElementById('wi-del-card-send').classList.toggle('del-method-card-active', isSend);
+    document.getElementById('wi-del-radio-office').innerHTML = !isSend
+      ? '<i class="fa-solid fa-circle-dot" style="color:var(--accent)"></i>' : '<i class="fa-regular fa-circle"></i>';
+    document.getElementById('wi-del-radio-send').innerHTML = isSend
+      ? '<i class="fa-solid fa-circle-dot" style="color:var(--accent)"></i>' : '<i class="fa-regular fa-circle"></i>';
+  }
+
+  function updateTotal() {
+    const isSend      = selectedDeliveryOption() === 'send_to_address';
+    const deliveryFee = isSend ? DELIVERY_FEE : 0;
+    const vat         = Math.round((BASE_AMOUNT + deliveryFee) * 0.05 * 100) / 100;
+    const total       = BASE_AMOUNT + deliveryFee + vat + SERVICE_FEE;
+    if (feeBreakdownEl) {
+      feeBreakdownEl.innerHTML = `
+        <div class="rv-extra-row"><span class="rv-extra-label">Base Fee</span><span class="rv-extra-value">${aed(BASE_AMOUNT)}</span></div>
+        ${isSend ? `<div class="rv-extra-row"><span class="rv-extra-label">Delivery Fee</span><span class="rv-extra-value">${aed(deliveryFee)}</span></div>` : ''}
+        <div class="rv-extra-row"><span class="rv-extra-label">VAT 5%</span><span class="rv-extra-value">${aed(vat)}</span></div>
+        <div class="rv-extra-row"><span class="rv-extra-label">Service Fee</span><span class="rv-extra-value">${aed(SERVICE_FEE)}</span></div>
+        <div class="rv-extra-row"><span class="rv-extra-label" style="font-weight:700;color:var(--text-primary)">Total Payable</span><span class="rv-extra-value" style="font-weight:700;color:var(--accent);font-size:1rem">${aed(total)}</span></div>`;
+    }
+  }
+
+  deliveryRadios.forEach(radio => radio.addEventListener('change', () => {
+    const isSend = selectedDeliveryOption() === 'send_to_address';
     deliveryField.style.display = isSend ? '' : 'none';
     if (!isSend) { deliveryInput.value = ''; clearFieldError('delivery_address'); }
+    updateDeliveryCardStyles();
     updateTotal();
-  });
+  }));
 
+  updateDeliveryCardStyles();
   updateTotal();
 
   // Activate upload zones
@@ -752,7 +833,7 @@ export async function renderIDLNew() {
       const res = await api.idl.create(body);
 
       // Upload any selected documents
-      const slots    = ['dl_front', 'dl_back', 'eid_front', 'eid_back', 'passport_photo'];
+      const slots    = ['dl_front', 'dl_back', 'eid_front', 'eid_back', 'passport_photo', 'signature'];
       const formData = new FormData();
       let   hasFiles = false;
       slots.forEach(slot => {
@@ -802,14 +883,26 @@ export async function renderIDLDetail(param) {
   const r = await api.idl.get(id);
 
   const status   = parseInt(r.request_status);
+  // Cashier accepts payment at status 1, or officer/cashier views an approved/
+  // dispatched request — fetch fee config to render the same styled fee-breakdown
+  // the online wizard uses, instead of a bare total.
+  const isOfficerOrCashier   = ['idl_officer', 'idl_cpd_cashier'].includes(currentUser?.role_name);
+  const isCashierPaymentStep = currentUser?.role_name === 'idl_cpd_cashier' && status === 1;
+  const showsIssuedBreakdown = isOfficerOrCashier && (status === 4 || status === 5);
+  const idlCfg   = (isCashierPaymentStep || showsIssuedBreakdown) ? await api.idl.config() : null;
   const canEdit  = status === 1 || status === 2; // Not Paid / Processing
   // Air Waybill No must be enterable at status 4 (Approved, awaiting dispatch) —
   // otherwise the Dispatch button can never succeed since the field starts empty.
   const canEditAwb = canEdit || status === 4;
   // Personal-info edit is allowed for officers up until the IDL is printed (print_hash
   // is only ever set the first time printIdl() runs) — matches the feedback that once
-  // printed, the customer-officer view must be locked from further edits.
-  const canEditIdentity = !r.print_hash && ['idl_officer', 'idl_cpd_walkin'].includes(currentUser?.role_name);
+  // printed, the customer-officer view must be locked from further edits. Also locked
+  // when the applicant supplied this info via UAE PASS — first/last name, nationality
+  // and gender (the only fields this edit form exposes) are exactly what UAE PASS
+  // verifies, so officers must not be able to override a verified identity.
+  const isOfficerRole   = ['idl_officer', 'idl_cpd_walkin'].includes(currentUser?.role_name);
+  const canEditIdentity = !r.print_hash && isOfficerRole && !r.applicant_via_uae_pass;
+  const lockedByUaePass = !r.print_hash && isOfficerRole && !!r.applicant_via_uae_pass;
   const nationalities = canEditIdentity ? await api.idl.nationalities() : [];
 
   const CAT_LABELS   = { A:'Motorcycle', B:'Car', C:'Heavy Vehicle', D:'Bus', E:'Car with Heavy Trailer' };
@@ -846,6 +939,9 @@ export async function renderIDLDetail(param) {
         ${canEditIdentity ? `
         <button class="btn btn-ghost btn-sm" id="btn-edit-identity">
           <i class="fa-solid fa-pen"></i> Edit</button>` : ''}
+        ${lockedByUaePass ? `
+        <span class="badge badge-default" style="font-weight:500">
+          <i class="fa-solid fa-shield-halved"></i> Verified via UAE PASS — not editable</span>` : ''}
       </div>
       <div class="rv-identity-rows" id="identity-view-rows">
         ${identityRow('fa-regular fa-user',        'Full Name',           [r.first_name, r.last_name].filter(Boolean).join(' '))}
@@ -931,7 +1027,7 @@ export async function renderIDLDetail(param) {
         ${docUpload('eid_front',   'Emirates ID Front Image', !canEdit)}
         ${docUpload('eid_back',    'Emirates ID Back Image', !canEdit)}
         ${docUpload('passport_photo', 'Passport Size Photo', !canEdit)}
-        ${docUpload('signature',   'Signature', !canEdit)}
+        ${docUpload('signature',   'Signature', !canEdit, false)}
       </div>
       <div id="doc-upload-error" class="form-error hidden" style="margin-top:8px"></div>
     </div>
@@ -968,10 +1064,24 @@ export async function renderIDLDetail(param) {
             const map = { CREDIT_CARD: 'Credit Card', CASH: 'Cash', CARD: 'Card', ONLINE: 'Online', CHEQUE: 'Cheque' };
             return map[m] || r.payment_method || '—';
           })()}</span></div>
-        ${['idl_officer','idl_cpd_cashier'].includes(currentUser?.role_name)
-          ? `<div class="rv-extra-row"><span class="rv-extra-label">Total Amount (AED)</span><span class="rv-extra-value">${r.total_amount != null ? Number(r.total_amount).toFixed(2) : '—'}</span></div>`
+        ${isOfficerOrCashier
+          ? (showsIssuedBreakdown ? (() => {
+              const isSend      = ['send_to_address', 'home_delivery'].includes(r.delivery_option);
+              const baseAmount  = Number(idlCfg.idl_amount  ?? 160.00);
+              const serviceFee  = Number(idlCfg.service_fee ?? 10.00);
+              const deliveryFee = isSend ? Number(idlCfg.delivery_fee ?? 15.00) : 0;
+              const vat         = Math.round((baseAmount + deliveryFee) * 0.05 * 100) / 100;
+              const total       = baseAmount + deliveryFee + vat + serviceFee;
+              const aedFmt      = n => 'AED ' + Number(n).toFixed(2);
+              return `
+        <div class="rv-extra-row"><span class="rv-extra-label">Base Fee</span><span class="rv-extra-value">${aedFmt(baseAmount)}</span></div>
+        ${isSend ? `<div class="rv-extra-row"><span class="rv-extra-label">Delivery Fee</span><span class="rv-extra-value">${aedFmt(deliveryFee)}</span></div>` : ''}
+        <div class="rv-extra-row"><span class="rv-extra-label">VAT 5%</span><span class="rv-extra-value">${aedFmt(vat)}</span></div>
+        <div class="rv-extra-row"><span class="rv-extra-label">Service Fee</span><span class="rv-extra-value">${aedFmt(serviceFee)}</span></div>
+        <div class="rv-extra-row"><span class="rv-extra-label" style="font-weight:700;color:var(--text-primary)">Total Payable</span><span class="rv-extra-value" style="font-weight:700;color:var(--accent)">${aedFmt(r.total_amount ?? total)}</span></div>`;
+            })() : `<div class="rv-extra-row"><span class="rv-extra-label">Total Amount (AED)</span><span class="rv-extra-value">${r.total_amount != null ? Number(r.total_amount).toFixed(2) : '—'}</span></div>`)
           : `<div class="rv-extra-row"><span class="rv-extra-label">Air Waybill No</span><span class="rv-extra-value">${r.air_bill_no || '—'}</span></div>`}
-        ${['idl_officer','idl_cpd_cashier'].includes(currentUser?.role_name) ? `
+        ${isOfficerOrCashier ? `
         <div class="rv-extra-row"><span class="rv-extra-label">Paid Date &amp; Time</span><span class="rv-extra-value">${r.paid_date ? formatDateTime(r.paid_date) : '—'}</span></div>
         <div class="rv-extra-row"><span class="rv-extra-label">Order / Ref No</span><span class="rv-extra-value">${esc(r.order_ref_no ?? '') || '—'}</span></div>` : ''}
       </div>
@@ -1005,16 +1115,41 @@ export async function renderIDLDetail(param) {
               style="width:100%;resize:vertical" placeholder="Officer notes…">${esc(r.officer_comments ?? '')}</textarea>
           </div>` : ''}
         </div>` : ''}
+        ${isCashierPaymentStep ? (() => {
+          const isSend      = ['send_to_address', 'home_delivery'].includes(r.delivery_option);
+          const baseAmount  = Number(idlCfg.idl_amount  ?? 160.00);
+          const serviceFee  = Number(idlCfg.service_fee ?? 10.00);
+          const deliveryFee = isSend ? Number(idlCfg.delivery_fee ?? 15.00) : 0;
+          const vat         = Math.round((baseAmount + deliveryFee) * 0.05 * 100) / 100;
+          const total       = baseAmount + deliveryFee + vat + serviceFee;
+          const aed         = n => 'AED ' + Number(n).toFixed(2);
+          return `
+        <div class="field" style="max-width:280px;margin-top:16px">
+          <label>Payment Method *</label>
+          <select id="proc-payment-method" required>
+            <option value="CASH">Cash</option>
+            <option value="CARD">Card</option>
+            <option value="ONLINE">Online</option>
+          </select>
+        </div>
+        <div class="rv-extra-rows" style="margin-top:12px">
+          <div class="rv-extra-row"><span class="rv-extra-label">Base Fee</span><span class="rv-extra-value">${aed(baseAmount)}</span></div>
+          ${isSend ? `<div class="rv-extra-row"><span class="rv-extra-label">Delivery Fee</span><span class="rv-extra-value">${aed(deliveryFee)}</span></div>` : ''}
+          <div class="rv-extra-row"><span class="rv-extra-label">VAT 5%</span><span class="rv-extra-value">${aed(vat)}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label">Service Fee</span><span class="rv-extra-value">${aed(serviceFee)}</span></div>
+          <div class="rv-extra-row"><span class="rv-extra-label" style="font-weight:700;color:var(--text-primary)">Total Payable</span><span class="rv-extra-value" style="font-weight:700;color:var(--accent);font-size:1rem">${aed(total)}</span></div>
+        </div>`;
+        })() : ''}
         <div id="proc-error" class="form-error hidden" style="margin-top:8px"></div>
         <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
           ${status === 1 ? `
           <button class="btn btn-success btn-sm" data-action="approve">
             <i class="fa-solid fa-circle-dollar-to-slot"></i> Approved</button>
-          ${currentUser?.role_name === 'idl_cpd_cashier' ? `
-          <button class="btn btn-info btn-sm" data-action="print-receipt">
-            <i class="fa-solid fa-print"></i> Print Receipt</button>` : ''}
           <button class="btn btn-danger btn-sm" data-action="reject">
             <i class="fa-solid fa-ban"></i> ${currentUser?.role_name === 'idl_cpd_cashier' ? 'Cancel' : 'Reject'}</button>` : ''}
+          ${currentUser?.role_name === 'idl_cpd_cashier' ? `
+          <button class="btn btn-info btn-sm" data-action="print-receipt">
+            <i class="fa-solid fa-print"></i> ${status === 1 ? 'Print Receipt' : 'Reprint Receipt'}</button>` : ''}
           ${status === 2 ? `
           <button class="btn btn-success btn-sm" data-action="issue">
             <i class="fa-solid fa-check"></i> Approve</button>
@@ -1029,9 +1164,12 @@ export async function renderIDLDetail(param) {
           ${status === 4 && currentUser?.role_name === 'idl_officer' ? `
           <button class="btn btn-ghost btn-sm" data-action="print">
             <i class="fa-solid fa-print"></i> Print IDL</button>` : ''}
-          ${status === 4 && r.idl_no && currentUser?.role_name === 'idl_officer' && ['send_to_address', 'home_delivery'].includes(r.delivery_option) ? `
+          ${status === 4 && r.idl_no && r.print_hash && currentUser?.role_name === 'idl_officer' && ['send_to_address', 'home_delivery'].includes(r.delivery_option) ? `
           <button class="btn btn-ghost btn-sm" data-action="print-awb">
             <i class="fa-solid fa-truck-fast"></i> Print AWB</button>` : ''}
+          ${status === 4 && r.idl_no && !r.print_hash && currentUser?.role_name === 'idl_officer' && ['send_to_address', 'home_delivery'].includes(r.delivery_option) ? `
+          <span class="badge badge-default" style="font-weight:500" title="Print IDL first to confirm and lock the applicant's details before generating the AWB">
+            <i class="fa-solid fa-circle-info"></i> Print IDL first to enable AWB</span>` : ''}
           ${(status === 4 || status === 5) && currentUser?.role_name === 'idl_officer' ? `
           <button class="btn btn-danger btn-sm" data-action="void">
             <i class="fa-solid fa-ban"></i> Void</button>` : ''}
@@ -1313,8 +1451,16 @@ async function handleSaveProc(id) {
 
 async function handlePrintReceipt(id, r) {
   try {
-    // Create (or fetch existing) receipt record in DB
-    const rec = await api.idl.createReceipt(id);
+    // If a receipt already exists for this request, this is a reprint — fetch it
+    // instead of creating a new one, and mark the printout as a copy.
+    let rec, isReprint;
+    try {
+      rec = await api.idl.getReceipt(id);
+      isReprint = true;
+    } catch {
+      rec = await api.idl.createReceipt(id);
+      isReprint = false;
+    }
 
     // Compute amounts: total = fees + 5% VAT; base fee = total / 1.05
     const total    = parseFloat(r.total_amount ?? 178.50);
@@ -1350,7 +1496,7 @@ async function handlePrintReceipt(id, r) {
   </style>
 </head>
 <body>
-  <h1>RECEIPT</h1>
+  <h1>RECEIPT${isReprint ? ' <span style="font-size:14px;letter-spacing:1px">(COPY)</span>' : ''}</h1>
   <div class="meta">
     <div>Date: ${dateStr}</div>
     <div>Receipt #: ${rec.receipt_no}</div>
@@ -1440,6 +1586,10 @@ function handleApprove(id, param) {
     if (booklet) body.idl_booklet_no  = booklet;
     if (awb)     body.air_bill_no     = awb;
   }
+  // Cashier accepting payment (status 1) — payment method is captured here now,
+  // not by the officer/CSO at request creation.
+  const paymentMethodEl = document.getElementById('proc-payment-method');
+  if (paymentMethodEl) body.payment_method = paymentMethodEl.value;
 
   confirm('Approve this IDL request?', async () => {
     await api.idl.approve(id, body);
@@ -1541,7 +1691,7 @@ function identityRow(icon, label, value) {
   return `<div class="rv-identity-row"><span class="rv-id-icon"><i class="${icon}"></i></span><span class="rv-id-label">${label}</span><span class="rv-id-value">${value || '—'}</span></div>`;
 }
 
-function docUpload(key, label, readOnly = false) {
+function docUpload(key, label, readOnly = false, required = true) {
   if (readOnly) {
     // Read-only view of an already-submitted document — no upload input, click opens a lightbox.
     return `
@@ -1561,7 +1711,7 @@ function docUpload(key, label, readOnly = false) {
   }
   return `
     <div class="doc-upload-item">
-      <div class="doc-upload-label">${label} *</div>
+      <div class="doc-upload-label">${label}${required ? ' *' : ''}</div>
       <div class="doc-upload-zone" data-key="${key}" id="doc-zone-${key}">
         <input type="file" accept=".jpg,.jpeg,.png" data-doc="${key}"
                style="display:none" />

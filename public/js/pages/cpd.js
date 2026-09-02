@@ -6,7 +6,6 @@ import { navigate, openModal, closeModal, toast, confirm, currentUser } from '..
 // ── CPD Request list ──────────────────────────────────────────────────────────
 export function renderCPDRequests(param = null) {
   const content   = document.getElementById('page-content');
-  const isCheque     = currentUser?.role_name === 'cpd_cheque';
   const isCashier    = currentUser?.role_name === 'idl_cpd_cashier';
   const isCPDOfficer = currentUser?.role_name === 'cpd_officer';
 
@@ -27,7 +26,7 @@ export function renderCPDRequests(param = null) {
         <h1 class="page-title">CPD Requests</h1>
         <p class="page-subtitle">${pageSubtitle}</p>
       </div>
-      ${!isCheque && !isCashier ? `
+      ${!isCashier ? `
       <div class="page-actions">
         <button class="btn btn-primary" id="btn-new-cpd">
           <i class="fa-solid fa-plus"></i> New Request
@@ -36,16 +35,12 @@ export function renderCPDRequests(param = null) {
     </div>
     <div id="cpd-table"></div>`;
 
-  if (!isCheque && !isCashier) {
+  if (!isCashier) {
     document.getElementById('btn-new-cpd').addEventListener('click', () => navigate('cpd-new'));
   }
 
-  // Queue filters: cheque sees status=2, cashier sees their queue position
-  const defaultFilters = isCheque
-    ? { status: '3' }
-    : isCashier
-      ? { queue_position: 'IDL_CPD_Cashier' }
-      : {};
+  // Queue filter: cashier sees their queue position
+  const defaultFilters = isCashier ? { queue_position: 'IDL_CPD_Cashier' } : {};
 
   new DataTable(
     document.getElementById('cpd-table'),
@@ -60,12 +55,10 @@ export function renderCPDRequests(param = null) {
       { key: 'total_amount',  label: 'Amount',      render: v => formatCurrency(v) },
       { key: 'requested_datetime', label: 'Submitted', render: v => formatDateTime(v) },
       { key: 'request_status', label: 'Status',     render: (v, r) => statusBadge(r.status_label ?? v) },
-      { key: 'actions',       label: '',            width: (isCheque || isCashier) ? '150px' : '100px',
+      { key: 'actions',       label: '',            width: isCashier ? '150px' : '100px',
         render: (_, r) => `<div style="display:flex;gap:4px"><button class="btn btn-ghost btn-sm view-btn" data-id="${r.auto_id}" title="View">
           <i class="fa-solid fa-eye"></i></button>
-          ${isCheque ? `<button class="btn btn-primary btn-sm upload-cheque-btn" data-id="${r.auto_id}" title="Upload Return Cheque">
-          <i class="fa-solid fa-upload"></i></button>` : ''}
-          ${(!isCheque && !isCashier && String(r.request_status) === '3') ? `<button class="btn btn-danger btn-sm cancel-cpd-btn" data-id="${r.auto_id}" title="Cancel CPD">
+          ${(!isCashier && String(r.request_status) === '3') ? `<button class="btn btn-danger btn-sm cancel-cpd-btn" data-id="${r.auto_id}" title="Cancel CPD">
           <i class="fa-solid fa-ban"></i></button>` : ''}</div>` },
     ],
     params => {
@@ -81,7 +74,7 @@ export function renderCPDRequests(param = null) {
       searchPlaceholder: 'Search by ID, plate, name…',
       defaultFilters,
       rowStyle: r => parseInt(r.has_cheque) > 0 ? 'background:#ebffeb' : '',
-      filters: (isCheque || isCashier) ? [] : [
+      filters: isCashier ? [] : [
         { key: 'status', label: 'All Statuses', options: [
           { value: '1',          label: 'New' },
           { value: '2',          label: 'Processing' },
@@ -105,15 +98,13 @@ export function renderCPDRequests(param = null) {
   document.getElementById('cpd-table').addEventListener('click', e => {
     const btn = e.target.closest('.view-btn');
     if (btn) navigate('cpd-detail', btn.dataset.id);
-    const chequeBtn = e.target.closest('.upload-cheque-btn');
-    if (chequeBtn) openReturnChequeModal(Number(chequeBtn.dataset.id));
     const cancelBtn = e.target.closest('.cancel-cpd-btn');
     if (cancelBtn) cpdCancelFromList(Number(cancelBtn.dataset.id));
   });
 }
 
 // ── Return Guarantee Cheque Modal ─────────────────────────────────────────────
-async function openReturnChequeModal(id) {
+async function openReturnChequeModal(id, defaultBeneficiary = '', onSaved = null) {
   const uaeBanks = [
     'Abu Dhabi Commercial Bank (ADCB)',
     'Abu Dhabi Islamic Bank (ADIB)',
@@ -159,7 +150,7 @@ async function openReturnChequeModal(id) {
       <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:14px">
         <div class="field" style="grid-column:1/-1">
           <label>Beneficiary Name <span style="color:var(--accent)">*</span></label>
-          <input id="rc-beneficiary" type="text" placeholder="Enter beneficiary name" value="${e.beneficiary_name ?? ''}" />
+          <input id="rc-beneficiary" type="text" placeholder="Enter beneficiary name" value="${e.beneficiary_name ?? defaultBeneficiary}" />
         </div>
         <div class="field">
           <label>Cheque No <span style="color:var(--accent)">*</span></label>
@@ -219,6 +210,7 @@ async function openReturnChequeModal(id) {
         toast('Return cheque details saved', 'success');
       }
       closeModal();
+      onSaved?.();
     } catch (err) {
       toast(err.message || 'Failed to save', 'error');
       saveBtn.disabled = false;
@@ -275,9 +267,16 @@ export async function renderCPDNew() {
   const UAE_STATES = ['Abu Dhabi','Dubai','Sharjah','Ajman','Umm Al Quwain','Ras Al Khaimah','Fujairah'];
   // "Luxury" is intentionally not selectable — luxury vehicles are auto-detected
   // from the make (see LUXURY_MAKES_CPD below) and priced accordingly.
-  const BODY_TYPES = ['Station','Saloon','Motor Cycle','Truck','Coupe','Bus','Trailer','-Coupe','-Station','-Saloon','Pickup','Caravan'];
+  const BODY_TYPES = ['Station','Saloon','Motor Cycle','Truck','Coupe','Bus','Trailer','-Coupe','-Station','-Saloon','Pickup','Caravan','Hatchback'];
   const COLORS     = ['White','Silver','Black','Grey','Blue','Red','Brown','Green','Other'];
   const yearOpts   = Array.from({length:41},(_,i)=>2030-i).map(y=>`<option value="${y}">${y}</option>`).join('');
+
+  // Hand-the-device UAE PASS flow (personal-use walk-ins only) — mirrors the IDL
+  // walk-in pattern: officer sends the customer to log in on this device, then logs
+  // back in themselves; their verified profile is waiting here to prefill the form.
+  const cpdWalkinPrefillRaw = sessionStorage.getItem('cpd_walkin_prefill');
+  const cpdWalkinPrefill    = cpdWalkinPrefillRaw ? JSON.parse(cpdWalkinPrefillRaw) : null;
+  if (cpdWalkinPrefillRaw) sessionStorage.removeItem('cpd_walkin_prefill');
 
   content.innerHTML = `
     <div class="page-header">
@@ -293,6 +292,24 @@ export async function renderCPDNew() {
     </div>
 
     <form id="cpd-form" novalidate>
+
+      <!-- Usage Type — determines whether the corporate documents are required and
+           whether the "hand the device" UAE PASS option (personal-use only) is offered. -->
+      <div class="section-card">
+        <div class="section-card-header" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Usage Type</span>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-cpd-walkin-uaepass" style="display:none">
+            <i class="fa-solid fa-mobile-screen"></i> Customer will log in with UAE PASS</button>
+        </div>
+        <div class="section-card-body">
+          <div class="field" style="max-width:280px">
+            <select name="usage_type" id="cpd-new-usage-type" required>
+              <option value="PERSONAL" selected>Personal Use</option>
+              <option value="COMPANY">Company Use</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
       <!-- Personal Information -->
       <div class="section-card">
@@ -579,15 +596,6 @@ export async function renderCPDNew() {
                 <input name="destination_refree2_mobile" class="pub-id-inline-input" placeholder="Mobile number" />
               </div>
 
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-briefcase"></i></span>
-                <span class="pub-id-label">Usage Type</span>
-                <select name="usage_type" id="cpd-new-usage-type" class="pub-id-inline-select">
-                  <option value="PERSONAL" selected>Personal Use</option>
-                  <option value="COMPANY">Company Use</option>
-                </select>
-              </div>
-
             </div>
           </div>
         </div>
@@ -703,7 +711,7 @@ export async function renderCPDNew() {
   (guaranteeRules.booking_fees ?? []).forEach(bf => _bookingFees.push(bf));
   const EXTRA_DRIVER_FEE = parseFloat(guaranteeRules.extra_driver_fee ?? 50);
 
-  const STATION_TYPES_CPD = ['Station','SUV','-Station','Pickup','Truck','Bus','Trailer','Caravan'];
+  const STATION_TYPES_CPD = ['Station','SUV','-Station','Pickup','Truck','Bus','Trailer','Caravan','Hatchback'];
   // "Luxury" is not a selectable body type — see the matching note on BODY_TYPES above.
   const LUXURY_MAKES_CPD = [
     'Rolls Royce', 'Bentley', 'Ferrari', 'Lamborghini', 'Maserati', 'Aston Martin',
@@ -829,11 +837,44 @@ export async function renderCPDNew() {
     </div>`;
   }
 
-  // Toggle corporate-only documents when Usage Type changes
-  document.getElementById('cpd-new-usage-type')?.addEventListener('change', e => {
+  // Toggle corporate-only documents, and the personal-use-only "hand the device" UAE
+  // PASS option, when Usage Type changes.
+  const usageTypeSelect  = document.getElementById('cpd-new-usage-type');
+  const uaePassWalkinBtn = document.getElementById('btn-cpd-walkin-uaepass');
+  function syncUsageTypeUI() {
+    const isCompany = usageTypeSelect.value === 'COMPANY';
     const corpDocs = document.getElementById('cpd-new-corporate-docs');
-    if (corpDocs) corpDocs.style.display = e.target.value === 'COMPANY' ? 'contents' : 'none';
+    if (corpDocs) corpDocs.style.display = isCompany ? 'contents' : 'none';
+    if (uaePassWalkinBtn) uaePassWalkinBtn.style.display = isCompany ? 'none' : '';
+  }
+  usageTypeSelect?.addEventListener('change', syncUsageTypeUI);
+  syncUsageTypeUI();
+
+  uaePassWalkinBtn?.addEventListener('click', () => {
+    sessionStorage.setItem('cpd_walkin_uaepass_pending', '1');
+    window.location.href = api.auth.uaepassLoginUrl();
   });
+
+  if (cpdWalkinPrefill) {
+    const lockField = (name, value) => {
+      const el = document.querySelector(`[name="${name}"]`);
+      if (!el || value == null || value === '') return;
+      el.value = value;
+      if (el.tagName === 'SELECT') el.style.pointerEvents = 'none';
+      else el.readOnly = true;
+      el.tabIndex = -1;
+      el.style.background = 'var(--bg-elevated)';
+    };
+    const fullName = [cpdWalkinPrefill.first_name, cpdWalkinPrefill.last_name].filter(Boolean).join(' ');
+    lockField('full_name',   fullName);
+    lockField('mobile_no',   cpdWalkinPrefill.mobile_no);
+    lockField('email',       cpdWalkinPrefill.email);
+    lockField('nationality', cpdWalkinPrefill.nationality);
+    if (cpdWalkinPrefill.emirates_id) {
+      const eidField = document.getElementById('cpd-eid-input');
+      if (eidField) { eidField.value = cpdWalkinPrefill.emirates_id; eidField.readOnly = true; eidField.style.background = 'var(--bg-elevated)'; }
+    }
+  }
 
   // Bind document upload zones
   document.querySelectorAll('.doc-upload-zone[id^="officer-cpd-zone-"]').forEach(zone => {
@@ -1006,9 +1047,11 @@ export async function renderCPDNew() {
       body.last_name  = nameParts.slice(2).join(' ');
     }
 
-    // Validate all documents are selected
-    const REQUIRED_DOCS = ['traffic_front','traffic_back','eid_front','eid_back',
-                           'passport_photo','visa_page','trade_license','noc'];
+    // Validate all documents are selected. The 3 corporate docs are only ever shown
+    // (and thus fillable) when Usage Type is Company — requiring them unconditionally
+    // made every Personal-use walk-in submission impossible.
+    const REQUIRED_DOCS = ['traffic_front','traffic_back','eid_front','eid_back','passport_photo'];
+    if (body.usage_type === 'COMPANY') REQUIRED_DOCS.push('visa_page','trade_license','noc');
     const DOC_LABELS    = {
       traffic_front: 'Traffic File Front', traffic_back: 'Traffic File Back',
       eid_front: 'Emirates ID Front',      eid_back: 'Emirates ID Back',
@@ -1073,11 +1116,20 @@ export async function renderCPDDetail(param) {
   const createReturn = (typeof param === 'object') ? !!param.createReturn : false;
 
   const content = document.getElementById('page-content');
-  const [r, docs] = await Promise.all([
+  const [r, docs, existingCheque] = await Promise.all([
     api.cpd.get(id),
     api.cpd.getDocs(id).catch(() => []),
+    returnId ? api.cpd.getReturnCheque(id).catch(() => null) : Promise.resolve(null),
   ]);
   window.__cpdCurrentRecord = r;
+
+  // Identity edit — same UAE-PASS lock concept as IDL: locked once the applicant
+  // supplied name/Emirates ID/nationality/gender via UAE PASS; everything else
+  // (vehicle, extra drivers, delivery) stays editable regardless.
+  const isOfficerRole   = currentUser?.role_name === 'cpd_officer';
+  const canEditIdentity = isOfficerRole && !r.applicant_via_uae_pass;
+  const lockedByUaePass = isOfficerRole && !!r.applicant_via_uae_pass;
+  const nationalities   = canEditIdentity ? await api.idl.nationalities() : [];
 
   const backBtn    = `<button class="btn btn-ghost btn-sm" data-action="back">
     <i class="fa-solid fa-arrow-left"></i> Back</button>`;
@@ -1094,10 +1146,16 @@ export async function renderCPDDetail(param) {
     </div>
 
     <div class="rv-section">
-      <div class="rv-section-header">
+      <div class="rv-section-header" style="display:flex;justify-content:space-between;align-items:center">
         <span class="rv-section-title">Applicant Information</span>
+        ${canEditIdentity ? `
+        <button class="btn btn-ghost btn-sm" id="btn-edit-cpd-identity">
+          <i class="fa-solid fa-pen"></i> Edit</button>` : ''}
+        ${lockedByUaePass ? `
+        <span class="badge badge-default" style="font-weight:500">
+          <i class="fa-solid fa-shield-halved"></i> Verified via UAE PASS — not editable</span>` : ''}
       </div>
-      <div class="rv-identity-rows">
+      <div class="rv-identity-rows" id="cpd-identity-view-rows">
         ${identityRow('fa-regular fa-user',        'Full Name',     `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim())}
         ${identityRow('fa-regular fa-id-card',     'Emirates ID',   r.emirates_id)}
         ${identityRow('fa-solid fa-flag',          'Nationality',   r.nationality)}
@@ -1105,16 +1163,43 @@ export async function renderCPDDetail(param) {
         ${identityRow('fa-solid fa-mobile-screen', 'Mobile Number', r.mobile_no)}
         ${identityRow('fa-regular fa-envelope',    'Email Address', r.email)}
       </div>
+      ${canEditIdentity ? `
+      <div class="form-grid" id="cpd-identity-edit-rows" style="display:none;margin-top:12px">
+        <div class="field">
+          <label>First Name</label>
+          <input id="cpd-id-edit-first-name" value="${esc(r.first_name ?? '')}" />
+        </div>
+        <div class="field">
+          <label>Last Name</label>
+          <input id="cpd-id-edit-last-name" value="${esc(r.last_name ?? '')}" />
+        </div>
+        <div class="field">
+          <label>Nationality</label>
+          <select id="cpd-id-edit-nationality">
+            ${nationalities.map(n => `<option value="${n.nationality_id}" ${String(n.nationality_id) === String(r.nationality_id) ? 'selected' : ''}>${esc(n.nationality)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label>Gender</label>
+          <select id="cpd-id-edit-sex">
+            <option value="Male" ${r.sex === 'Male' ? 'selected' : ''}>Male</option>
+            <option value="Female" ${r.sex === 'Female' ? 'selected' : ''}>Female</option>
+          </select>
+        </div>
+      </div>
+      <div id="cpd-identity-edit-error" class="form-error hidden" style="margin-top:8px"></div>
+      <div id="cpd-identity-edit-actions" style="display:none;gap:8px;margin-top:12px">
+        <button class="btn btn-success btn-sm" id="btn-save-cpd-identity">
+          <i class="fa-solid fa-floppy-disk"></i> Save</button>
+        <button class="btn btn-ghost btn-sm" id="btn-cancel-cpd-identity">
+          <i class="fa-solid fa-xmark"></i> Cancel</button>
+      </div>` : ''}
     </div>
 
     <div class="rv-section">
       <div class="rv-section-title" style="margin-bottom:12px">Additional Information</div>
       <div class="rv-extra-rows">
-        ${extraRow('Date of Birth', r.dob ? formatDate(r.dob) : '')}
         ${extraRow('Passport Number', r.passport_no)}
-        ${extraRow('PO Box', r.po_box)}
-        ${extraRow('City', r.city)}
-        ${extraRow('UAE Address', r.uae_address)}
         ${(r.extra_owner1_name || r.extra_owner1_eid || r.extra_owner1_passport) ? `
         ${extraRow('Extra Driver 1 Full Name',       r.extra_owner1_name)}
         ${extraRow('Extra Driver 1 Emirates ID',     r.extra_owner1_eid)}
@@ -1340,7 +1425,7 @@ export async function renderCPDDetail(param) {
     ${r.carnet_return ? (() => {
       const cr = r.carnet_return;
       const deliveryLabel  = cr.delivery_method === 'ARAMAX' ? 'Return via Aramex' : 'Return to Office';
-      const paymentLabel   = cr.return_payment_method === 'BANK_DEPOSIT' ? 'Deposit to Bank' : 'Collect Cheque from Office';
+      const paymentLabel   = { BANK_DEPOSIT: 'Online Transfer', CHEQUE_DEPOSIT: 'Cheque Deposit', COLLECT_CHEQUE: 'Cheque Collect from Office' }[cr.return_payment_method] ?? cr.return_payment_method;
       const payStatus      = cr.order_status == 1
         ? '<span class="badge badge-success">Paid</span>'
         : cr.delivery_method === 'ARAMAX'
@@ -1395,7 +1480,75 @@ export async function renderCPDDetail(param) {
             </button>
           </div>` : ''}
         </div>
+      </div>
+
+      ${returnId && !cr.confirmed_by ? (() => {
+        const issuedDatetime = r.issued_carnet?.issued_datetime ?? null;
+        const isLate = issuedDatetime ? (new Date(issuedDatetime).getTime() + 364 * 86400000 < Date.now()) : false;
+        const guaranteeAmount = Number(r.guarantee_amount ?? 0);
+        const existingFine = Number(cr.penalty_amount ?? 0);
+        return `
+      <div class="section-card" style="margin-top:16px">
+        <div class="section-card-header">Guarantee Return</div>
+        <div class="section-card-body">
+          <div class="detail-grid">
+            ${detail('Original Guarantee Amount', formatCurrency(guaranteeAmount))}
+            ${detail('Return Timing', isLate
+              ? '<span class="badge badge-danger">After Expiry — late charges may apply</span>'
+              : '<span class="badge badge-success">Before Expiry</span>')}
+          </div>
+          <div class="form-grid" style="margin-top:12px">
+            <div class="field">
+              <label>Fine (AED) — leave blank if none</label>
+              <input type="number" step="0.01" min="0" id="cpd-return-fine" value="${existingFine || ''}" placeholder="0.00" />
+            </div>
+            <div class="field">
+              <label>Return Amount (AED)</label>
+              <input type="text" id="cpd-return-amount-display" readonly
+                style="background:var(--bg-elevated);cursor:default;font-weight:600"
+                value="${formatCurrency(guaranteeAmount - existingFine)}" />
+            </div>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+            <button class="btn btn-ghost btn-sm" id="btn-save-return-fine" data-return-id="${cr.return_id}">
+              <i class="fa-solid fa-floppy-disk"></i> Save Fine &amp; Return Amount</button>
+          </div>
+          ${['CHEQUE_DEPOSIT', 'COLLECT_CHEQUE'].includes(cr.return_payment_method) ? `
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+            <div style="font-size:.85rem;color:var(--text-muted);margin-bottom:8px">
+              ${existingCheque ? 'Cheque details captured' : 'Cheque details not yet captured'} for this return.
+            </div>
+            <button class="btn btn-ghost btn-sm" id="btn-cheque-details" data-id="${id}"
+              data-default-beneficiary="${esc(`${r.first_name ?? ''} ${r.last_name ?? ''}`.trim())}">
+              <i class="fa-solid fa-money-check"></i> ${existingCheque ? 'Edit' : 'Enter'} Cheque Details</button>
+          </div>` : ''}
+        </div>
+      </div>
+      <div class="section-card" style="margin-top:16px">
+        <div class="section-card-body">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" id="cpd-docs-acknowledged" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" />
+            <span>I confirm all documents for this return have been received</span>
+          </label>
+        </div>
+      </div>
+      <div class="section-card" style="margin-top:16px">
+        <div class="section-card-header">Add Note / Attachment</div>
+        <div class="section-card-body">
+          <div class="field">
+            <label>Comment</label>
+            <textarea id="cpd-return-note-comment" rows="3" style="width:100%;resize:vertical" placeholder="Add a note about this return…"></textarea>
+          </div>
+          <div class="field">
+            <label>Attachments <span style="color:var(--text-muted);font-weight:400">(Optional — JPG, PNG or PDF)</span></label>
+            <input type="file" id="cpd-return-note-files" accept=".jpg,.jpeg,.png,.pdf" multiple />
+          </div>
+          <div id="cpd-return-note-error" class="form-error hidden" style="margin-top:8px"></div>
+          <button class="btn btn-ghost btn-sm" id="btn-add-return-note" data-return-id="${cr.return_id}" style="margin-top:8px">
+            <i class="fa-solid fa-paperclip"></i> Add Note</button>
+        </div>
       </div>`;
+      })() : ''}`;
     })() : ''}
 
     ${createReturn ? `
@@ -1429,6 +1582,45 @@ export async function renderCPDDetail(param) {
   // Bind to freshly-rendered containers to avoid listener accumulation
   content.querySelector('.detail-footer').addEventListener('click', handleCPDAction);
   content.querySelector('.page-actions').addEventListener('click',  handleCPDAction);
+
+  if (canEditIdentity) {
+    const viewRows    = document.getElementById('cpd-identity-view-rows');
+    const editRows    = document.getElementById('cpd-identity-edit-rows');
+    const editActions = document.getElementById('cpd-identity-edit-actions');
+    const editBtn     = document.getElementById('btn-edit-cpd-identity');
+
+    editBtn.addEventListener('click', () => {
+      viewRows.style.display    = 'none';
+      editRows.style.display    = '';
+      editActions.style.display = 'flex';
+      editBtn.style.display     = 'none';
+    });
+
+    document.getElementById('btn-cancel-cpd-identity').addEventListener('click', () => renderCPDDetail(param));
+
+    document.getElementById('btn-save-cpd-identity').addEventListener('click', async () => {
+      const errEl   = document.getElementById('cpd-identity-edit-error');
+      const saveBtn = document.getElementById('btn-save-cpd-identity');
+      errEl.classList.add('hidden');
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving…';
+      try {
+        await api.put(`/cpd/requests/${id}`, {
+          first_name:  document.getElementById('cpd-id-edit-first-name').value.trim(),
+          last_name:   document.getElementById('cpd-id-edit-last-name').value.trim(),
+          nationality: document.getElementById('cpd-id-edit-nationality').value,
+          sex:         document.getElementById('cpd-id-edit-sex').value,
+        });
+        toast('Applicant information updated', 'success');
+        renderCPDDetail(param);
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.classList.remove('hidden');
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save';
+      }
+    });
+  }
 
   // Return Note save (createReturn context)
   const returnNoteSave = document.getElementById('cpd-return-note-save');
@@ -1484,6 +1676,73 @@ export async function renderCPDDetail(param) {
     });
   });
 
+  // Guarantee Return — acknowledgment checkbox gates Approve; fine recalculates the
+  // displayed return amount live and can be saved independently of approving.
+  const ackCheckbox = document.getElementById('cpd-docs-acknowledged');
+  if (ackCheckbox) {
+    ackCheckbox.addEventListener('change', () => {
+      document.querySelectorAll('#return-approve-btn').forEach(btn => { btn.disabled = !ackCheckbox.checked; });
+    });
+  }
+  const fineInput = document.getElementById('cpd-return-fine');
+  if (fineInput) {
+    fineInput.addEventListener('input', () => {
+      const guaranteeAmount = Number(r.guarantee_amount ?? 0);
+      const fine = Number(fineInput.value) || 0;
+      document.getElementById('cpd-return-amount-display').value = formatCurrency(guaranteeAmount - fine);
+    });
+  }
+  document.getElementById('btn-cheque-details')?.addEventListener('click', e => {
+    openReturnChequeModal(e.currentTarget.dataset.id, e.currentTarget.dataset.defaultBeneficiary, () => renderCPDDetail(param));
+  });
+
+  document.getElementById('btn-add-return-note')?.addEventListener('click', async e => {
+    const btn     = e.currentTarget;
+    const errEl   = document.getElementById('cpd-return-note-error');
+    const comment = document.getElementById('cpd-return-note-comment').value.trim();
+    const files   = document.getElementById('cpd-return-note-files').files;
+    errEl.classList.add('hidden');
+    if (!comment && !files.length) {
+      errEl.textContent = 'Add a comment or attach at least one file';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving…';
+    try {
+      const fd = new FormData();
+      fd.append('comment', comment);
+      [...files].forEach(f => fd.append('documents[]', f));
+      const res = await api.cpd.addReturnNote(btn.dataset.returnId, fd);
+      if (res.errors?.length) toast(res.errors.join('; '), 'error');
+      toast('Note added', 'success');
+      document.getElementById('cpd-return-note-comment').value = '';
+      document.getElementById('cpd-return-note-files').value = '';
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-paperclip"></i> Add Note';
+    }
+  });
+
+  document.getElementById('btn-save-return-fine')?.addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    const fine = Number(document.getElementById('cpd-return-fine').value) || 0;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving…';
+    try {
+      await api.cpd.saveReturnFine(btn.dataset.returnId, { penalty_amount: fine });
+      toast('Fine and return amount saved', 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Fine &amp; Return Amount';
+    }
+  });
+
   // Upload Deposit Slip — closes off an approved return
   document.getElementById('upload-deposit-slip-btn')?.addEventListener('click', () => {
     const returnId = document.getElementById('upload-deposit-slip-btn').dataset.returnId;
@@ -1494,6 +1753,10 @@ export async function renderCPDDetail(param) {
           <label>Deposit Slip File *</label>
           <input type="file" id="deposit-slip-file" accept=".jpg,.jpeg,.png,.pdf" />
           <p style="font-size:.78rem;color:var(--text-muted);margin-top:6px">JPG, PNG or PDF · max 2 MB</p>
+        </div>
+        <div class="field">
+          <label>Transfer / Reference Number <span style="color:var(--text-muted);font-weight:400">(Optional)</span></label>
+          <input type="text" id="deposit-slip-ref" placeholder="e.g. bank transfer reference" />
         </div>
         <div id="deposit-slip-error" class="form-error hidden"></div>`,
       footer: `<button class="btn btn-ghost" onclick="closeModalGlobal()">
@@ -1518,6 +1781,8 @@ export async function renderCPDDetail(param) {
       try {
         const fd = new FormData();
         fd.append('deposit_slip', file);
+        const refNo = document.getElementById('deposit-slip-ref').value.trim();
+        if (refNo) fd.append('reference_number', refNo);
         await api.cpd.uploadDepositSlip(returnId, fd);
         closeModal();
         toast('Deposit slip uploaded', 'success');
@@ -1579,6 +1844,7 @@ export async function renderCPDDetail(param) {
     if (action === 'cancel')        cpdCancel(id);
     if (action === 'print-carnet')  window.open(api.cpd.printCarnetUrl(id), '_blank');
     if (action === 'print-awb')     cpdPrintAWB(id);
+    if (action === 'dispatch')      cpdMarkDispatched(id, param);
     if (action === 'create-return') cpdOfficerCreateReturn(id);
   }
 }
@@ -2396,14 +2662,14 @@ export function renderCPDCarnets() {
 function buildCPDActionBtns(r, returnId = null) {
   const btns      = [];
   const s         = String(r.request_status);
-  const isCheque  = currentUser?.role_name === 'cpd_cheque';
   const isCashier = currentUser?.role_name === 'idl_cpd_cashier';
   const isFinance = currentUser?.role_name === 'cpd_finance';
   const isPending = ['1','2','NEW','Processing'].includes(s);
 
-  // Return request view: only Approve button
+  // Return request view: only Approve button — disabled until the officer ticks the
+  // "documents received" acknowledgment checkbox rendered alongside the return details.
   if (returnId) {
-    btns.push(`<button class="btn btn-success btn-sm" id="return-approve-btn" data-return-id="${returnId}">
+    btns.push(`<button class="btn btn-success btn-sm" id="return-approve-btn" data-return-id="${returnId}" disabled title="Acknowledge documents received first">
       <i class="fa-solid fa-check"></i> Approve</button>`);
     return btns.join('');
   }
@@ -2418,7 +2684,7 @@ function buildCPDActionBtns(r, returnId = null) {
   const isApproveOrIssue = s === '2' && String(r.booking_fee_status) === '1';
   const alreadyIssued    = s === '3' || parseInt(r.has_issued_carnet) > 0;
 
-  if (isPending && !isCheque && !isCashier) {
+  if (isPending && !isCashier) {
     btns.push(isApproveOrIssue
       ? `<button class="btn btn-primary btn-sm" data-action="issue-carnet">
           <i class="fa-solid fa-clipboard-check"></i> Issue Carnet</button>`
@@ -2436,11 +2702,15 @@ function buildCPDActionBtns(r, returnId = null) {
     btns.push(`<button class="btn btn-primary btn-sm" data-action="issue-carnet">
       <i class="fa-solid fa-clipboard-check"></i> Issue Carnet</button>`);
   }
-  if (s === '3' && !isCheque && !isCashier && !isFinance && !returnId) {
+  if (s === '3' && !isCashier && !isFinance && !returnId) {
     btns.push(`<button class="btn btn-ghost btn-sm" data-action="print-carnet">
       <i class="fa-solid fa-print"></i> Print Carnet</button>`);
-    btns.push(`<button class="btn btn-ghost btn-sm" data-action="print-awb">
-      <i class="fa-solid fa-print"></i> Print AWB</button>`);
+    if (r.delivery_option === 'home_delivery') {
+      btns.push(`<button class="btn btn-ghost btn-sm" data-action="print-awb">
+        <i class="fa-solid fa-print"></i> Print AWB</button>`);
+      btns.push(`<button class="btn btn-info btn-sm" data-action="dispatch">
+        <i class="fa-solid fa-truck"></i> Mark Dispatched</button>`);
+    }
     if (!r.carnet_return) {
       btns.push(`<button class="btn btn-warning btn-sm" data-action="create-return">
         <i class="fa-solid fa-rotate-left"></i> Create Return</button>`);
@@ -2475,12 +2745,28 @@ async function cpdPrintAWB(id) {
   }
 }
 
+function cpdMarkDispatched(id, param) {
+  const awb = window.__cpdCurrentRecord?.airway_bill_no ?? '';
+  confirm('Mark this CPD request as dispatched?', async () => {
+    try {
+      await api.cpd.markDispatched(id, { air_bill_no: awb });
+      toast('Marked as dispatched', 'success');
+      renderCPDDetail(param);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }, false);
+}
+
 function detail(label, value) {
   return `<div class="detail-item"><label>${label}</label><div class="detail-val">${value ?? '—'}</div></div>`;
 }
 
 // ── Shared with the public wizard's "Review & Pay" step — same icon-row / card
 // look for the officer-side CPD detail view's read-only info sections. ──
+function esc(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 function identityRow(icon, label, value) {
   return `<div class="rv-identity-row"><span class="rv-id-icon"><i class="${icon}"></i></span><span class="rv-id-label">${label}</span><span class="rv-id-value">${value || '—'}</span></div>`;
 }
@@ -2618,7 +2904,7 @@ export async function renderCPDRenew() {
   const UAE_STATES = ['Abu Dhabi','Dubai','Sharjah','Ajman','Umm Al Quwain','Ras Al Khaimah','Fujairah'];
   // "Luxury" is intentionally not selectable — luxury vehicles are auto-detected
   // from the make (see LUXURY_MAKES_CPD below) and priced accordingly.
-  const BODY_TYPES = ['Station','Saloon','Motor Cycle','Truck','Coupe','Bus','Trailer','-Coupe','-Station','-Saloon','Pickup','Caravan'];
+  const BODY_TYPES = ['Station','Saloon','Motor Cycle','Truck','Coupe','Bus','Trailer','-Coupe','-Station','-Saloon','Pickup','Caravan','Hatchback'];
   const COLORS     = ['White','Silver','Black','Grey','Blue','Red','Brown','Green','Other'];
   const yearOpts   = Array.from({length:41},(_,i)=>2030-i).map(y=>`<option value="${y}">${y}</option>`).join('');
 
@@ -3024,7 +3310,7 @@ export async function renderCPDRenew() {
   });
   (guaranteeRules.booking_fees ?? []).forEach(bf => _bookingFees.push(bf));
 
-  const STATION_TYPES = ['Station','SUV','-Station','Pickup','Truck','Bus','Trailer','Caravan'];
+  const STATION_TYPES = ['Station','SUV','-Station','Pickup','Truck','Bus','Trailer','Caravan','Hatchback'];
   const LUXURY_MAKES  = [
     'Rolls Royce', 'Bentley', 'Ferrari', 'Lamborghini', 'Maserati', 'Aston Martin',
     'McLaren', 'Bugatti', 'Koenigsegg', 'Pagani', 'Maybach', 'W Motors', 'Bizzarrini', 'Gumpert',

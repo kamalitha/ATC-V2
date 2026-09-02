@@ -145,9 +145,9 @@
 
       <div class="nav-section" id="nav-public" style="display:none">
         <span class="nav-label">My Services</span>
-        <a class="nav-item" data-route="profile">
-          <span class="nav-icon"><i class="fa-solid fa-user-circle"></i></span>
-          <span class="nav-text">User Profile</span>
+        <a class="nav-item" data-route="public-select-service">
+          <span class="nav-icon"><i class="fa-solid fa-house"></i></span>
+          <span class="nav-text">Services Home</span>
         </a>
         <div class="nav-item nav-item-parent open" id="nav-public-idl-toggle">
           <span class="nav-icon"><i class="fa-solid fa-id-card"></i></span>
@@ -174,6 +174,10 @@
           <a class="nav-item nav-subitem" data-route="public-apply-cpd">
             <span class="nav-icon"><i class="fa-solid fa-plus"></i></span>
             <span class="nav-text">Apply for new CPD</span>
+          </a>
+          <a class="nav-item nav-subitem" data-route="public-apply-cpd" data-usage-type="COMPANY">
+            <span class="nav-icon"><i class="fa-solid fa-building"></i></span>
+            <span class="nav-text">Apply for new CPD-Company</span>
           </a>
           <a class="nav-item nav-subitem" data-route="public-cpd-return">
             <span class="nav-icon"><i class="fa-solid fa-rotate-left"></i></span>
@@ -505,16 +509,6 @@
           <span class="nav-icon"><i class="fa-solid fa-car"></i></span>
           <span class="nav-text">Carnet Requests</span>
           <span class="nav-badge" id="badge-cpd-branch-pending" style="display:none"></span>
-        </a>
-      </div>
-
-      <!-- cpd_cheque_officer: Requests only — no New Request, no Carnet Stock -->
-      <div class="nav-section" id="nav-cpd-cheque" style="display:none">
-        <span class="nav-label">Trip Ticket</span>
-        <a class="nav-item" data-route="cpd-requests">
-          <span class="nav-icon"><i class="fa-solid fa-car"></i></span>
-          <span class="nav-text">Requests</span>
-          <span class="nav-badge" id="badge-cpd-cheque-pending" style="display:none"></span>
         </a>
       </div>
 

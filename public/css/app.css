@@ -404,7 +404,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .nav-item:hover  { background: var(--bg-hover); color: var(--text-primary); }
 .nav-item.active { background: var(--accent-dim); color: var(--accent); }
 .nav-icon  { font-size: 1rem; flex-shrink: 0; width: 20px; text-align: center; }
-.nav-text  { font-size: 1rem; font-weight: 500; }
+.nav-text  { font-size: 12px; font-weight: 500; }
 .nav-badge {
   margin-left: auto; background: var(--danger);
   color: #fff; font-size: 1rem; font-weight: 700;
@@ -1998,7 +1998,10 @@ table.dataTable .badge {
 .pub-identity-rows-bycol-4 { grid-auto-flow: column; grid-template-rows: repeat(4, auto); }
 .pub-identity-rows-bycol-3 .pub-identity-row,
 .pub-identity-rows-bycol-4 .pub-identity-row {
-  grid-template-columns: 24px 130px minmax(60px, 1fr) auto;
+  /* Firmer input floor than the base .pub-identity-row rule (60px) — this layout's
+     narrower columns meant an error message (e.g. the Emirates ID format hint)
+     could shrink the input to near-unusable width once the error track grew. */
+  grid-template-columns: 24px 130px minmax(150px, 1fr) auto;
   border-bottom: 1px solid var(--border);
   border-right: 1px solid var(--border);
 }
