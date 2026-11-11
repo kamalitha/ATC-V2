@@ -551,9 +551,9 @@ final class MoiService
 
             $o                            = new CPDFees();
             $o->BookingFee                = (string) $total;
-            $o->BookingFeeVAT             = number_format($vatAmount, 2);
+            $o->BookingFeeVAT             = number_format($vatAmount, 2, '.', '');
             $o->GuaranteeAmount           = (string) $guarantee;
-            $o->GuaranteeFeeBankCharges   = number_format($guarantee * MOI_GUARANTEE_BANK_PCT / 100, 2);
+            $o->GuaranteeFeeBankCharges   = number_format($guarantee * MOI_GUARANTEE_BANK_PCT / 100, 2, '.', '');
             $o->CourierCharges            = MOI_COURIER_CHARGES;
             return $o->toArray();
         } catch (\Throwable $e) {
