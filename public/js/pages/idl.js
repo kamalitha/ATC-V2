@@ -38,7 +38,9 @@ export function renderIDLRequests(param = null) {
 
   const idlOfficerRoles = ['idl_officer','idl_cpd_cashier','idl_cpd_walkin','idl_cpd_online','idl_cpd_branch'];
   const isIDLOfficer    = idlOfficerRoles.includes(currentUser?.role_name);
-  const defaultStatus   = isIDLOfficer ? 'pending' : '';
+  // Cashier defaults specifically to "Processing" (paid, awaiting the cashier) —
+  // narrower than the other officer roles' "pending" bucket (Not Paid + Processing).
+  const defaultStatus   = isCashier ? '2' : isIDLOfficer ? 'pending' : '';
 
   const defaultFilters = {};
   if (defaultStatus) defaultFilters.status = defaultStatus;
@@ -64,9 +66,9 @@ export function renderIDLRequests(param = null) {
       searchOnButton:    true,
       defaultFilters,
       filters: isCashier ? [
-        { key: 'status', label: 'Pending (default)', options: [
-          { value: 'pending', label: 'Pending in queue' },
+        { key: 'status', label: 'Processing (default)', options: [
           { value: '2',       label: 'Processing' },
+          { value: 'pending', label: 'Not Paid + Processing' },
           { value: '4',       label: 'Approved' },
           { value: '5',       label: 'Dispatched' },
           { value: 'all',     label: 'All (incl. processed)' },
@@ -269,192 +271,239 @@ export async function renderIDLNew() {
 
     <form id="idl-form" novalidate>
 
-      <!-- ── Personal Information ─────────────────────────────────────────── -->
-      <div class="section-card">
-        <div class="section-card-header" style="display:flex;justify-content:space-between;align-items:center">
-          <span>Personal Information</span>
+      <!-- ── Personal Information (matches public Verify Your Identity card) ── -->
+      <div class="pub-identity-card" style="margin-bottom:20px">
+        <div class="pub-identity-card-header" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Your Identity Information</span>
           ${walkinPrefill ? `
-          <span class="badge badge-default"><i class="fa-solid fa-shield-halved"></i> Verified by UAE PASS</span>`
+          <span class="pub-verified-badge"><i class="fa-solid fa-shield-halved"></i> Verified by UAE PASS</span>`
           : `<button type="button" class="btn btn-ghost btn-sm" id="btn-walkin-uaepass">
                <i class="fa-solid fa-mobile-screen"></i> Customer will log in with UAE PASS</button>`}
         </div>
-        <div class="section-card-body">
-          <div class="form-grid">
-            <div class="field"><label>Emirates ID *</label>
-              <input name="emirates_id" id="emirates_id_input" required
-                placeholder="Enter the Emirates ID and press Enter to search" />
-              <div class="eid-search-msg" id="eid-search-msg"></div>
-              <div class="field-error" id="err-emirates_id"></div></div>
+        <div class="pub-identity-rows">
 
-            <div class="field"><label>First Name *</label>
-              <input name="first_name" required placeholder="First name" />
-              <div class="field-error" id="err-first_name"></div></div>
-
-            <div class="field"><label>Last Name *</label>
-              <input name="last_name" required placeholder="Last name" />
-              <div class="field-error" id="err-last_name"></div></div>
-
-            <div class="field">
-              <label>Nationality *</label>
-              <select name="nationality" required>
-                <option value="">Select nationality</option>
-                ${nationalities.map(n => `<option value="${n.nationality_id}">${n.nationality}</option>`).join('')}
-              </select>
-              <div class="field-error" id="err-nationality"></div>
-            </div>
-
-            <div class="field">
-              <label>Sex *</label>
-              <select name="sex" required>
-                <option value="">Select</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-              </select>
-              <div class="field-error" id="err-sex"></div>
-            </div>
-
-            <div class="field"><label>Date of Birth</label>
-              <input name="dob" type="date" /></div>
-
-            <div class="field field-full">
-              <label>Address in UAE *</label>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px">
-                <div class="field" style="margin:0">
-                  <label style="font-size:.8rem">Apartment / Villa Number</label>
-                  <input id="idl-addr-apt" name="idl_addr_apt" placeholder="e.g. Apt 12" />
-                </div>
-                <div class="field" style="margin:0">
-                  <label style="font-size:.8rem">Building / Street Name</label>
-                  <input id="idl-addr-building" name="idl_addr_building" placeholder="e.g. Al Nahda Street" />
-                </div>
-                <div class="field" style="margin:0">
-                  <label style="font-size:.8rem">Area</label>
-                  <input id="idl-addr-area" name="idl_addr_area" placeholder="e.g. Deira" />
-                </div>
-                <div class="field" style="margin:0">
-                  <label style="font-size:.8rem">City *</label>
-                  <select id="idl-addr-city" name="idl_addr_city" required>
-                    <option value="">— Select City —</option>
-                    <option value="Abu Dhabi">Abu Dhabi</option>
-                    <option value="Dubai">Dubai</option>
-                    <option value="Sharjah">Sharjah</option>
-                    <option value="Ajman">Ajman</option>
-                    <option value="Ras Al-Khaimah">Ras Al-Khaimah</option>
-                    <option value="Fujairah">Fujairah</option>
-                    <option value="Umm Al Quwain">Umm Al Quwain</option>
-                  </select>
-                </div>
-              </div>
-              <div class="field-error" id="err-address_in_uae"></div>
-            </div>
-
-            <div class="field"><label>PO Box *</label>
-              <input name="po_box" required placeholder="PO Box" />
-              <div class="field-error" id="err-po_box"></div></div>
-
-            <div class="field"><label>Mobile No *</label>
-              <input name="mobile_no" required placeholder="+971 50 xxx xxxx" />
-              <div class="field-error" id="err-mobile_no"></div></div>
-
-            <div class="field"><label>Email *</label>
-              <input name="email" type="email" required placeholder="applicant@email.com" />
-              <div class="field-error" id="err-email"></div></div>
-
-            <div class="field"><label>City *</label>
-              <input name="city" required placeholder="City" />
-              <div class="field-error" id="err-city"></div></div>
-
-            <div class="field field-full"><label>Home Country Address *</label>
-              <input name="home_country_address" required placeholder="Home country address" />
-              <div class="field-error" id="err-home_country_address"></div></div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
+            <span class="pub-id-label">Full Name</span>
+            <input id="idl-full-name" class="pub-id-inline-input" placeholder="Full name" autocomplete="off" />
+            <input type="hidden" name="first_name" />
+            <input type="hidden" name="last_name" />
+            <div class="field-error" id="err-first_name" style="margin:0"></div>
           </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
+            <span class="pub-id-label">Emirates ID</span>
+            <input name="emirates_id" id="emirates_id_input" class="pub-id-inline-input"
+              placeholder="784-XXXX-XXXXXXX-X — press Enter to search" />
+            <div class="eid-search-msg" id="eid-search-msg"></div>
+            <div class="field-error" id="err-emirates_id" style="margin:0"></div>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-flag"></i></span>
+            <span class="pub-id-label">Nationality</span>
+            <select name="nationality" class="pub-id-inline-select">
+              <option value="">Select nationality</option>
+              ${nationalities.map(n => `<option value="${n.nationality_id}">${n.nationality}</option>`).join('')}
+            </select>
+            <div class="field-error" id="err-nationality" style="margin:0"></div>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-venus-mars"></i></span>
+            <span class="pub-id-label">Gender</span>
+            <select name="sex" class="pub-id-inline-select">
+              <option value="">Select</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+            <div class="field-error" id="err-sex" style="margin:0"></div>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+            <span class="pub-id-label">Mobile Number</span>
+            <input name="mobile_no" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
+            <div class="field-error" id="err-mobile_no" style="margin:0"></div>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-envelope"></i></span>
+            <span class="pub-id-label">Email Address</span>
+            <input name="email" type="email" class="pub-id-inline-input" placeholder="applicant@email.com" />
+            <div class="field-error" id="err-email" style="margin:0"></div>
+          </div>
+
         </div>
       </div>
 
-      <!-- ── License Information ──────────────────────────────────────────── -->
-      <div class="section-card">
-        <div class="section-card-header">License Information</div>
-        <div class="section-card-body">
-          <div class="form-grid">
-            <div class="field"><label>License No *</label>
-              <input name="license_no" required placeholder="Driving licence number" />
-              <div class="field-error" id="err-license_no"></div></div>
+      <!-- ── Driving Licence Details (same card style as Your Identity Information) ── -->
+      <div class="pub-identity-card" style="margin-bottom:20px">
+        <div class="pub-identity-card-header"><span>Driving Licence Details</span></div>
+        <div class="pub-identity-rows">
 
-            <div class="field"><label>Place of Birth *</label>
-              <input name="place_of_birth" required placeholder="City / Country of birth" />
-              <div class="field-error" id="err-place_of_birth"></div></div>
-
-            <div class="field">
-              <label>DL Place of Issue *</label>
-              <select name="place_of_issue" required>
-                <option value="">Select emirate</option>
-                ${emirates.map(e => `<option value="${e.emirate_id}">${e.emirate}</option>`).join('')}
-              </select>
-              <div class="field-error" id="err-place_of_issue"></div>
-            </div>
-
-            <div class="field"><label>Issued Date</label>
-              <input name="issued_date" type="date" /></div>
-
-            <div class="field"><label>Expiry Date</label>
-              <input name="expiry_date" type="date" /></div>
-
-            <div class="field">
-              <label>Type of Driving License *</label>
-              <div class="multi-select" id="dl-type-select">
-                <div class="multi-select-trigger" id="dl-type-trigger">
-                  <span id="dl-type-display">Select DL types</span>
-                  <i class="fa-solid fa-chevron-down"></i>
-                </div>
-                <div class="multi-select-dropdown" id="dl-type-dropdown" style="display:none">
-                  ${dlTypes.map(t => `
-                  <label class="multi-select-option">
-                    <input type="checkbox" class="dl-type-cb" value="${t.type_id}" />
-                    ${t.dl_type}
-                  </label>`).join('')}
-                </div>
-              </div>
-              <input type="hidden" name="type_of_dl" id="type_of_dl_hidden" />
-              <div class="field-error" id="err-type_of_dl"></div>
-            </div>
-
-            <div class="field">
-              <label>Emirate of Residence *</label>
-              <select name="emirate" required>
-                <option value="">Select emirate</option>
-                ${emirates.map(e => `<option value="${e.emirate_id}">${e.emirate}</option>`).join('')}
-              </select>
-              <div class="field-error" id="err-emirate"></div>
-            </div>
-
-            <div class="field">
-              <label>Issued IDL in Past?</label>
-              <div style="display:flex;gap:24px;align-items:center;padding-top:8px">
-                <label style="display:flex;gap:8px;align-items:center;font-weight:400;cursor:pointer">
-                  <input type="radio" name="first_idl" value="0" /> Yes
-                </label>
-                <label style="display:flex;gap:8px;align-items:center;font-weight:400;cursor:pointer">
-                  <input type="radio" name="first_idl" value="1" checked /> No
-                </label>
-              </div>
-            </div>
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-id-card"></i></span>
+            <span class="pub-id-label">Driving Licence Number *</span>
+            <input name="license_no" class="pub-id-inline-input" placeholder="Enter driving licence number" />
+            <div class="field-error" id="err-license_no" style="margin:0"></div>
           </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-calendar-check"></i></span>
+            <span class="pub-id-label">Date of Issue</span>
+            <input name="issued_date" type="date" class="pub-id-inline-input" />
+            <div class="field-error" id="err-issued_date" style="margin:0"></div>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-location-dot"></i></span>
+            <span class="pub-id-label">Licence Issuing Emirate *</span>
+            <select name="place_of_issue" class="pub-id-inline-select" required>
+              <option value="">Select emirate</option>
+              ${emirates.map(e => `<option value="${e.emirate_id}">${e.emirate}</option>`).join('')}
+            </select>
+            <div class="field-error" id="err-place_of_issue" style="margin:0"></div>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-calendar-xmark"></i></span>
+            <span class="pub-id-label">Date of Expiry</span>
+            <input name="expiry_date" type="date" class="pub-id-inline-input" />
+            <div class="field-error" id="err-expiry_date" style="margin:0"></div>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-circle-question"></i></span>
+            <span class="pub-id-label">Issued IDL in Past?</span>
+            <span style="display:flex;gap:24px;align-items:center">
+              <label style="display:flex;gap:8px;align-items:center;font-weight:400;cursor:pointer">
+                <input type="radio" name="first_idl" value="0" /> Yes
+              </label>
+              <label style="display:flex;gap:8px;align-items:center;font-weight:400;cursor:pointer">
+                <input type="radio" name="first_idl" value="1" checked /> No
+              </label>
+            </span>
+          </div>
+
         </div>
       </div>
 
-      <!-- ── Documents Required ───────────────────────────────────────────── -->
-      <div class="section-card">
-        <div class="section-card-header">Documents Required</div>
-        <div class="section-card-body">
-          <div class="doc-upload-grid">
-            ${docUpload('eid_front',     'Emirates ID Front Image')}
-            ${docUpload('eid_back',      'Emirates ID Back Image')}
-            ${docUpload('dl_front',      'Drivers License Front Image')}
-            ${docUpload('dl_back',       'Drivers License Back Image')}
-            ${docUpload('passport_photo','Passport Size Photo')}
-            ${docUpload('signature',     'Signature', false, false)}
+      <!-- ── Vehicle Categories (same tiles as the public licence step) ── -->
+      <div class="pub-additional-card" style="margin-bottom:20px">
+        <div class="pub-additional-title">Vehicle Categories *</div>
+        <p style="font-size:.85rem;color:var(--text-muted);margin:10px 0 14px">
+          Select all the categories that are mentioned on the driving licence.
+        </p>
+        <div class="vc-grid">
+          ${dlTypes.map(t => `
+            <label class="vc-tile" id="vc-tile-${t.type_id}">
+              <input type="checkbox" class="vc-cb dl-type-cb" value="${t.type_id}" style="display:none" />
+              <i class="fa-solid fa-id-card vc-tile-icon"></i>
+              <span class="vc-tile-code">${t.dl_type}</span>
+            </label>`).join('')}
+        </div>
+        <input type="hidden" name="type_of_dl" id="type_of_dl_hidden" />
+        <div class="field-error" id="err-type_of_dl" style="margin-top:8px"></div>
+      </div>
+
+      <!-- ── Documents Upload (same card as the public licence step) ── -->
+      <div class="pub-additional-card" style="margin-bottom:20px">
+        <div class="pub-additional-title">Documents Upload</div>
+        <p style="font-size:.78rem;color:var(--text-muted);margin:4px 0 16px">
+          Accepted formats: JPG, PNG or PDF
+        </p>
+        <div class="doc-upload-grid">
+          ${docUpload('eid_front',     'Emirates ID Front Image')}
+          ${docUpload('eid_back',      'Emirates ID Back Image')}
+          ${docUpload('dl_front',      'Driving Licence Front Image')}
+          ${docUpload('dl_back',       'Driving Licence Back Image')}
+          ${docUpload('passport_photo','Passport Size Photo')}
+          ${docUpload('signature',     'Signature', false, false)}
+        </div>
+        <div id="doc-upload-error" class="form-error hidden" style="margin-top:8px"></div>
+      </div>
+
+      <!-- ── Additional Information (same card style as Your Identity Information) ── -->
+      <div class="pub-identity-card" style="margin-bottom:20px">
+        <div class="pub-identity-card-header"><span>Additional Information</span></div>
+        <div class="pub-identity-rows">
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-calendar"></i></span>
+            <span class="pub-id-label">Date of Birth *</span>
+            <input name="dob" type="date" required class="pub-id-inline-input" />
+            <div class="field-error" id="err-dob" style="margin:0"></div>
           </div>
-          <div id="doc-upload-error" class="form-error hidden" style="margin-top:8px"></div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-location-dot"></i></span>
+            <span class="pub-id-label">Place of Birth *</span>
+            <input name="place_of_birth" required class="pub-id-inline-input" placeholder="Enter city or country of birth" />
+            <div class="field-error" id="err-place_of_birth" style="margin:0"></div>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-map-location-dot"></i></span>
+            <span class="pub-id-label">UAE Permanent Place of Residence *</span>
+            <select name="emirate" required class="pub-id-inline-select">
+              <option value="">Select emirate</option>
+              ${emirates.map(e => `<option value="${e.emirate_id}">${e.emirate}</option>`).join('')}
+            </select>
+            <div class="field-error" id="err-emirate" style="margin:0"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── Residential Address (officer-only fields, not in the public wizard) ── -->
+      <div class="pub-identity-card" style="margin-bottom:20px">
+        <div class="pub-identity-card-header"><span>Residential Address</span></div>
+        <div class="pub-identity-rows">
+
+          <div class="pub-identity-row" style="align-items:start">
+            <span class="pub-id-icon"><i class="fa-solid fa-house-chimney"></i></span>
+            <span class="pub-id-label">Address in UAE *</span>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <input id="idl-addr-apt" name="idl_addr_apt" class="pub-id-inline-input" placeholder="Apartment / Villa Number" />
+              <input id="idl-addr-building" name="idl_addr_building" class="pub-id-inline-input" placeholder="Building / Street Name" />
+              <input id="idl-addr-area" name="idl_addr_area" class="pub-id-inline-input" placeholder="Area" />
+              <select id="idl-addr-city" name="idl_addr_city" class="pub-id-inline-select" required>
+                <option value="">— Select City —</option>
+                <option value="Abu Dhabi">Abu Dhabi</option>
+                <option value="Dubai">Dubai</option>
+                <option value="Sharjah">Sharjah</option>
+                <option value="Ajman">Ajman</option>
+                <option value="Ras Al-Khaimah">Ras Al-Khaimah</option>
+                <option value="Fujairah">Fujairah</option>
+                <option value="Umm Al Quwain">Umm Al Quwain</option>
+              </select>
+            </div>
+            <div class="field-error" id="err-address_in_uae" style="margin:0"></div>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-envelope-open-text"></i></span>
+            <span class="pub-id-label">PO Box *</span>
+            <input name="po_box" required class="pub-id-inline-input" placeholder="PO Box" />
+            <div class="field-error" id="err-po_box" style="margin:0"></div>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-city"></i></span>
+            <span class="pub-id-label">City *</span>
+            <input name="city" required class="pub-id-inline-input" placeholder="City" />
+            <div class="field-error" id="err-city" style="margin:0"></div>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-house"></i></span>
+            <span class="pub-id-label">Home Country Address *</span>
+            <input name="home_country_address" required class="pub-id-inline-input" placeholder="Home country address" />
+            <div class="field-error" id="err-home_country_address" style="margin:0"></div>
+          </div>
+
         </div>
       </div>
 
@@ -550,6 +599,10 @@ export async function renderIDLNew() {
       el.tabIndex = -1;
       el.style.background = 'var(--bg-elevated)';
     };
+    const fullNameEl = document.getElementById('idl-full-name');
+    fullNameEl.value = [walkinPrefill.first_name, walkinPrefill.last_name].filter(Boolean).join(' ');
+    fullNameEl.readOnly = true;
+    fullNameEl.style.background = 'var(--bg-elevated)';
     lockField('first_name',  walkinPrefill.first_name);
     lockField('last_name',   walkinPrefill.last_name);
     lockField('nationality', walkinPrefill.nationality);
@@ -560,6 +613,13 @@ export async function renderIDLNew() {
       const eidField = document.getElementById('emirates_id_input');
       if (eidField) { eidField.value = walkinPrefill.emirates_id; eidField.readOnly = true; eidField.style.background = 'var(--bg-elevated)'; }
     }
+    // Marks this application as identity-verified via UAE PASS, same as the public
+    // wizard's DV share — read by the detail view to lock identity fields from editing.
+    const viaUaePassFlag = document.createElement('input');
+    viaUaePassFlag.type  = 'hidden';
+    viaUaePassFlag.name  = 'identity_via_uae_pass';
+    viaUaePassFlag.value = '1';
+    document.getElementById('idl-form').appendChild(viaUaePassFlag);
   }
 
   // Delivery method cards (Collect from Office / Send to Address) + fee breakdown
@@ -617,6 +677,14 @@ export async function renderIDLNew() {
   initDocUploads();
 
   // ── Emirates ID search on Enter ────────────────────────────────────────────
+  const fullNameInput = document.getElementById('idl-full-name');
+  const syncNameParts = () => {
+    const parts = fullNameInput.value.trim().split(/\s+/).filter(Boolean);
+    document.querySelector('[name="first_name"]').value = parts.slice(0, 2).join(' ');
+    document.querySelector('[name="last_name"]').value  = parts.slice(2).join(' ');
+  };
+  fullNameInput.addEventListener('input', syncNameParts);
+  syncNameParts();
   const eidInput  = document.getElementById('emirates_id_input');
   const eidMsg    = document.getElementById('eid-search-msg');
 
@@ -677,6 +745,7 @@ export async function renderIDLNew() {
       // ── Personal Information ──────────────────────────────────────────────
       setField('first_name',           data.first_name);
       setField('last_name',            data.last_name);
+      document.getElementById('idl-full-name').value = [data.first_name, data.last_name].filter(Boolean).join(' ');
       setField('nationality',          data.nationality);
       setField('sex',                  data.sex);
       setField('dob',                  data.dob?.split('T')[0] ?? data.dob ?? '');
@@ -749,41 +818,22 @@ export async function renderIDLNew() {
     }
   });
 
-  // ── Multi-select: Type of Driving License ──────────────────────────────────
-  const dlTrigger  = document.getElementById('dl-type-trigger');
-  const dlDropdown = document.getElementById('dl-type-dropdown');
-  const dlDisplay  = document.getElementById('dl-type-display');
-  const dlHidden   = document.getElementById('type_of_dl_hidden');
-
-  dlTrigger.addEventListener('click', e => {
-    e.stopPropagation();
-    const open = dlDropdown.style.display !== 'none';
-    dlDropdown.style.display = open ? 'none' : 'block';
-    dlTrigger.classList.toggle('open', !open);
-  });
-
-  // Close when clicking outside
-  document.addEventListener('click', () => {
-    dlDropdown.style.display = 'none';
-    dlTrigger.classList.remove('open');
-  });
-  dlDropdown.addEventListener('click', e => e.stopPropagation());
-
+  // ── Vehicle categories: tile selection (same behaviour as the public licence step) ──
   function updateDlHidden() {
+    document.querySelectorAll('.vc-tile').forEach(tile => {
+      tile.classList.toggle('vc-tile-active', tile.querySelector('.dl-type-cb').checked);
+    });
     const checked = [...document.querySelectorAll('.dl-type-cb:checked')].map(cb => cb.value);
-    dlHidden.value = checked.join(',');
-    dlDisplay.textContent = checked.length
-      ? `${checked.length} type${checked.length > 1 ? 's' : ''} selected`
-      : 'Select DL types';
-    // Clear validation error when at least one is selected
-    if (checked.length) {
-      document.getElementById('err-type_of_dl').textContent = '';
-      document.getElementById('dl-type-select').classList.remove('field-invalid');
-    }
+    document.getElementById('type_of_dl_hidden').value = checked.join(',');
+    if (checked.length) document.getElementById('err-type_of_dl').textContent = '';
   }
 
-  document.querySelectorAll('.dl-type-cb').forEach(cb => {
-    cb.addEventListener('change', updateDlHidden);
+  document.querySelectorAll('.vc-tile').forEach(tile => {
+    tile.addEventListener('click', () => {
+      const cb = tile.querySelector('.dl-type-cb');
+      cb.checked = !cb.checked;
+      updateDlHidden();
+    });
   });
 
   document.getElementById('idl-form').addEventListener('submit', async e => {
@@ -917,7 +967,9 @@ export async function renderIDLDetail(param) {
   const actionBtns = buildIDLActionBtns(r);
   const actionsHtml = backBtn + actionBtns;
 
+  const cancelBannerHtml = await idlCancelBannerHtml(id);
   content.innerHTML = `
+      ${cancelBannerHtml}
     <div class="page-header">
       <div class="page-title-block">
         <h1 class="page-title">${r.request_id}</h1>
@@ -1163,13 +1215,13 @@ export async function renderIDLDetail(param) {
             <i class="fa-solid fa-truck"></i> Mark Dispatched</button>` : ''}
           ${status === 4 && currentUser?.role_name === 'idl_officer' ? `
           <button class="btn btn-ghost btn-sm" data-action="print">
-            <i class="fa-solid fa-print"></i> Print IDL</button>` : ''}
+            <i class="fa-solid fa-print"></i> Print IDP</button>` : ''}
           ${status === 4 && r.idl_no && r.print_hash && currentUser?.role_name === 'idl_officer' && ['send_to_address', 'home_delivery'].includes(r.delivery_option) ? `
           <button class="btn btn-ghost btn-sm" data-action="print-awb">
             <i class="fa-solid fa-truck-fast"></i> Print AWB</button>` : ''}
           ${status === 4 && r.idl_no && !r.print_hash && currentUser?.role_name === 'idl_officer' && ['send_to_address', 'home_delivery'].includes(r.delivery_option) ? `
-          <span class="badge badge-default" style="font-weight:500" title="Print IDL first to confirm and lock the applicant's details before generating the AWB">
-            <i class="fa-solid fa-circle-info"></i> Print IDL first to enable AWB</span>` : ''}
+          <span class="badge badge-default" style="font-weight:500" title="Print IDP first to confirm and lock the applicant's details before generating the AWB">
+            <i class="fa-solid fa-circle-info"></i> Print IDP first to enable AWB</span>` : ''}
           ${(status === 4 || status === 5) && currentUser?.role_name === 'idl_officer' ? `
           <button class="btn btn-danger btn-sm" data-action="void">
             <i class="fa-solid fa-ban"></i> Void</button>` : ''}
@@ -1238,7 +1290,7 @@ export async function renderIDLDetail(param) {
     if (action === 'dispatch')      handleDispatch(id, param);
     if (action === 'save-proc')     handleSaveProc(id).catch(() => {});
     if (action === 'print-receipt') handlePrintReceipt(id, r);
-    if (action === 'print')         handlePrintMargins(id);
+    if (action === 'print')         handlePrintMargins(id, param);
     if (action === 'print-awb')     handlePrintAwb(id, param);
     if (action === 'void')          handleVoid(id, param);
   }
@@ -1252,7 +1304,7 @@ const PRINT_MARGIN_COMPONENTS = [
   ['first_name',      'First Name'],
   ['place_of_birth',  'Place of Birth'],
   ['dob',             'Date of Birth'],
-  ['city',            'City'],
+  ['city',            'Permanent Place of Residence'],
   ['sex',             'Sex'],
   ['nationality',     'Nationality'],
   ['idl_no',          'IDL No'],
@@ -1267,7 +1319,7 @@ const PRINT_MARGIN_COMPONENTS = [
   ['signature',       'Signature'],
 ];
 
-async function handlePrintMargins(id) {
+async function handlePrintMargins(id, param) {
   let margins;
   try {
     margins = await api.idl.getPrintMargins();
@@ -1330,9 +1382,18 @@ async function handlePrintMargins(id) {
     };
   };
 
+  // The print view opens as a plain GET navigation in a new tab — there's no promise
+  // to await for when the server sets print_hash there, so the Print AWB button stays
+  // disabled on this page until something refreshes it. Re-fetching once the officer
+  // comes back to this tab catches that without requiring a manual reload.
+  const refreshAfterReturn = () => {
+    window.addEventListener('focus', () => renderIDLDetail(param), { once: true });
+  };
+
   document.getElementById('pm-skip-print').onclick = () => {
     closeModal();
     window.open(api.idl.printUrl(id), '_blank');
+    refreshAfterReturn();
   };
 
   document.getElementById('pm-save-print').onclick = async () => {
@@ -1344,6 +1405,7 @@ async function handlePrintMargins(id) {
       closeModal();
       toast('Print margins saved', 'success');
       window.open(api.idl.printUrl(id), '_blank');
+      refreshAfterReturn();
     } catch (e) {
       toast(e.message || 'Failed to save print margins', 'error');
       btn.disabled = false;
@@ -2440,4 +2502,64 @@ async function exportReportToPdf({ fetchFn, columns, title, filename, subLineFn,
   } finally {
     if (pdfBtn) { pdfBtn.disabled = false; pdfBtn.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Export to PDF'; }
   }
+}
+
+// Shows the cancellation status of an IDL application (open request, or processed as cancelled).
+async function idlCancelBannerHtml(id) {
+  try {
+    const c = await api.idl.getCancelRequest(id);
+    if (!c || !c.auto_id) return '';
+    const reason = Number(c.is_lost_or_stolen) === 1 ? 'Reported as lost or stolen' : 'By the holder\x27s request';
+    if (Number(c.is_processed) === 1) {
+      return `<div class="rv-info-banner" style="border-color:rgba(239,68,68,.4)"><i class="fa-solid fa-ban rv-info-icon" style="color:var(--danger,#ef4444)"></i><div class="rv-info-lines"><div><strong>This IDP is cancelled.</strong></div><div>${reason}</div></div></div>`;
+    }
+    return `<div class="rv-info-banner"><i class="fa-solid fa-clock rv-info-icon"></i><div class="rv-info-lines"><div><strong>Cancellation requested</strong></div><div>${reason} — awaiting review.</div></div></div>`;
+  } catch {
+    return '';
+  }
+}
+
+// ── IDL Cancellation Requests (staff queue) ─────────────────────────────────────
+export function renderIDLCancellations() {
+  const content = document.getElementById('page-content');
+  content.innerHTML = `
+    <div class="page-header">
+      <div class="page-title-block">
+        <h1 class="page-title">IDL Cancellation Requests</h1>
+        <p class="page-subtitle">Confirm a request to deactivate the IDL</p>
+      </div>
+    </div>
+    <div id="idl-cancel-table"></div>`;
+
+  new DataTable(
+    document.getElementById('idl-cancel-table'),
+    [
+      { key: 'request_id', label: 'Request ID', width: '200px' },
+      { key: 'applicant', label: 'Applicant', render: (_, r) => `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim() || '—' },
+      { key: 'idl_no', label: 'IDL No', render: v => v || '—' },
+      { key: 'is_lost_or_stolen', label: 'Reason', render: v => Number(v) === 1
+          ? '<span class="badge badge-danger">Lost / Stolen</span>'
+          : '<span class="badge badge-default">Holder request</span>' },
+      { key: 'reported_datetime', label: 'Reported', render: v => formatDateTime(v) },
+      { key: 'actions', label: '', width: '130px', render: (_, r) =>
+          `<button class="btn btn-danger btn-sm confirm-idl-cancel-btn" data-id="${r.idl_auto_id}">
+             <i class="fa-solid fa-check"></i> Confirm</button>` },
+    ],
+    () => api.idl.cancelRequests(),
+    { idKey: 'auto_id', searchPlaceholder: 'Search by request ID or name…' },
+  ).render();
+
+  document.getElementById('idl-cancel-table').addEventListener('click', e => {
+    const btn = e.target.closest('.confirm-idl-cancel-btn');
+    if (!btn) return;
+    confirm('Confirm this request? The IDL will be deactivated and marked Lost / Stolen.', async () => {
+      try {
+        await api.idl.confirmCancelRequest(Number(btn.dataset.id));
+        toast('Cancellation confirmed', 'success');
+        renderIDLCancellations();
+      } catch (err) {
+        toast(err.message || 'Could not confirm the cancellation', 'error');
+      }
+    });
+  });
 }

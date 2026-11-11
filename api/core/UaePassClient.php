@@ -8,36 +8,55 @@ declare(strict_types=1);
  */
 class UaePassClient
 {
-    public function getAuthorizeUrl(string $state): string
+    public function getAuthorizeUrl(string $state, string $scope = 'urn:uae:digitalid:profile:general'): string
     {
         $params = [
             'response_type' => 'code',
             'client_id'     => Config::UAEPASS_CLIENT_ID,
-            'scope'         => 'urn:uae:digitalid:profile:general',
+            'scope'         => $scope,
             'state'         => $state,
             'redirect_uri'  => Config::uaePassRedirectUri(),
             'acr_values'    => 'urn:safelayer:tws:policies:authentication:level:low',
         ];
+        $url = Config::UAEPASS_BASE_URL . '/idshub/authorize?' . http_build_query($params);
 
-        return Config::UAEPASS_BASE_URL . '/idshub/authorize?' . http_build_query($params);
+        // TEMP capture for UAE PASS request/response debugging.
+        self::captureLog('authorize', [
+            'direction' => 'REQUEST',
+            'method'    => 'GET (browser redirect)',
+            'url'       => $url,
+            'params'    => $params,
+        ]);
+
+        return $url;
     }
 
     /** @return array<string,mixed> */
     public function exchangeCodeForToken(string $code): array
     {
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, Config::UAEPASS_BASE_URL . '/idshub/token');
-        curl_setopt($ch, CURLOPT_POST, true);
-        // multipart/form-data — passing an array (not a query string) makes cURL build
-        // the multipart body itself and set the correct boundary in Content-Type.
-        curl_setopt($ch, CURLOPT_POSTFIELDS, [
+        $url = Config::UAEPASS_BASE_URL . '/idshub/token';
+        $postFields = [
             'grant_type'   => 'authorization_code',
             'code'         => $code,
             'redirect_uri' => Config::uaePassRedirectUri(),
+        ];
+        $authHeader = 'Authorization: Basic ' . base64_encode(Config::UAEPASS_CLIENT_ID . ':' . Config::UAEPASS_CLIENT_SECRET);
+
+        self::captureLog('token', [
+            'direction' => 'REQUEST',
+            'method'    => 'POST (multipart/form-data)',
+            'url'       => $url,
+            'headers'   => [$authHeader],
+            'body'      => $postFields,
         ]);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Basic ' . base64_encode(Config::UAEPASS_CLIENT_ID . ':' . Config::UAEPASS_CLIENT_SECRET),
-        ]);
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_POST, true);
+        // multipart/form-data — passing an array (not a query string) makes cURL build
+        // the multipart body itself and set the correct boundary in Content-Type.
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $postFields);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [$authHeader]);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 10); // the code itself expires 10s after issue
 
@@ -45,6 +64,13 @@ class UaePassClient
         $error  = curl_error($ch);
         $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
+
+        self::captureLog('token', [
+            'direction' => 'RESPONSE',
+            'status'    => $status,
+            'curlError' => $error,
+            'raw'       => $output,
+        ]);
 
         if ($error) {
             throw new \RuntimeException('UAE PASS token request failed: ' . $error);
@@ -60,9 +86,19 @@ class UaePassClient
     /** @return array<string,mixed> */
     public function getUserInfo(string $accessToken): array
     {
+        $url = Config::UAEPASS_BASE_URL . '/idshub/userinfo';
+        $authHeader = 'Authorization: Bearer ' . $accessToken;
+
+        self::captureLog('userinfo', [
+            'direction' => 'REQUEST',
+            'method'    => 'GET',
+            'url'       => $url,
+            'headers'   => [$authHeader],
+        ]);
+
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, Config::UAEPASS_BASE_URL . '/idshub/userinfo');
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [$authHeader]);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
 
@@ -70,6 +106,13 @@ class UaePassClient
         $error  = curl_error($ch);
         $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
+
+        self::captureLog('userinfo', [
+            'direction' => 'RESPONSE',
+            'status'    => $status,
+            'curlError' => $error,
+            'raw'       => $output,
+        ]);
 
         if ($error) {
             throw new \RuntimeException('UAE PASS userinfo request failed: ' . $error);
@@ -82,5 +125,13 @@ class UaePassClient
         }
 
         return $data;
+    }
+
+    /** TEMP: full unmasked request/response capture, one file per call type, for debugging. */
+    private static function captureLog(string $name, array $entry): void
+    {
+        $path = __DIR__ . '/../logs/uaepass_' . $name . '_capture.log';
+        $line = '[' . date('Y-m-d H:i:s') . "]\n" . json_encode($entry, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n\n";
+        @file_put_contents($path, $line, FILE_APPEND | LOCK_EX);
     }
 }

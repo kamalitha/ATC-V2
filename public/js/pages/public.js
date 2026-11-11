@@ -3,6 +3,13 @@ import api, { API_BASE, PUBLIC_BASE } from '../api.js';
 import { navigate, toast, openModal, closeModal, currentUser, confirm } from '../app.js';
 import { statusBadge, formatDate, formatDateTime, formatCurrency } from '../components/table.js';
 
+// ── CPD body type display labels ────────────────────────────────────────────────
+// 'Station' and 'Saloon' remain the stored/submitted values (pricing tier
+// classification, RTA/MOI matching and existing DB rows all key off them) — only
+// the customer-facing wording changes, to make clear what each category means.
+const CPD_BODY_TYPE_LABELS = { Station: 'Station – SUV', Saloon: 'Saloon- Sedan' };
+const cpdBodyTypeLabel = t => CPD_BODY_TYPE_LABELS[t] ?? t;
+
 // ── Shared "Continue with UAE PASS" fake-retrieval loader (demo only) ─────────
 // UAE PASS itself isn't integrated (no real backend call — see the "Continue with
 // UAE PASS" click handler), so a Cancel button here doubles as the stand-in for a
@@ -272,10 +279,32 @@ const IDL_TERMS_HTML = `
     </ul>
   </div>`;
 
+// ── CPD Terms & Conditions modal content ────────────────────────────────────────
+// NOTE: this reflects only the specific terms spelled out in the feedback checkbox
+// wording (fees, penalty, return window) — it is not the full official Carnet De
+// Passages Online Terms & Conditions document, which hasn't been supplied yet.
+// Replace with the complete text once it's available.
+const CPD_TERMS_HTML = `
+  <div style="font-size:.9rem;line-height:1.6;color:var(--text-primary)">
+    <ul style="margin:0;padding-left:20px">
+      <li><strong>Non-Refundable Fees</strong>: Carnet issuance fees are non-refundable once the application is submitted.</li>
+      <li><strong>Late or Unreturned Carnet</strong>: An administrative fee of between AED 300 and AED 1,000 applies for a Carnet that is returned late or not returned.</li>
+      <li><strong>Expiry Penalty</strong>: Failure to return the Carnet within 60 days of its expiry incurs an automatic AED 100,000 penalty, in addition to any foreign customs duties incurred.</li>
+    </ul>
+  </div>`;
+
 // ── Apply for IDL (wizard) ─────────────────────────────────────────────────────
 export async function renderPublicApplyIDL(param = null) {
   const content = document.getElementById('page-content');
-  const isRenew = (typeof param === 'object' && param?.mode === 'renew');
+  // Returning from the "Continue with UAE PASS" redirect lands here via
+  // navigate('public-apply-idl') with no param (app.js's handleUaePassCallback has
+  // no way to pass one through that round trip), so recover renew-mode from the
+  // draft this same flow saved before redirecting rather than losing it.
+  let dvDraftForRenew = null;
+  try {
+    dvDraftForRenew = JSON.parse(sessionStorage.getItem('idl_wizard_dv_draft') || 'null');
+  } catch { /* ignore */ }
+  const isRenew = (typeof param === 'object' && param?.mode === 'renew') || dvDraftForRenew?.isRenew === true;
 
   const [nationalities, dlTypes, emirates, idlCfg] = await Promise.all([
     api.idl.nationalities(),
@@ -325,24 +354,482 @@ export async function renderPublicApplyIDL(param = null) {
   let uaePassJustVerified = false; // true only right after "Continue with UAE PASS" is used
   let uaePassRejected     = false; // true once the user has declined the UAE PASS data-sharing request — unlocks manual entry
 
+  // ── Real "Continue with UAE PASS" Digital Vault consent flow state ───────────
+  // dvProofId is the proofOfPresentationRequestId from AuthController::dvConsentStart's
+  // round trip; dvPending is true from the moment that redirect returns until DV's
+  // webhook delivers the data (or the citizen rejects, or the user gives up and enters
+  // manually) — see pollDvStatus() below and DVController::requestStatus server-side.
+  let dvPending    = false;
+  let dvProofId    = null;
+  let dvPollTimer  = null;
+  const DV_CONTEXT = 'public-apply-idl'; // must match AuthController::DV_CONTEXT_DOCUMENTS key
+
+  function stopDvPoll() {
+    if (dvPollTimer) { clearTimeout(dvPollTimer); dvPollTimer = null; }
+  }
+
+  // Best-effort date normaliser — DV's documented field samples don't pin down one
+  // fixed date format across all document types, so accept the common ones and fall
+  // back to passing the raw value through rather than silently dropping it.
+  const DV_MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+  function dvNormDate(v) {
+    if (!v) return '';
+    const s = String(v).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const slash = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+    if (slash) return `${slash[3]}-${String(slash[2]).padStart(2, '0')}-${String(slash[1]).padStart(2, '0')}`;
+    // Confirmed via a real captured payload (2026-10-14): DRIVING_LICENSE's dates come
+    // as "18 Sep 2014" (day, 3-letter month name, year) — an HTML date input silently
+    // shows blank for anything not exactly YYYY-MM-DD, which is why the licence step's
+    // dates stayed empty even though the field names themselves were right.
+    const named = s.match(/^(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\s+(\d{4})/);
+    if (named) {
+      const mo = DV_MONTHS[named[2].toLowerCase().slice(0, 3)];
+      if (mo) return `${named[3]}-${String(mo).padStart(2, '0')}-${named[1].padStart(2, '0')}`;
+    }
+    return s;
+  }
+
+  // Formats a YYYY-MM-DD value for the read-only Date of Birth display as MM/DD/YYYY —
+  // matching how the other date fields on this step actually render (native
+  // type="date" inputs, browser-rendered), rather than the long-form "12 December
+  // 1984" style this used before, which only this one field had.
+  function formatDobDisplay(dobValue) {
+    if (!dobValue) return '—';
+    const [y, m, d] = dobValue.split('-');
+    return (y && m && d) ? `${m}/${d}/${y}` : '—';
+  }
+
+  // Maps DVController::requestStatus's parsed fields onto this wizard's formData.
+  // NOTE: place_of_birth and emirate (permanent UAE residence) have no equivalent
+  // field in either the EmiratesId or DRIVING_LICENSE credential per the documented
+  // field list — left for manual entry. place_of_issue would need matching the
+  // licence's free-text issuing-authority description against the `emirates` select
+  // list, which isn't reliable enough to guess at here — also left manual.
+  // DV's nationalityEn is an English demonym ("Sri Lankan", "Indian"), not the country
+  // name our `nationalities` list stores ("Sri Lanka", "India") — confirmed via a real
+  // captured payload (2026-10-14), where nationalityCode was also unusable (sandbox mock
+  // data returned the literal string "UNKNOWN" instead of an ISO code). This is a
+  // best-effort suffix-stripping match, not a real demonym→country dictionary — falls
+  // back to leaving nationality blank for manual entry if nothing matches.
+  function matchNationality(demonym) {
+    const target = String(demonym ?? '').trim().toLowerCase();
+    if (!target) return null;
+    let hit = nationalities.find(n => String(n.nationality ?? '').toLowerCase() === target);
+    if (hit) return hit;
+    for (const suf of ['ian', 'ese', 'i', 'an', 'n']) {
+      if (!target.endsWith(suf)) continue;
+      const stripped = target.slice(0, -suf.length);
+      hit = nationalities.find(n => String(n.nationality ?? '').toLowerCase() === stripped);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  // Converts a base64 image string into a File object the existing doc-upload-zone
+  // preview/submit machinery already understands (savedFiles[slot] — see the
+  // "Restore doc zone previews from savedFiles" block and submitWizard()'s
+  // fd.append(slot, savedFiles[slot])). Sniffs the actual format from magic bytes
+  // rather than assuming one — confirmed via a real captured payload (2026-10-14)
+  // that EmiratesId's photo comes back as WebP and its signature as PNG, not JPEG.
+  // Returns a Promise — DV can hand back a passport photo as WEBP (confirmed via a
+  // real captured payload, 2026-11-08), which neither the upload endpoint nor the
+  // later print-composition step (IDLController::makePrintPassport, GD's
+  // imagecreatefromjpeg/imagecreatefrompng only) accepts, so it's re-encoded to JPEG
+  // client-side here — same reasoning as pdfToFrontBackFiles() re-encoding card-scan
+  // PDFs. PNG/JPEG bytes resolve immediately without any decode round-trip.
+  function base64ToFile(b64, filenameStem) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    let mime = 'application/octet-stream', ext = 'bin';
+    const hex = [...bytes.slice(0, 12)].map(b => b.toString(16).padStart(2, '0')).join('');
+    if (hex.startsWith('89504e47')) { mime = 'image/png'; ext = 'png'; }
+    else if (hex.startsWith('ffd8ff')) { mime = 'image/jpeg'; ext = 'jpg'; }
+    else if (hex.startsWith('52494646') && hex.slice(16, 24) === '57454250') { mime = 'image/webp'; ext = 'webp'; }
+    const file = new File([bytes], `${filenameStem}.${ext}`, { type: mime });
+    return mime === 'image/webp' ? webpFileToJpeg(file, filenameStem) : Promise.resolve(file);
+  }
+
+  function webpFileToJpeg(file, filenameStem) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width  = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        canvas.toBlob(blob => {
+          URL.revokeObjectURL(url);
+          if (!blob) return reject(new Error('WEBP-to-JPEG conversion failed'));
+          resolve(new File([blob], `${filenameStem}.jpg`, { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.92);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to decode WEBP image')); };
+      img.src = url;
+    });
+  }
+
+  // Converts a PDF (DV's card-scan evidence file) into separate front/back JPEG images,
+  // client-side via PDF.js (loaded in index.html) — there's no server-side PDF
+  // rasteriser available on staging (no Ghostscript/Imagick, no root access to install
+  // one). Two genuinely different layouts exist in DV's real data (confirmed by
+  // downloading and inspecting actual files, 2026-10-30):
+  //   - EmiratesId (ICP-issued): a real 2-page PDF — page 1 is the front, page 2 the
+  //     back, already separate images.
+  //   - DRIVING_LICENSE / VEHICLE_REGISTRATION_CARD (MOI-issued): a single page with
+  //     front and back stacked vertically in one combined image.
+  // Detected at runtime via page count rather than hardcoded per document type, so this
+  // stays correct even if DV changes the layout for one type later. The single-page
+  // split is a plain 50/50 crop, not pixel-perfect card-edge detection — in every real
+  // sample checked, both full card faces land entirely within their half.
+  async function pdfToFrontBackFiles(blob, frontStem, backStem) {
+    if (!window.pdfjsLib) throw new Error('pdfjsLib not loaded');
+    const buf = await blob.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+
+    const renderPage = async (pageNum, scale = 2) => {
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      return canvas;
+    };
+    const cropCanvas = (src, sy, sh) => {
+      const out = document.createElement('canvas');
+      out.width = src.width;
+      out.height = sh;
+      out.getContext('2d').drawImage(src, 0, sy, src.width, sh, 0, 0, src.width, sh);
+      return out;
+    };
+    // Lossless PNG from a scale-2 render of a full-page DV scan regularly landed well
+    // over the server's 2 MB upload cap (Config::UPLOAD_MAX_BYTES), which the server
+    // reports back as a per-slot error and the wizard then surfaces as "Some documents
+    // could not be uploaded" — only ever seen with UAE PASS-sourced documents because
+    // manual uploads are already-compressed photos. JPEG with a quality back-off loop
+    // keeps the same server-accepted MIME family while actually fitting the limit.
+    const toFile = (canvas, stem) => new Promise((resolve, reject) => {
+      const MAX_BYTES = 1.8 * 1024 * 1024;
+      const tryQuality = q => canvas.toBlob(b => {
+        if (!b) return reject(new Error('canvas.toBlob returned null'));
+        if (b.size > MAX_BYTES && q > 0.4) return tryQuality(q - 0.15);
+        resolve(new File([b], `${stem}.jpg`, { type: 'image/jpeg' }));
+      }, 'image/jpeg', q);
+      tryQuality(0.92);
+    });
+
+    let frontCanvas, backCanvas;
+    if (pdf.numPages >= 2) {
+      frontCanvas = await renderPage(1);
+      backCanvas  = await renderPage(2);
+    } else {
+      const full = await renderPage(1);
+      const half = Math.floor(full.height / 2);
+      frontCanvas = cropCanvas(full, 0, half);
+      backCanvas  = cropCanvas(full, half, full.height - half);
+    }
+    return { front: await toFile(frontCanvas, frontStem), back: await toFile(backCanvas, backStem) };
+  }
+
+  // DV's card-scan "visualization" files (eid_front/dl_front) arrive as PDF, not an
+  // image — an <img> tag cannot render a PDF at all (blank, no error, nothing to catch),
+  // which is why those slots looked empty despite the file genuinely being there. This
+  // shows a generic document icon instead and makes the preview open the real PDF in a
+  // new tab, the same way an actual image would otherwise be shown inline. Only still
+  // reached as a fallback now — fetchVisualization() converts PDFs to PNG up front via
+  // pdfBlobToImageFile() above, so this normally only fires if that conversion failed.
+  const DOC_ICON_PDF_SRC = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect x="6" y="2" width="30" height="40" rx="3" fill="#e74c3c"/><path d="M26 2l10 10H26z" fill="#c0392b"/><text x="21" y="28" font-family="Arial,sans-serif" font-size="11" font-weight="bold" fill="#fff" text-anchor="middle">PDF</text></svg>',
+  );
+  // Same modal used for the Review step's document thumbnails — clicking the preview
+  // image zooms it full-size instead of falling through to the zone's "click to
+  // replace file" handler (prevented via stopPropagation on the caller's img.onclick).
+  function openDocZoomModal(src, label) {
+    openModal({
+      title: label || 'Document',
+      body: `<img src="${src}" alt="${label || ''}" style="display:block;max-width:100%;max-height:75vh;margin:0 auto;border-radius:var(--radius)" />`,
+      size: 'lg',
+    });
+  }
+  function renderDocPreview(file, { img, preview, holder, nameEl, zone, removeBtn, locked }) {
+    if (!preview || !img) return;
+    // UAE PASS-supplied documents can't be deleted by the citizen — hide the remove
+    // button for whichever slot the caller flags as DV-sourced.
+    if (removeBtn) removeBtn.style.display = locked ? 'none' : '';
+    if (file.type === 'application/pdf') {
+      const url = URL.createObjectURL(file);
+      img.src = DOC_ICON_PDF_SRC;
+      img.onclick = e => { e.stopPropagation(); window.open(url, '_blank'); };
+      img.style.cursor = 'pointer';
+      if (nameEl) nameEl.textContent = (file.name || 'document') + ' — click to view';
+      if (holder) holder.style.display = 'none';
+      preview.style.display = 'flex';
+      zone?.classList.remove('doc-zone-invalid');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = ev => {
+      img.src = ev.target.result;
+      img.onclick = e => { e.stopPropagation(); openDocZoomModal(ev.target.result, nameEl?.textContent || file.name); };
+      img.style.cursor = 'zoom-in';
+      if (nameEl) nameEl.textContent = file.name;
+      if (holder) holder.style.display = 'none';
+      preview.style.display = 'flex';
+      zone?.classList.remove('doc-zone-invalid');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function applyDvData(res) {
+    const eid = res.emiratesId      ?? {};
+    const dl  = res.drivingLicense  ?? {};
+    const va  = res.verifiedAttributes ?? {};
+
+    // Marks this specific application as identity-verified via UAE PASS — read by
+    // the officer detail view to lock identity fields from editing. Previously the
+    // backend inferred this from the account's uaepass_uuid (whether this login has
+    // EVER used UAE PASS, for anything), which wrongly flagged applications the
+    // citizen filled in manually after rejecting the DV share.
+    formData.identity_via_uae_pass = true;
+
+    if (eid.nameEn) formData.full_name = eid.nameEn;
+    if (eid.IDN) {
+      const digits = String(eid.IDN).replace(/\D/g, '');
+      formData.emirates_id = digits.length === 15
+        ? `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 14)}-${digits.slice(14)}`
+        : String(eid.IDN);
+    }
+    // Confirmed via a real captured payload (2026-10-14): genderEn is the single-letter
+    // code "M"/"F", not the word "Male"/"Female" this field's <select> expects.
+    if (eid.genderEn === 'M') formData.sex = 'Male';
+    else if (eid.genderEn === 'F') formData.sex = 'Female';
+    // Confirmed via a real captured payload (2026-10-14): EmiratesId's date of birth field
+    // is lowercase "dateOfBirth", unlike DRIVING_LICENSE's uppercase "DateOfBirth" below —
+    // genuinely different casing between the two credential types, not a typo.
+    if (eid.dateOfBirth) formData.dob = dvNormDate(eid.dateOfBirth);
+    if (eid.nationalityEn) {
+      const match = matchNationality(eid.nationalityEn);
+      if (match) formData.nationality = String(match.nationality_id);
+    }
+    // DV's verifiedAttributes.mobile comes back in international format (e.g.
+    // "971528897462", no "+"/leading 0) per the real captured payload — this wizard's
+    // field expects local format ("05X XXX XXXX"), so convert rather than show the
+    // wrong-looking value.
+    if (va.mobile) {
+      const digits = String(va.mobile).replace(/\D/g, '');
+      formData.mobile_no = digits.startsWith('971') ? '0' + digits.slice(3) : digits;
+    }
+    if (va.email)  formData.email     = va.email;
+
+    // Confirmed via a real captured payload (2026-10-14): EmiratesId's claim embeds the
+    // actual portrait photo and wet-signature image inline (photo/signature fields) —
+    // these map onto this wizard's "Passport Photo" and "Signature" upload slots using
+    // the same savedFiles mechanism a manual file pick would use, so the existing
+    // preview-restore code picks them up with no further changes. NOTE: the Emirates ID
+    // card scan itself (front/back) and the Driving Licence card scan are NOT available
+    // this way — this integration is on DV's "Option 1: Data Only" delivery, where
+    // urlToRetriveVisualization/urlToRetriveEvidence are given but the actual scans
+    // arrive (if at all) via a separate "Receive Visualization" webhook that isn't built
+    // yet — same open item flagged when TDRA asked for that endpoint. Left for manual
+    // upload until that's built.
+    if (eid.photo) {
+      try { savedFiles.passport_photo = await base64ToFile(eid.photo, 'passport_photo'); dvSourcedDocs.add('passport_photo'); }
+      catch { /* malformed/undecodable — leave the slot for manual upload */ }
+    }
+    if (eid.signature) {
+      try { savedFiles.signature = await base64ToFile(eid.signature, 'signature'); dvSourcedDocs.add('signature'); }
+      catch { /* malformed/undecodable — leave the slot for manual upload */ }
+    }
+
+    if (dl.LicenseNumber) formData.license_no = String(dl.LicenseNumber);
+    if (dl.IssueDate)     formData.issued_date = dvNormDate(dl.IssueDate);
+    if (dl.ExpiryDate)    formData.expiry_date = dvNormDate(dl.ExpiryDate);
+    if (dl.DateOfBirth && !formData.dob) formData.dob = dvNormDate(dl.DateOfBirth);
+    // Confirmed via a real captured payload (2026-10-14): LicenseSourceEnglishDescription
+    // is a clean emirate name ("Ajman") — reliable enough to match after all (normalized
+    // for the odd ones like "Ras al-Khaimah" vs a possible "Ras Al Khaimah" spelling).
+    if (dl.LicenseSourceEnglishDescription) {
+      const norm = s => String(s).toLowerCase().replace(/[\s-]/g, '');
+      const target = norm(dl.LicenseSourceEnglishDescription);
+      const match = emirates.find(e => norm(e.emirate) === target);
+      if (match) formData.place_of_issue = String(match.emirate_id);
+    }
+  }
+
+  // Once the citizen has shared real data via "Continue with UAE PASS", that data must
+  // ALWAYS win over the previous-application values this wizard otherwise pre-fills
+  // formData with — including after a remount (e.g. the user navigates away and back
+  // within the same browser tab). applyDvData() only updates the in-memory formData for
+  // the render that follows it, which is lost on remount since formData is re-seeded
+  // from lastRequest every time; this persists the verified identity (plus the photo/
+  // signature bytes, small enough for sessionStorage) so the mount-time seeding below
+  // can re-apply it on top of lastRequest every single time, not just once.
+  function persistDvIdentity(proofId, res) {
+    const eid = res.emiratesId ?? {};
+    try {
+      sessionStorage.setItem(`dv_identity_${DV_CONTEXT}`, JSON.stringify({
+        proofId,
+        full_name:   formData.full_name   ?? null,
+        emirates_id: formData.emirates_id ?? null,
+        sex:         formData.sex         ?? null,
+        dob:         formData.dob         ?? null,
+        nationality: formData.nationality ?? null,
+        mobile_no:   formData.mobile_no   ?? null,
+        email:       formData.email       ?? null,
+        photoB64:     eid.photo     ?? null,
+        signatureB64: eid.signature ?? null,
+      }));
+    } catch { /* sessionStorage full/unavailable — this render still has the data */ }
+  }
+
+  // Re-applies a previously persisted UAE PASS share (see persistDvIdentity above) on
+  // top of the lastRequest-seeded defaults below, so it keeps winning across remounts.
+  async function restoreDvIdentity() {
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(`dv_identity_${DV_CONTEXT}`) || 'null'); }
+    catch { /* corrupt storage — fall back to lastRequest-seeded defaults */ }
+    if (!saved) return;
+    formData.identity_via_uae_pass = true;
+    ['full_name', 'emirates_id', 'sex', 'dob', 'nationality', 'mobile_no', 'email'].forEach(key => {
+      if (saved[key]) formData[key] = saved[key];
+    });
+    if (saved.photoB64) {
+      try { savedFiles.passport_photo = await base64ToFile(saved.photoB64, 'passport_photo'); dvSourcedDocs.add('passport_photo'); } catch { /* malformed — leave for manual upload */ }
+    }
+    if (saved.signatureB64) {
+      try { savedFiles.signature = await base64ToFile(saved.signatureB64, 'signature'); dvSourcedDocs.add('signature'); } catch { /* malformed — leave for manual upload */ }
+    }
+    // Card-scan images (eid_front/dl_front) live server-side, keyed by proofId — these
+    // are already ownership-checked by DVController::serveVisualization, so re-fetching
+    // them on every mount is safe and needs no separate persistence of the file bytes.
+    if (saved.proofId) pollDvVisualizations(saved.proofId, Object.keys(DV_DOCTYPE_TO_SLOT), 1);
+  }
+
+  function clearDvPendingStorage() {
+    sessionStorage.removeItem(`dv_consent_pending_${DV_CONTEXT}`);
+    sessionStorage.removeItem('idl_wizard_dv_draft');
+  }
+
+  // Card-scan visualizations arrive via a SEPARATE, asynchronous webhook from the main
+  // presentation data (DV spec: "in real time or via a 20-min retry interval, up to
+  // 24h") — so this is a bounded background poll independent of pollDvStatus() above,
+  // not something the user waits on. Only one PDF per document type is ever available
+  // (confirmed via the real DV integration guide sample — a single combined card scan,
+  // not separate front/back images), so this fills the *_front slot only; the
+  // corresponding *_back slot stays manual, same as Vehicle Categories.
+  const DV_DOCTYPE_TO_SLOT = { EmiratesId: 'eid_front', DRIVING_LICENSE: 'dl_front' };
+  let dvVisPollTimer = null;
+
+  async function fetchVisualization(proofId, docType) {
+    const slot = DV_DOCTYPE_TO_SLOT[docType]; // e.g. 'eid_front', 'dl_front'
+    if (!slot) return false;
+    const backSlot = slot.replace('_front', '_back');
+    try {
+      const resp = await fetch(api.dv.visualizationUrl(proofId, docType), { credentials: 'same-origin' });
+      if (!resp.ok) return false;
+      const blob = await resp.blob();
+      if (blob.type === 'application/pdf') {
+        try {
+          const { front, back } = await pdfToFrontBackFiles(blob, slot, backSlot);
+          savedFiles[slot] = front; dvSourcedDocs.add(slot);
+          if (backSlot !== slot) { savedFiles[backSlot] = back; dvSourcedDocs.add(backSlot); }
+          return true;
+        } catch { /* conversion failed — fall through to storing the raw PDF, which renderDocPreview() shows with a click-to-view icon */ }
+      }
+      const ext = blob.type === 'application/pdf' ? 'pdf' : (blob.type.split('/')[1] || 'bin');
+      savedFiles[slot] = new File([blob], `${slot}.${ext}`, { type: blob.type });
+      dvSourcedDocs.add(slot);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function pollDvVisualizations(proofId, pendingTypes, attemptsLeft) {
+    if (dvVisPollTimer) { clearTimeout(dvVisPollTimer); dvVisPollTimer = null; }
+    if (pendingTypes.length === 0 || attemptsLeft <= 0) return;
+    (async () => {
+      let res;
+      try { res = await api.dv.requestStatus(proofId); } catch { res = null; }
+      const ready = res?.visualizations ?? [];
+      const stillPending = [];
+      let filledAny = false;
+      for (const docType of pendingTypes) {
+        if (ready.includes(docType) && await fetchVisualization(proofId, docType)) {
+          filledAny = true;
+        } else {
+          stillPending.push(docType);
+        }
+      }
+      if (filledAny && STEPS[currentStep]?.id === 'licence') renderWizard();
+      if (stillPending.length > 0) {
+        dvVisPollTimer = setTimeout(() => pollDvVisualizations(proofId, stillPending, attemptsLeft - 1), 5000);
+      }
+    })();
+  }
+
+  async function pollDvStatus() {
+    stopDvPoll();
+    try {
+      const res = await api.dv.requestStatus(dvProofId);
+      if (res.status === 'received') {
+        const completedProofId = dvProofId;
+        await applyDvData(res);
+        persistDvIdentity(completedProofId, res);
+        clearDvPendingStorage();
+        dvPending = false;
+        dvProofId = null;
+        uaePassJustVerified = true;
+        uaePassRejected     = false;
+        currentStep = 1;
+        renderWizard();
+        // Up to ~15 checks, 5s apart (~75s) — if the card scans haven't shown up by
+        // then, they're left for manual upload rather than polling indefinitely.
+        pollDvVisualizations(completedProofId, Object.keys(DV_DOCTYPE_TO_SLOT), 15);
+        return;
+      }
+      if (res.status === 'rejected') {
+        clearDvPendingStorage();
+        dvPending = false;
+        dvProofId = null;
+        uaePassRejected = true;
+        renderWizard();
+        return;
+      }
+    } catch { /* transient network/API error — just retry on the next tick */ }
+    dvPollTimer = setTimeout(pollDvStatus, 3000);
+  }
+
   // ── Build step content HTML ──────────────────────────────────────────────────
   function stepIdentity() {
     const u = currentUser ?? {};
     const r = lastRequest ?? {};
-    const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ') || '—';
-
-    const firstName       = u.first_name ?? r.first_name ?? '';
-    const lastName        = u.last_name ?? r.last_name ?? '';
-    const fullNameValue   = [firstName, lastName].filter(Boolean).join(' ');
-    const emiratesId      = u.emirates_id ?? r.emirates_id ?? '';
-    const dobRaw          = u.dob ?? r.dob ?? '';
+    // formData takes priority over the account profile / last request — it's the only
+    // place the real "Continue with UAE PASS" Digital Vault data lands (applyDvData()
+    // writes straight into it), since this step isn't re-rendered on the way to the
+    // licence step after a successful share. Falls back to the old u/r-derived values
+    // so a normal (non-DV) load still shows whatever was there before.
+    // NOTE: uses `||`, not `??` — formData is pre-seeded from lastRequest at mount, and
+    // when a previous request's name fields are genuinely blank (confirmed via a real
+    // case, 2026-10-20) that seeding leaves formData.full_name as '' rather than
+    // undefined; `??` only falls back on null/undefined, so it would treat '' as
+    // "already answered" and never reach the real name sitting right there on
+    // currentUser. `||` falls back on any falsy value, which is what's actually wanted
+    // here across the whole chain, not just full_name.
+    const fullNameValue   = formData.full_name || [u.first_name, u.last_name].filter(Boolean).join(' ');
+    const fullName        = fullNameValue || '—';
+    const emiratesId      = formData.emirates_id || u.emirates_id || r.emirates_id || '';
+    const dobRaw          = formData.dob || u.dob || r.dob || '';
     const dobValue        = dobRaw ? String(dobRaw).split('T')[0].split(' ')[0] : '';
-    const dobDisplay      = dobValue ? new Date(dobValue).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
-    const nationalityId   = String(u.nationality ?? r.nationality_id ?? r.nationality ?? '');
+    const dobDisplay      = formatDobDisplay(dobValue);
+    const nationalityId   = String(formData.nationality || u.nationality || r.nationality_id || r.nationality || '');
     const nationalityName = nationalities.find(n => String(n.nationality_id) === nationalityId)?.nationality || '—';
-    const sex             = u.sex ?? r.sex ?? '';
-    const mobileNo        = u.mobile_no ?? r.mobile_no ?? '';
-    const email           = u.email ?? r.email ?? '';
+    const sex             = formData.sex || u.sex || r.sex || '';
+    const mobileNo        = formData.mobile_no || u.mobile_no || r.mobile_no || '';
+    const email           = formData.email || u.email || r.email || '';
 
     const identityRowsHtml = viaUaePass ? `
           <div class="pub-identity-row">
@@ -465,7 +952,17 @@ export async function renderPublicApplyIDL(param = null) {
         </div>
       </div>
 
-      <!-- UAE PASS request widget -->
+      <!-- UAE PASS request widget — only offered when this login itself was via UAE
+           PASS; a normal username/password login never sees this section at all. -->
+      ${viaUaePass ? (dvPending ? `
+      <div class="pub-uaepass-widget pub-uaepass-widget-waiting">
+        <div class="pub-uaepass-icon"><i class="fa-solid fa-spinner fa-spin"></i></div>
+        <div class="pub-uaepass-text">
+          <div class="pub-uaepass-title">Waiting for your approval on the UAE PASS app</div>
+          <div class="pub-uaepass-sub">Open the UAE PASS app on your phone and approve the request to share your Emirates ID &amp; Driving License. This page will continue automatically once you approve.</div>
+        </div>
+        <button type="button" class="btn-ghost btn-sm" id="btn-dv-cancel">Cancel &amp; enter manually</button>
+      </div>` : `
       <div class="pub-uaepass-widget">
         <div class="pub-uaepass-icon"><i class="fa-solid fa-id-card"></i></div>
         <div class="pub-uaepass-text">
@@ -473,16 +970,21 @@ export async function renderPublicApplyIDL(param = null) {
           <div class="pub-uaepass-sub">Share authentic and up to date documents eliminating the need for paper and physical visits</div>
         </div>
         <button type="button" class="btn-uae-pass-continue" aria-label="Continue with UAE PASS"></button>
-      </div>`;
+      </div>`) : ''}`;
   }
 
   function stepLicence() {
     const catInfo = VC_CAT_INFO;
     const u = currentUser ?? {};
     const r = lastRequest ?? {};
-    const dobRaw     = u.dob ?? r.dob ?? '';
+    // Same formData-first fix as stepIdentity() above, applied here too — this is a
+    // separate local computation of the same value, and got missed in the first pass:
+    // DOB showed correctly whenever currentUser/lastRequest already happened to have it
+    // (e.g. a prior real submission), but never reflected what DV just supplied, which
+    // is why it stopped showing once that stopped being coincidentally true.
+    const dobRaw     = formData.dob ?? u.dob ?? r.dob ?? '';
     const dobValue   = dobRaw ? String(dobRaw).split('T')[0].split(' ')[0] : '';
-    const dobDisplay = dobValue ? new Date(dobValue).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+    const dobDisplay = formatDobDisplay(dobValue);
     return `
       <!-- ── Section header ── -->
       <div class="pub-step-header">
@@ -508,25 +1010,25 @@ export async function renderPublicApplyIDL(param = null) {
         <div class="form-grid" style="margin-top:16px">
 
           <div class="field"><label>Driving Licence Number *</label>
-            <input name="license_no" required placeholder="Enter driving licence number" />
+            <input name="license_no" required placeholder="Enter driving licence number" value="${formData.license_no ?? ''}" />
             <div class="field-error" id="err-license_no"></div>
           </div>
 
           <div class="field"><label>Date of Issue *</label>
-            <input name="issued_date" type="date" required />
+            <input name="issued_date" type="date" required value="${formData.issued_date ?? ''}" />
             <div class="field-error" id="err-issued_date"></div>
           </div>
 
           <div class="field"><label>Licence Issuing Emirate *</label>
             <select name="place_of_issue" required>
               <option value="">Select emirate</option>
-              ${emirates.map(e => `<option value="${e.emirate_id}">${e.emirate}</option>`).join('')}
+              ${emirates.map(e => `<option value="${e.emirate_id}" ${String(e.emirate_id) === String(formData.place_of_issue ?? '') ? 'selected' : ''}>${e.emirate}</option>`).join('')}
             </select>
             <div class="field-error" id="err-place_of_issue"></div>
           </div>
 
           <div class="field"><label>Date of Expiry *</label>
-            <input name="expiry_date" type="date" required />
+            <input name="expiry_date" type="date" required value="${formData.expiry_date ?? ''}" />
             <div class="field-error" id="err-expiry_date"></div>
           </div>
 
@@ -1092,7 +1594,7 @@ export async function renderPublicApplyIDL(param = null) {
                 ${currentStep === 0 ? 'Back' : 'Back'}
               </button>
               <button type="button" class="btn pub-btn-next" id="btn-wizard-next"
-                ${currentStep === 0 && !uaePassRejected ? 'disabled title="Continue with UAE PASS above, or reject the request to enter your details manually"' : ''}>
+                ${currentStep === 0 && viaUaePass && !uaePassRejected ? 'disabled title="Continue with UAE PASS above, or reject the request to enter your details manually"' : ''}>
                 ${currentStep === STEPS.length - 1
                   ? 'Proceed to Payment <i class="fa-solid fa-arrow-right"></i>'
                   : 'Next <i class="fa-solid fa-arrow-right"></i>'}
@@ -1113,6 +1615,9 @@ export async function renderPublicApplyIDL(param = null) {
   const formData  = { first_idl: '0' };
   const savedFiles    = {}; // preserves File objects across step navigation
   const savedFileUrls = {}; // preserves server-side doc URLs for the review thumbnail fallback
+  // Slots whose current file came from UAE PASS/DV (photo, signature, or a polled
+  // card-scan visualization) rather than a manual pick — these can't be deleted.
+  const dvSourcedDocs = new Set();
   if (lastRequest) {
     const r = lastRequest;
 
@@ -1151,6 +1656,10 @@ export async function renderPublicApplyIDL(param = null) {
     formData._lastRequestId       = r.request_id           ?? null;
     formData._lastStatus          = r.request_status       ?? null;
   }
+  // A UAE PASS share already obtained in this browser session always overrides the
+  // previous-application values just seeded above — every mount, not only the one
+  // right after the redirect back from UAE PASS.
+  await restoreDvIdentity();
 
   function saveCurrentStepData() {
     const form = document.getElementById('idl-wizard-form');
@@ -1420,9 +1929,17 @@ export async function renderPublicApplyIDL(param = null) {
         }
         // User chose a new file — their upload takes priority over any server URL
         delete savedFileUrls[input.dataset.doc];
+        // A manual pick replaces whatever UAE PASS supplied for this slot, so it's no
+        // longer DV-sourced — the remove button becomes available again.
+        dvSourcedDocs.delete(input.dataset.doc);
+        if (removeBtn) removeBtn.style.display = '';
         const reader = new FileReader();
         reader.onload = ev => {
-          if (img)     img.src = ev.target.result;
+          if (img) {
+            img.src = ev.target.result;
+            img.onclick = e => { e.stopPropagation(); openDocZoomModal(ev.target.result, file.name); };
+            img.style.cursor = 'zoom-in';
+          }
           if (nameEl)  nameEl.textContent = file.name;
           if (holder)  holder.style.display  = 'none';
           if (preview) preview.style.display = 'flex';
@@ -1456,18 +1973,11 @@ export async function renderPublicApplyIDL(param = null) {
         const preview = zone?.querySelector('.doc-upload-preview');
         const img     = zone?.querySelector('.doc-preview-img');
         const nameEl  = zone?.querySelector('.doc-preview-name');
+        const removeBtn = zone?.querySelector('.doc-remove-btn');
         if (!zone || !preview || !img) return;
-        const reader = new FileReader();
-        reader.onload = ev => {
-          img.src = ev.target.result;
-          if (nameEl)  nameEl.textContent  = file.name;
-          if (holder)  holder.style.display  = 'none';
-          preview.style.display = 'flex';
-          const errEl = document.getElementById(`err-doc-${slot}`);
-          if (errEl) errEl.textContent = '';
-          zone.classList.remove('doc-zone-invalid');
-        };
-        reader.readAsDataURL(file);
+        renderDocPreview(file, { img, preview, holder, nameEl, zone, removeBtn, locked: dvSourcedDocs.has(slot) });
+        const errEl = document.getElementById(`err-doc-${slot}`);
+        if (errEl) errEl.textContent = '';
       });
     }
 
@@ -1489,6 +1999,11 @@ export async function renderPublicApplyIDL(param = null) {
           const fullUrl = `${window.location.origin}${API_BASE}${url}`;
           savedFileUrls[slot] = fullUrl; // remember for review step
           img.src = fullUrl;
+          // Carried-forward documents never got a zoom handler wired up — only the
+          // fresh-upload and DV-restore paths did, so clicking one of these did
+          // nothing (reported as "images are not zooming or opening").
+          img.onclick = e => { e.stopPropagation(); openDocZoomModal(fullUrl, url.split('/').pop()); };
+          img.style.cursor = 'zoom-in';
           if (nameEl)  nameEl.textContent  = url.split('/').pop();
           if (holder)  holder.style.display  = 'none';
           preview.style.display = 'flex';
@@ -1628,18 +2143,25 @@ export async function renderPublicApplyIDL(param = null) {
 
     // Navigation buttons
     document.querySelector('.btn-uae-pass-continue')?.addEventListener('click', () => {
-      showUaePassLoader(
-        () => {
-          uaePassJustVerified = true;
-          uaePassRejected     = false;
-          currentStep = 1;
-          renderWizard();
-        },
-        () => {
-          uaePassRejected = true;
-          renderWizard();
-        },
-      );
+      // Real flow: full-page redirect to UAE PASS so the citizen can approve the
+      // Emirates ID + Driving License document-sharing request on their phone (see
+      // AuthController::dvConsentStart). The whole app reloads during this round
+      // trip, so in-progress answers have to survive in sessionStorage, not memory —
+      // restored on return by the dvPending-restore block near the bottom of this
+      // function. The actual data arrives later via DVController::receivePresentation
+      // and is picked up by pollDvStatus() once we're back.
+      saveCurrentStepData();
+      sessionStorage.setItem('idl_wizard_dv_draft', JSON.stringify({ step: currentStep, formData, isRenew }));
+      window.location.href = api.auth.dvConsentStartUrl(DV_CONTEXT);
+    });
+
+    document.getElementById('btn-dv-cancel')?.addEventListener('click', () => {
+      stopDvPoll();
+      clearDvPendingStorage();
+      dvPending = false;
+      dvProofId = null;
+      uaePassRejected = true;
+      renderWizard();
     });
 
     document.getElementById('btn-wizard-back')?.addEventListener('click', () => {
@@ -1870,6 +2392,24 @@ export async function renderPublicApplyIDL(param = null) {
     }
   }
 
+  // Resume after returning from the real "Continue with UAE PASS" Digital Vault
+  // consent redirect (see AuthController::dvConsentStart/uaePassCallback and
+  // app.js's handleUaePassCallback) — a full page reload happens during that round
+  // trip, so in-progress wizard state has to be restored from sessionStorage rather
+  // than kept in memory. Must run before the initial renderWizard() below so the
+  // very first render already reflects the waiting state.
+  const dvPendingId = sessionStorage.getItem(`dv_consent_pending_${DV_CONTEXT}`);
+  if (dvPendingId) {
+    dvProofId = dvPendingId;
+    dvPending = true;
+    try {
+      const draft = JSON.parse(sessionStorage.getItem('idl_wizard_dv_draft') || '{}');
+      Object.assign(formData, draft.formData ?? {});
+      currentStep = draft.step ?? 0;
+    } catch { /* ignore a corrupt draft — formData keeps its lastRequest-seeded defaults */ }
+    pollDvStatus();
+  }
+
   // Initial render
   renderWizard();
 }
@@ -1904,12 +2444,24 @@ function docUploadHtml(key, label, placeholderImg = '') {
 export async function renderPublicApplyCPD(param = null) {
   const content = document.getElementById('page-content');
 
-  const isRenew = (typeof param === 'object' && param?.mode === 'renew');
-  const renewSource = isRenew ? (param?.source ?? null) : null;
+  // Returning from the "Continue with UAE PASS" redirect lands here via
+  // navigate('public-apply-cpd') with no param — recover renew-mode from the draft
+  // saved before redirecting, same reasoning as renderPublicApplyIDL above. Company
+  // Vehicle never shows the UAE PASS button at all (see isCompanyVehicle below), so
+  // there's no equivalent draft case to recover for it.
+  let dvDraftForRenewCpd = null;
+  try {
+    dvDraftForRenewCpd = JSON.parse(sessionStorage.getItem('cpd_wizard_dv_draft') || 'null');
+  } catch { /* ignore */ }
+  const isRenew = (typeof param === 'object' && param?.mode === 'renew') || dvDraftForRenewCpd?.isRenew === true;
+  const renewSource = isRenew ? (param?.source ?? dvDraftForRenewCpd?.renewSource ?? null) : null;
   // Company Vehicle CPD is the same wizard/process as Personal Vehicle, minus the
   // UAE PASS option — chosen up front on the Select Service screen since it changes
   // step 1 rather than something togglable mid-wizard.
   const isCompanyVehicle = (typeof param === 'object' && param?.usageType === 'COMPANY');
+  // "Continue with UAE PASS" is only offered when this login itself was via UAE
+  // PASS — matches renderPublicApplyIDL's identical gating.
+  const viaUaePass = !!currentUser?.via_uae_pass;
 
   const [nationalities, vehicleTypes, countries, guaranteeRules] = await Promise.all([
     api.idl.nationalities(),
@@ -1975,6 +2527,492 @@ export async function renderPublicApplyCPD(param = null) {
   const savedCountries = [];
   if (isCompanyVehicle) formData.usage_type = 'COMPANY';
 
+  // ── Real "Continue with UAE PASS" Digital Vault consent flow — same pattern as the
+  // New IDL wizard (see renderPublicApplyIDL above for the fuller commentary on each
+  // piece); duplicated here rather than shared because the two wizards' formData field
+  // names, step lists, and document-upload slot conventions (savedDocs vs savedFiles,
+  // cpdDocZone's data-cpd-doc vs docUploadHtml's data-doc) are different enough that a
+  // shared helper would need as many branches as just keeping two copies.
+  let dvPending   = false;
+  let dvProofId   = null;
+  let dvPollTimer = null;
+  const DV_CONTEXT = 'public-apply-cpd'; // must match AuthController::DV_CONTEXT_DOCUMENTS key
+
+  function stopDvPoll() {
+    if (dvPollTimer) { clearTimeout(dvPollTimer); dvPollTimer = null; }
+  }
+
+  const DV_MONTHS_CPD = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+  function dvNormDate(v) {
+    if (!v) return '';
+    const s = String(v).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const slash = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+    if (slash) return `${slash[3]}-${String(slash[2]).padStart(2, '0')}-${String(slash[1]).padStart(2, '0')}`;
+    const named = s.match(/^(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\s+(\d{4})/);
+    if (named) {
+      const mo = DV_MONTHS_CPD[named[2].toLowerCase().slice(0, 3)];
+      if (mo) return `${named[3]}-${String(mo).padStart(2, '0')}-${named[1].padStart(2, '0')}`;
+    }
+    return s;
+  }
+
+  // Same best-effort demonym matcher as the IDL wizard — see its fuller comment.
+  function matchNationality(demonym) {
+    const target = String(demonym ?? '').trim().toLowerCase();
+    if (!target) return null;
+    let hit = nationalities.find(n => String(n.nationality ?? '').toLowerCase() === target);
+    if (hit) return hit;
+    for (const suf of ['ian', 'ese', 'i', 'an', 'n']) {
+      if (!target.endsWith(suf)) continue;
+      const stripped = target.slice(0, -suf.length);
+      hit = nationalities.find(n => String(n.nationality ?? '').toLowerCase() === stripped);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  // vehicle_registered_in is a plain string array here (UAE_STATES, declared further
+  // below in this function), not id-keyed rows like IDL's `emirates` — same
+  // space/hyphen-insensitive match, just comparing strings directly.
+  function matchUaeState(name) {
+    if (!name) return null;
+    const norm = s => String(s).toLowerCase().replace(/[\s-]/g, '');
+    const target = norm(name);
+    return UAE_STATES.find(s => norm(s) === target) ?? null;
+  }
+
+  function matchVehicleMake(name) {
+    if (!name) return null;
+    const norm = s => String(s).toLowerCase().replace(/[\s-]/g, '');
+    const target = norm(name);
+    const hit = vehicleTypes.find(v => norm(v.vehicle_type) === target);
+    return hit ? hit.vehicle_type : null;
+  }
+
+  function matchColor(name) {
+    if (!name) return null;
+    const norm = s => String(s).toLowerCase().replace(/[\s-]/g, '');
+    const target = norm(name);
+    return COLORS.find(c => norm(c) === target) ?? null;
+  }
+
+  function matchBodyType(name) {
+    if (!name) return null;
+    const norm = s => String(s).toLowerCase().replace(/[\s-]/g, '');
+    const target = norm(name);
+    return BODY_TYPES.find(t => norm(t) === target) ?? null;
+  }
+
+  // Tries each candidate key in order, returns the first non-empty value found (as a
+  // trimmed string) or null. Used for the vehicleRegistration fields below, where the
+  // real field names are genuinely unknown — see the comment on applyDvData.
+  function firstMatchingField(obj, keys) {
+    for (const k of keys) {
+      const v = obj[k];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+    }
+    return null;
+  }
+
+  // Returns a Promise — DV can hand back a passport photo as WEBP (confirmed via a
+  // real captured payload, 2026-11-08), which neither the upload endpoint nor the
+  // later print-composition step (IDLController::makePrintPassport, GD's
+  // imagecreatefromjpeg/imagecreatefrompng only) accepts, so it's re-encoded to JPEG
+  // client-side here — same reasoning as pdfToFrontBackFiles() re-encoding card-scan
+  // PDFs. PNG/JPEG bytes resolve immediately without any decode round-trip.
+  function base64ToFile(b64, filenameStem) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    let mime = 'application/octet-stream', ext = 'bin';
+    const hex = [...bytes.slice(0, 12)].map(b => b.toString(16).padStart(2, '0')).join('');
+    if (hex.startsWith('89504e47')) { mime = 'image/png'; ext = 'png'; }
+    else if (hex.startsWith('ffd8ff')) { mime = 'image/jpeg'; ext = 'jpg'; }
+    else if (hex.startsWith('52494646') && hex.slice(16, 24) === '57454250') { mime = 'image/webp'; ext = 'webp'; }
+    const file = new File([bytes], `${filenameStem}.${ext}`, { type: mime });
+    return mime === 'image/webp' ? webpFileToJpeg(file, filenameStem) : Promise.resolve(file);
+  }
+
+  function webpFileToJpeg(file, filenameStem) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width  = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        canvas.toBlob(blob => {
+          URL.revokeObjectURL(url);
+          if (!blob) return reject(new Error('WEBP-to-JPEG conversion failed'));
+          resolve(new File([blob], `${filenameStem}.jpg`, { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.92);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to decode WEBP image')); };
+      img.src = url;
+    });
+  }
+
+  // Same rationale as the IDL wizard's pdfToFrontBackFiles — no server-side PDF
+  // rasteriser is available on staging, so DV's PDF card-scan evidence is converted to
+  // real JPEG images client-side via PDF.js (loaded in index.html). Two genuinely
+  // different layouts exist in DV's real data (confirmed by downloading and inspecting
+  // actual files, 2026-10-30): EmiratesId is a real 2-page PDF (front=page1, back=
+  // page2); DRIVING_LICENSE/VEHICLE_REGISTRATION_CARD are a single page with front and
+  // back stacked vertically in one image. Detected at runtime via page count.
+  async function pdfToFrontBackFiles(blob, frontStem, backStem) {
+    if (!window.pdfjsLib) throw new Error('pdfjsLib not loaded');
+    const buf = await blob.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+
+    const renderPage = async (pageNum, scale = 2) => {
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      return canvas;
+    };
+    const cropCanvas = (src, sy, sh) => {
+      const out = document.createElement('canvas');
+      out.width = src.width;
+      out.height = sh;
+      out.getContext('2d').drawImage(src, 0, sy, src.width, sh, 0, 0, src.width, sh);
+      return out;
+    };
+    // Lossless PNG from a scale-2 render of a full-page DV scan regularly landed well
+    // over the server's 2 MB upload cap (Config::UPLOAD_MAX_BYTES), which the server
+    // reports back as a per-slot error and the wizard then surfaces as "Some documents
+    // could not be uploaded" — only ever seen with UAE PASS-sourced documents because
+    // manual uploads are already-compressed photos. JPEG with a quality back-off loop
+    // keeps the same server-accepted MIME family while actually fitting the limit.
+    const toFile = (canvas, stem) => new Promise((resolve, reject) => {
+      const MAX_BYTES = 1.8 * 1024 * 1024;
+      const tryQuality = q => canvas.toBlob(b => {
+        if (!b) return reject(new Error('canvas.toBlob returned null'));
+        if (b.size > MAX_BYTES && q > 0.4) return tryQuality(q - 0.15);
+        resolve(new File([b], `${stem}.jpg`, { type: 'image/jpeg' }));
+      }, 'image/jpeg', q);
+      tryQuality(0.92);
+    });
+
+    let frontCanvas, backCanvas;
+    if (pdf.numPages >= 2) {
+      frontCanvas = await renderPage(1);
+      backCanvas  = await renderPage(2);
+    } else {
+      const full = await renderPage(1);
+      const half = Math.floor(full.height / 2);
+      frontCanvas = cropCanvas(full, 0, half);
+      backCanvas  = cropCanvas(full, half, full.height - half);
+    }
+    return { front: await toFile(frontCanvas, frontStem), back: await toFile(backCanvas, backStem) };
+  }
+
+  // Same rationale as the IDL wizard's renderDocPreview — DV's card-scan files
+  // (eid_front/dl_front/traffic_front) arrive as PDF, which an <img> tag cannot render
+  // at all (blank, no error). Shows a generic document icon instead, clickable to open
+  // the real PDF in a new tab. Only still reached as a fallback now — fetchVisualization()
+  // converts PDFs to PNG up front via pdfBlobToImageFile() above.
+  const DOC_ICON_PDF_SRC = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect x="6" y="2" width="30" height="40" rx="3" fill="#e74c3c"/><path d="M26 2l10 10H26z" fill="#c0392b"/><text x="21" y="28" font-family="Arial,sans-serif" font-size="11" font-weight="bold" fill="#fff" text-anchor="middle">PDF</text></svg>',
+  );
+  // Same modal used for the Review step's document thumbnails — clicking the preview
+  // image zooms it full-size instead of falling through to the zone's "click to
+  // replace file" handler (prevented via stopPropagation on the caller's img.onclick).
+  function openDocZoomModal(src, label) {
+    openModal({
+      title: label || 'Document',
+      body: `<img src="${src}" alt="${label || ''}" style="display:block;max-width:100%;max-height:75vh;margin:0 auto;border-radius:var(--radius)" />`,
+      size: 'lg',
+    });
+  }
+  function renderDocPreview(file, { img, preview, holder, nameEl, zone, removeBtn, locked }) {
+    if (!preview || !img) return;
+    // UAE PASS-supplied documents can't be deleted by the citizen — hide the remove
+    // button for whichever slot the caller flags as DV-sourced.
+    if (removeBtn) removeBtn.style.display = locked ? 'none' : '';
+    if (file.type === 'application/pdf') {
+      const url = URL.createObjectURL(file);
+      img.src = DOC_ICON_PDF_SRC;
+      img.onclick = e => { e.stopPropagation(); window.open(url, '_blank'); };
+      img.style.cursor = 'pointer';
+      if (nameEl) nameEl.textContent = (file.name || 'document') + ' — click to view';
+      if (holder) holder.style.display = 'none';
+      preview.style.display = 'flex';
+      zone?.classList.remove('doc-zone-invalid');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = ev => {
+      img.src = ev.target.result;
+      img.onclick = e => { e.stopPropagation(); openDocZoomModal(ev.target.result, nameEl?.textContent || file.name); };
+      img.style.cursor = 'zoom-in';
+      if (nameEl) nameEl.textContent = file.name;
+      if (holder) holder.style.display = 'none';
+      preview.style.display = 'flex';
+      zone?.classList.remove('doc-zone-invalid');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Maps DVController::requestStatus's parsed fields onto this wizard's formData.
+  // NOTE: CPD has no `dob` field at all (not in CPD_REQUIRED.identity), so EmiratesId's
+  // dateOfBirth is simply not used here. registration_no/mulkiya_no/vehicle_registered_in
+  // from vehicleRegistration are UNVERIFIED against a real payload (see
+  // DigitalVaultClient::parseSignedPresentation's matching comment) and likely to need
+  // a follow-up fix once a real CPD DV test is actually run, the same way DRIVING_LICENSE
+  // did for the IDL wizard.
+  function applyDvData(res) {
+    const eid = res.emiratesId          ?? {};
+    const dl  = res.drivingLicense      ?? {};
+    const vr  = res.vehicleRegistration ?? {};
+    const va  = res.verifiedAttributes  ?? {};
+
+    // UAE PASS data sharing only happens on the personal (non-Company-Vehicle) path —
+    // lock usage type to Personal once real DV data lands (see stepVehicle's usageType).
+    formData.usage_type = 'PERSONAL';
+    // Marks this specific application as identity-verified via UAE PASS — read by
+    // the officer detail view to lock identity fields from editing. Previously the
+    // backend inferred this from the account's uaepass_uuid (whether this login has
+    // EVER used UAE PASS, for anything), which wrongly flagged applications the
+    // citizen filled in manually after rejecting the DV share.
+    formData.identity_via_uae_pass = true;
+
+    if (eid.nameEn) formData.full_name = eid.nameEn;
+    if (eid.IDN) {
+      const digits = String(eid.IDN).replace(/\D/g, '');
+      formData.emirates_id = digits.length === 15
+        ? `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 14)}-${digits.slice(14)}`
+        : String(eid.IDN);
+    }
+    if (eid.genderEn === 'M') formData.sex = 'Male';
+    else if (eid.genderEn === 'F') formData.sex = 'Female';
+    if (eid.nationalityEn) {
+      const match = matchNationality(eid.nationalityEn);
+      if (match) formData.nationality = String(match.nationality_id);
+    }
+    if (va.mobile) {
+      const digits = String(va.mobile).replace(/\D/g, '');
+      formData.mobile_no = digits.startsWith('971') ? '0' + digits.slice(3) : digits;
+    }
+    if (va.email) formData.email = va.email;
+
+    // eid.photo (the Emirates ID's personal photo thumbnail) used to be wired into the
+    // passport_photo slot here, but that slot is this wizard's "Passport Copy" document
+    // (a scan of the actual passport booklet) — not a personal photo, and UAE PASS/DV
+    // never provides one. Left for manual upload always.
+    // No dedicated signature upload slot exists in this wizard's document grid (unlike
+    // the IDL wizard), so eid.signature has nowhere to go here — not used.
+
+    if (dl.LicenseNumber) formData.license_no      = String(dl.LicenseNumber);
+    if (dl.ExpiryDate)    formData.license_expiry  = dvNormDate(dl.ExpiryDate);
+
+    // Confirmed: registration_no is PlateCode + PlateNumber combined, not PlateNumber
+    // alone — matches the field's placeholder format ("e.g. Dubai A 12345").
+    if (vr.PlateNumber) {
+      formData.registration_no = [vr.PlateCode, vr.PlateNumber].filter(Boolean).join(' ');
+    }
+    if (vr.TrafficProfileNumber) formData.mulkiya_no      = String(vr.TrafficProfileNumber);
+    if (vr.PlateSourceEnglishDescription) {
+      const match = matchUaeState(vr.PlateSourceEnglishDescription);
+      if (match) formData.vehicle_registered_in = match;
+    }
+
+    // Everything below is genuinely best-effort: unlike PlateNumber/TrafficProfileNumber/
+    // PlateSourceEnglishDescription above (which follow the integration guide's
+    // documented field names for VEHICLE_REGISTRATION_CARD), there is no documentation
+    // AND no real captured payload for these — a physical Mulkiya does show make,
+    // model, color, chassis/engine number, seating, year, and body/vehicle type, but
+    // the actual field NAMES DV uses for them are unknown. Each one tries several
+    // plausible candidate names (see firstMatchingField above) rather than a single
+    // guess, to have the best realistic chance of matching without a live test. Expect
+    // to need correction once a real CPD DV payload is actually captured, the same way
+    // DRIVING_LICENSE needed three separate fixes after its first real test.
+    // Field names below confirmed against a real captured CPD payload (2026-10-16,
+    // presentation_id=16 on staging — see dv_capture_output/vehicle_registration_claim.txt)
+    // — every one of the original best-effort guesses in this block was wrong; these
+    // are the actual names. Keeping a couple of fallback candidates per field regardless,
+    // in case a different test vehicle/profile ever omits one.
+    const vehicleMakeRaw = firstMatchingField(vr, ['VehicleBrandEnglishDescription', 'VehicleMake']);
+    if (vehicleMakeRaw) {
+      const match = matchVehicleMake(vehicleMakeRaw);
+      if (match) formData.vehicle_make = match;
+    }
+
+    const vehicleModelRaw = firstMatchingField(vr, ['VehicleModelEnglishDescription', 'VehicleModel']);
+    if (vehicleModelRaw) formData.vehicle_model = vehicleModelRaw;
+
+    // Confirmed NOT PlateKindEnglishDescription ("Private"/"Public" — plate category,
+    // a different concept) — it's VehicleKindEnglishDescription. Real sample value was
+    // "Light Vehicle Coupe", which doesn't match any of this wizard's BODY_TYPES options
+    // (Station/Saloon/Motor Cycle/Truck/Trailer/Pickup/Caravan/Hatchback) — a genuine
+    // taxonomy mismatch between DV's kind values and this list, not fixable by getting
+    // the field name right alone. Left matching (so an exact hit like "Truck" still
+    // works) but expect this to often come back empty until/unless a translation table
+    // is built from more real samples.
+    const bodyTypeRaw = firstMatchingField(vr, ['VehicleKindEnglishDescription', 'BodyType']);
+    if (bodyTypeRaw) {
+      const match = matchBodyType(bodyTypeRaw);
+      if (match) formData.body_type = match;
+    }
+
+    const colorRaw = firstMatchingField(vr, ['VehicleColorEnglishDescription', 'Color']);
+    if (colorRaw) {
+      const match = matchColor(colorRaw);
+      if (match) formData.color = match;
+    }
+
+    const chassisRaw = firstMatchingField(vr, ['VehicleChassisNumber', 'ChassisNumber']);
+    if (chassisRaw) formData.chassis_no = chassisRaw;
+
+    // Field name was already right — but the real sample's value was literally "NIL"
+    // (the vehicle has no engine number on file), not a bug, just real data.
+    const engineRaw = firstMatchingField(vr, ['EngineNumber', 'EngineNo']);
+    if (engineRaw) formData.engine_no = engineRaw;
+
+    const weightRaw = firstMatchingField(vr, ['VehicleWeight', 'EmptyWeight']);
+    if (weightRaw) formData.net_weight = weightRaw;
+
+    // Not "seats" terminology at all in the real data — it's NumberOfPassengers.
+    const seatsRaw = firstMatchingField(vr, ['NumberOfPassengers', 'NumberOfSeats']);
+    if (seatsRaw) formData.no_of_seats = seatsRaw;
+
+    // No clean year field exists in the real sample — CarModelYear is the only
+    // candidate, and its real value was malformed/concatenated ("Dodge Challenger2019",
+    // no separator between model and year), labelled just "Model" (CarModelYearEnLabel),
+    // which suggests this may be a data-generation quirk on DV's sandbox side rather
+    // than a real field we can rely on. Pull the trailing 4 digits defensively rather
+    // than requiring an exact 4-digit value, since the clean case won't match otherwise.
+    const yearRaw = firstMatchingField(vr, ['CarModelYear', 'ManufactureYear']);
+    if (yearRaw) {
+      const yearMatch = yearRaw.match(/(\d{4})$/);
+      if (yearMatch) formData.manuf_year = yearMatch[1];
+    }
+
+    // Passport was briefly requested from DV (for passport_no, which has no other
+    // source) and then explicitly removed — only Emirates ID, Driving License and
+    // Mulkiya are wanted for CPD. passport_no stays manual entry; the value binding
+    // on its input (stepVehicle below) is kept regardless, since that fixed a genuine
+    // pre-existing bug unrelated to DV (it wasn't persisting on back-navigation).
+  }
+
+  // Same rationale as the IDL wizard's persistDvIdentity/restoreDvIdentity (see its
+  // fuller comment) — a UAE PASS share must always win over renewSource's
+  // previous-application values, including after a remount, not just for the one
+  // render right after applyDvData() runs.
+  const DV_IDENTITY_FIELDS_CPD = [
+    'full_name', 'emirates_id', 'sex', 'nationality', 'mobile_no', 'email',
+    'license_no', 'license_expiry', 'registration_no', 'mulkiya_no',
+    'vehicle_registered_in', 'vehicle_make', 'vehicle_model', 'body_type',
+    'color', 'chassis_no', 'engine_no', 'net_weight', 'no_of_seats', 'manuf_year',
+  ];
+  function persistDvIdentity(proofId, res) {
+    try {
+      const snapshot = { proofId };
+      DV_IDENTITY_FIELDS_CPD.forEach(key => { snapshot[key] = formData[key] ?? null; });
+      sessionStorage.setItem(`dv_identity_${DV_CONTEXT}`, JSON.stringify(snapshot));
+    } catch { /* sessionStorage full/unavailable — this render still has the data */ }
+  }
+
+  function restoreDvIdentity() {
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(`dv_identity_${DV_CONTEXT}`) || 'null'); }
+    catch { /* corrupt storage — fall back to renewSource-seeded defaults */ }
+    if (!saved) return;
+    formData.identity_via_uae_pass = true;
+    DV_IDENTITY_FIELDS_CPD.forEach(key => { if (saved[key]) formData[key] = saved[key]; });
+    if (saved.proofId) pollDvVisualizations(saved.proofId, Object.keys(DV_DOCTYPE_TO_SLOT_CPD), 1);
+  }
+
+  function clearDvPendingStorage() {
+    sessionStorage.removeItem(`dv_consent_pending_${DV_CONTEXT}`);
+    sessionStorage.removeItem('cpd_wizard_dv_draft');
+  }
+
+  const DV_DOCTYPE_TO_SLOT_CPD = { EmiratesId: 'eid_front', DRIVING_LICENSE: 'dl_front', VEHICLE_REGISTRATION_CARD: 'traffic_front' };
+  let dvVisPollTimer = null;
+
+  async function fetchVisualization(proofId, docType) {
+    const slot = DV_DOCTYPE_TO_SLOT_CPD[docType]; // e.g. 'eid_front', 'dl_front', 'traffic_front'
+    if (!slot) return false;
+    const backSlot = slot.replace('_front', '_back');
+    try {
+      const resp = await fetch(api.dv.visualizationUrl(proofId, docType), { credentials: 'same-origin' });
+      if (!resp.ok) return false;
+      const blob = await resp.blob();
+      if (blob.type === 'application/pdf') {
+        try {
+          const { front, back } = await pdfToFrontBackFiles(blob, slot, backSlot);
+          savedDocs[slot] = front; dvSourcedDocs.add(slot);
+          if (backSlot !== slot) { savedDocs[backSlot] = back; dvSourcedDocs.add(backSlot); }
+          return true;
+        } catch { /* conversion failed — fall through to storing the raw PDF, which renderDocPreview() shows with a click-to-view icon */ }
+      }
+      const ext = blob.type === 'application/pdf' ? 'pdf' : (blob.type.split('/')[1] || 'bin');
+      savedDocs[slot] = new File([blob], `${slot}.${ext}`, { type: blob.type });
+      dvSourcedDocs.add(slot);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function pollDvVisualizations(proofId, pendingTypes, attemptsLeft) {
+    if (dvVisPollTimer) { clearTimeout(dvVisPollTimer); dvVisPollTimer = null; }
+    if (pendingTypes.length === 0 || attemptsLeft <= 0) return;
+    (async () => {
+      let res;
+      try { res = await api.dv.requestStatus(proofId); } catch { res = null; }
+      const ready = res?.visualizations ?? [];
+      const stillPending = [];
+      let filledAny = false;
+      for (const docType of pendingTypes) {
+        if (ready.includes(docType) && await fetchVisualization(proofId, docType)) {
+          filledAny = true;
+        } else {
+          stillPending.push(docType);
+        }
+      }
+      if (filledAny && CPD_STEPS[currentStep]?.id === 'vehicle') renderCPDWizard();
+      if (stillPending.length > 0) {
+        dvVisPollTimer = setTimeout(() => pollDvVisualizations(proofId, stillPending, attemptsLeft - 1), 5000);
+      }
+    })();
+  }
+
+  async function pollDvStatus() {
+    stopDvPoll();
+    try {
+      const res = await api.dv.requestStatus(dvProofId);
+      if (res.status === 'received') {
+        const completedProofId = dvProofId;
+        applyDvData(res);
+        persistDvIdentity(completedProofId, res);
+        clearDvPendingStorage();
+        dvPending = false;
+        dvProofId = null;
+        uaePassJustVerified = true;
+        uaePassRejected     = false;
+        currentStep = 1;
+        renderCPDWizard();
+        pollDvVisualizations(completedProofId, Object.keys(DV_DOCTYPE_TO_SLOT_CPD), 15);
+        return;
+      }
+      if (res.status === 'rejected') {
+        clearDvPendingStorage();
+        dvPending = false;
+        dvProofId = null;
+        uaePassRejected = true;
+        renderCPDWizard();
+        return;
+      }
+    } catch { /* transient network/API error — just retry on the next tick */ }
+    dvPollTimer = setTimeout(pollDvStatus, 3000);
+  }
+
   if (renewSource) {
     const s = renewSource;
     formData.parent_request_id = s.auto_id;
@@ -2005,6 +3043,7 @@ export async function renderPublicApplyCPD(param = null) {
     formData.vehicle_model         = s.vehicle_model         ?? '';
     formData.vehicle_value         = s.vehicle_value         ?? '';
     formData.vehicle_registered_in = s.vehicle_registered_in ?? '';
+    formData.vehicle_registered_country = s.vehicle_registered_country ?? '';
     formData.body_type             = s.body_type             ?? '';
     formData.manuf_year            = s.manuf_year            ?? '';
     formData.color                 = s.color                 ?? '';
@@ -2021,11 +3060,18 @@ export async function renderPublicApplyCPD(param = null) {
     (s.countries ?? []).forEach(c => savedCountries.push(String(c.country_id)));
   }
   const savedDocs = {};
+  // Slots whose current file came from a polled UAE PASS/DV card-scan visualization
+  // rather than a manual pick — these can't be deleted.
+  const dvSourcedDocs = new Set();
+  // A UAE PASS share already obtained in this browser session always overrides the
+  // previous-application values just seeded above — every mount, not only the one
+  // right after the redirect back from UAE PASS.
+  restoreDvIdentity();
 
   const UAE_STATES = ['Abu Dhabi','Dubai','Sharjah','Ajman','Umm Al Quwain','Ras Al Khaimah','Fujairah'];
   // "Luxury" is intentionally not a selectable body type — luxury vehicles are
   // auto-detected from the make (see LUXURY_MAKES below) and priced accordingly.
-  const BODY_TYPES = ['Station','Saloon','Motor Cycle','Truck','Trailer','Pickup','Caravan','Hatchback'];
+  const BODY_TYPES = ['Station','Saloon','Coupe','Bus','Motor Cycle','Truck','Trailer','Pickup','Caravan','Hatchback'];
   const COLORS     = ['White','Silver','Black','Grey','Blue','Red','Brown','Green','Other'];
   const YEAR_OPTS  = Array.from({length:41},(_,i)=>2030-i).map(y=>`<option value="${y}">${y}</option>`).join('');
 
@@ -2077,6 +3123,22 @@ export async function renderPublicApplyCPD(param = null) {
 
   function stepIdentity() {
     const usageType = formData.usage_type || 'PERSONAL';
+    // formData takes priority (anything typed, or supplied by the real "Continue with
+    // UAE PASS" Digital Vault flow, wins); currentUser is the fallback for the case the
+    // IDL wizard already handles but this one never did — an account whose PORTAL LOGIN
+    // itself was via UAE PASS should show its verified identity immediately on landing
+    // here, not only after clicking the DV button. Matches renderPublicApplyIDL's
+    // stepIdentity() derivation exactly (formData ?? u.*).
+    const u = currentUser ?? {};
+    // Uses `||`, not `??` — see the matching note on renderPublicApplyIDL's
+    // stepIdentity() for why: formData can hold '' (not undefined) for these once
+    // seeded from renewSource, which `??` would treat as already-answered.
+    const identFullName    = formData.full_name    || [u.first_name, u.last_name].filter(Boolean).join(' ');
+    const identEmiratesId  = formData.emirates_id  || u.emirates_id || '';
+    const identNationality = String(formData.nationality || u.nationality || '');
+    const identSex          = formData.sex          || u.sex          || '';
+    const identMobileNo      = formData.mobile_no    || u.mobile_no    || '';
+    const identEmail          = formData.email        || u.email        || '';
     return `
       <div class="pub-step-header">
         <div class="pub-step-icon-wrap"><i class="fa-solid fa-user"></i></div>
@@ -2105,14 +3167,14 @@ export async function renderPublicApplyCPD(param = null) {
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
             <span class="pub-id-label">Full Name</span>
-            <input name="full_name" class="pub-id-inline-input" placeholder="Full name" value="${formData.full_name || ''}" />
+            <input name="full_name" class="pub-id-inline-input" placeholder="Full name" value="${identFullName}" />
             <div class="field-error" id="err-full_name" style="margin:0"></div>
           </div>
 
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
             <span class="pub-id-label">Emirates ID</span>
-            <input name="emirates_id" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" value="${formData.emirates_id || ''}" />
+            <input name="emirates_id" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" value="${identEmiratesId}" />
             <div class="field-error" id="err-emirates_id" style="margin:0"></div>
           </div>
 
@@ -2121,7 +3183,7 @@ export async function renderPublicApplyCPD(param = null) {
             <span class="pub-id-label">Nationality</span>
             <select name="nationality" class="pub-id-inline-select">
               <option value="">Select nationality</option>
-              ${nationalities.map(n => `<option value="${n.nationality_id}" ${String(n.nationality_id) === String(formData.nationality) ? 'selected' : ''}>${n.nationality}</option>`).join('')}
+              ${nationalities.map(n => `<option value="${n.nationality_id}" ${String(n.nationality_id) === identNationality ? 'selected' : ''}>${n.nationality}</option>`).join('')}
             </select>
             <div class="field-error" id="err-nationality" style="margin:0"></div>
           </div>
@@ -2131,8 +3193,8 @@ export async function renderPublicApplyCPD(param = null) {
             <span class="pub-id-label">Gender</span>
             <select name="sex" class="pub-id-inline-select">
               <option value="">Select</option>
-              <option value="Male" ${formData.sex === 'Male' ? 'selected' : ''}>Male</option>
-              <option value="Female" ${formData.sex === 'Female' ? 'selected' : ''}>Female</option>
+              <option value="Male" ${identSex === 'Male' ? 'selected' : ''}>Male</option>
+              <option value="Female" ${identSex === 'Female' ? 'selected' : ''}>Female</option>
             </select>
             <div class="field-error" id="err-sex" style="margin:0"></div>
           </div>
@@ -2140,21 +3202,30 @@ export async function renderPublicApplyCPD(param = null) {
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
             <span class="pub-id-label">Mobile Number</span>
-            <input name="mobile_no" class="pub-id-inline-input" placeholder="05X XXX XXXX" value="${formData.mobile_no || ''}" />
+            <input name="mobile_no" class="pub-id-inline-input" placeholder="05X XXX XXXX" value="${identMobileNo}" />
             <div class="field-error" id="err-mobile_no" style="margin:0"></div>
           </div>
 
           <div class="pub-identity-row">
             <span class="pub-id-icon"><i class="fa-regular fa-envelope"></i></span>
             <span class="pub-id-label">Email Address</span>
-            <input name="email" type="email" class="pub-id-inline-input" placeholder="your@email.com" value="${formData.email || ''}" />
+            <input name="email" type="email" class="pub-id-inline-input" placeholder="your@email.com" value="${identEmail}" />
             <div class="field-error" id="err-email" style="margin:0"></div>
           </div>
 
         </div>
       </div>
 
-      ${!isCompanyVehicle ? `
+      ${(viaUaePass && !isCompanyVehicle) ? (dvPending ? `
+      <!-- UAE PASS request widget — waiting for approval -->
+      <div class="pub-uaepass-widget pub-uaepass-widget-waiting">
+        <div class="pub-uaepass-icon"><i class="fa-solid fa-spinner fa-spin"></i></div>
+        <div class="pub-uaepass-text">
+          <div class="pub-uaepass-title">Waiting for your approval on the UAE PASS app</div>
+          <div class="pub-uaepass-sub">Open the UAE PASS app on your phone and approve the request to share your Emirates ID, Driving License &amp; Mulkiya. This page will continue automatically once you approve.</div>
+        </div>
+        <button type="button" class="btn-ghost btn-sm" id="btn-dv-cancel-cpd">Cancel &amp; enter manually</button>
+      </div>` : `
       <!-- UAE PASS request widget -->
       <div class="pub-uaepass-widget">
         <div class="pub-uaepass-icon"><i class="fa-solid fa-id-card"></i></div>
@@ -2163,12 +3234,14 @@ export async function renderPublicApplyCPD(param = null) {
           <div class="pub-uaepass-sub">Share authentic and up to date documents eliminating the need for paper and physical visits</div>
         </div>
         <button type="button" class="btn-uae-pass-continue" aria-label="Continue with UAE PASS"></button>
-      </div>` : ''}`;
+      </div>`) : ''}`;
   }
 
   function stepVehicle() {
-    const yearOpts = Array.from({length:41},(_,i)=>2030-i).map(y=>`<option value="${y}">${y}</option>`).join('');
-    const usageType = formData.usage_type || 'PERSONAL';
+    const yearOpts = Array.from({length:41},(_,i)=>2030-i).map(y=>`<option value="${y}" ${String(y) === String(formData.manuf_year) ? 'selected' : ''}>${y}</option>`).join('');
+    // Once UAE PASS data has been received, usage type is locked to Personal — DV
+    // sharing only happens on the personal (non-Company-Vehicle) path.
+    const usageType = uaePassJustVerified ? 'PERSONAL' : (formData.usage_type || 'PERSONAL');
     const upholsteryChoice = ['Yes','No'].includes(formData.upholstery) ? formData.upholstery : (formData.upholstery ? 'Other' : '');
     const upholsteryOther  = upholsteryChoice === 'Other' ? formData.upholstery : '';
     const showExtra1 = !!(formData.extra_owner1_name || formData.extra_owner1_eid || formData.extra_owner1_passport);
@@ -2198,14 +3271,14 @@ export async function renderPublicApplyCPD(param = null) {
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-hashtag"></i></span>
           <span class="pub-id-label">Vehicle Plate Number</span>
-          <input name="registration_no" required class="pub-id-inline-input" placeholder="e.g. Dubai A 12345" />
+          <input name="registration_no" required class="pub-id-inline-input" placeholder="e.g. Dubai A 12345" value="${formData.registration_no ?? ''}" />
           <div class="field-error" id="err-registration_no" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-regular fa-file-lines"></i></span>
           <span class="pub-id-label">Traffic File Number</span>
-          <input name="mulkiya_no" required class="pub-id-inline-input" placeholder="Traffic file / Mulkiya number" />
+          <input name="mulkiya_no" required class="pub-id-inline-input" placeholder="Traffic file / Mulkiya number" value="${formData.mulkiya_no ?? ''}" />
           <div class="field-error" id="err-mulkiya_no" style="margin:0"></div>
         </div>
 
@@ -2214,7 +3287,7 @@ export async function renderPublicApplyCPD(param = null) {
           <span class="pub-id-label">Vehicle Make</span>
           <select name="vehicle_make" required class="pub-id-inline-select">
             <option value="">Select make</option>
-            ${vehicleTypes.map(v => `<option value="${v.vehicle_type}">${v.vehicle_type}</option>`).join('')}
+            ${vehicleTypes.map(v => `<option value="${v.vehicle_type}" ${v.vehicle_type === formData.vehicle_make ? 'selected' : ''}>${v.vehicle_type}</option>`).join('')}
           </select>
           <div class="field-error" id="err-vehicle_make" style="margin:0"></div>
         </div>
@@ -2222,7 +3295,7 @@ export async function renderPublicApplyCPD(param = null) {
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-car-side"></i></span>
           <span class="pub-id-label">Vehicle Model</span>
-          <input name="vehicle_model" required class="pub-id-inline-input" placeholder="e.g. Land Cruiser" />
+          <input name="vehicle_model" required class="pub-id-inline-input" placeholder="e.g. Land Cruiser" value="${formData.vehicle_model ?? ''}" />
           <div class="field-error" id="err-vehicle_model" style="margin:0"></div>
         </div>
 
@@ -2231,7 +3304,7 @@ export async function renderPublicApplyCPD(param = null) {
           <span class="pub-id-label">Body Type</span>
           <select name="body_type" required class="pub-id-inline-select">
             <option value="">Select type</option>
-            ${BODY_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+            ${BODY_TYPES.map(t => `<option value="${t}" ${t === formData.body_type ? 'selected' : ''}>${cpdBodyTypeLabel(t)}</option>`).join('')}
           </select>
           <div class="field-error" id="err-body_type" style="margin:0"></div>
         </div>
@@ -2241,7 +3314,7 @@ export async function renderPublicApplyCPD(param = null) {
           <span class="pub-id-label">Vehicle Registered In</span>
           <select name="vehicle_registered_in" required class="pub-id-inline-select">
             <option value="">Select emirate</option>
-            ${UAE_STATES.map(s => `<option value="${s}">${s}</option>`).join('')}
+            ${UAE_STATES.map(s => `<option value="${s}" ${s === formData.vehicle_registered_in ? 'selected' : ''}>${s}</option>`).join('')}
           </select>
           <div class="field-error" id="err-vehicle_registered_in" style="margin:0"></div>
         </div>
@@ -2251,7 +3324,7 @@ export async function renderPublicApplyCPD(param = null) {
           <span class="pub-id-label">Color as per Mulkiya</span>
           <select name="color" required class="pub-id-inline-select">
             <option value="">Select color</option>
-            ${COLORS.map(c => `<option value="${c}">${c}</option>`).join('')}
+            ${COLORS.map(c => `<option value="${c}" ${c === formData.color ? 'selected' : ''}>${c}</option>`).join('')}
           </select>
           <div class="field-error" id="err-color" style="margin:0"></div>
         </div>
@@ -2269,28 +3342,28 @@ export async function renderPublicApplyCPD(param = null) {
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-barcode"></i></span>
           <span class="pub-id-label">Chassis No</span>
-          <input name="chassis_no" required class="pub-id-inline-input" placeholder="VIN / Chassis number" />
+          <input name="chassis_no" required class="pub-id-inline-input" placeholder="VIN / Chassis number" value="${formData.chassis_no ?? ''}" />
           <div class="field-error" id="err-chassis_no" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-weight-hanging"></i></span>
           <span class="pub-id-label">Net Weight (Empty Load)</span>
-          <input name="net_weight" required class="pub-id-inline-input" placeholder="kg" />
+          <input name="net_weight" required class="pub-id-inline-input" placeholder="kg" value="${formData.net_weight ?? ''}" />
           <div class="field-error" id="err-net_weight" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-gears"></i></span>
           <span class="pub-id-label">Engine No</span>
-          <input name="engine_no" required class="pub-id-inline-input" placeholder="Engine number" />
+          <input name="engine_no" required class="pub-id-inline-input" placeholder="Engine number" value="${formData.engine_no ?? ''}" />
           <div class="field-error" id="err-engine_no" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-users"></i></span>
           <span class="pub-id-label">No of Seats</span>
-          <input name="no_of_seats" type="number" required class="pub-id-inline-input" placeholder="5" />
+          <input name="no_of_seats" type="number" required class="pub-id-inline-input" placeholder="5" value="${formData.no_of_seats ?? ''}" />
           <div class="field-error" id="err-no_of_seats" style="margin:0"></div>
         </div>
 
@@ -2304,14 +3377,14 @@ export async function renderPublicApplyCPD(param = null) {
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-id-card"></i></span>
           <span class="pub-id-label">Driving Licence Number</span>
-          <input name="license_no" class="pub-id-inline-input" placeholder="Licence number" />
+          <input name="license_no" class="pub-id-inline-input" placeholder="Licence number" value="${formData.license_no ?? ''}" />
           <div class="field-error" id="err-license_no" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-regular fa-calendar-xmark"></i></span>
           <span class="pub-id-label">Driving Licence Expiry Date</span>
-          <input name="license_expiry" type="date" class="pub-id-inline-input" />
+          <input name="license_expiry" type="date" class="pub-id-inline-input" value="${formData.license_expiry ?? ''}" />
           <div class="field-error" id="err-license_expiry" style="margin:0"></div>
         </div>
 
@@ -2345,7 +3418,7 @@ export async function renderPublicApplyCPD(param = null) {
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-briefcase"></i></span>
           <span class="pub-id-label">Usage Type</span>
-          ${renewSource ? `
+          ${(renewSource || uaePassJustVerified) ? `
           <span class="pub-id-value">${usageType === 'COMPANY' ? 'Company Use' : 'Personal Use'}</span>
           <input type="hidden" name="usage_type" value="${usageType}" />` : `
           <select name="usage_type" id="cpd-usage-type" required class="pub-id-inline-select">
@@ -2356,14 +3429,32 @@ export async function renderPublicApplyCPD(param = null) {
           <div class="field-error" id="err-usage_type" style="margin:0"></div>
         </div>
 
+        <div class="pub-identity-row" id="cpd-company-name-row" style="display:${usageType === 'COMPANY' ? '' : 'none'}">
+          <span class="pub-id-icon"><i class="fa-solid fa-building"></i></span>
+          <span class="pub-id-label">Company Name</span>
+          <input name="company_name" class="pub-id-inline-input" placeholder="Registered company name"
+            value="${esc(formData.company_name)}" ${usageType === 'COMPANY' ? 'required' : ''} />
+          <div class="field-error" id="err-company_name" style="margin:0"></div>
+        </div>
+
         <div class="pub-identity-row">
           <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
           <span class="pub-id-label">Passport Number
             <i class="fa-solid fa-circle-info" style="margin-left:4px;color:var(--text-muted);cursor:help"
                title="Please attach a copy of your passport in Supporting Documents above"></i>
           </span>
-          <input name="passport_no" required class="pub-id-inline-input" placeholder="Passport number" />
+          <input name="passport_no" required class="pub-id-inline-input" placeholder="Passport number" value="${formData.passport_no ?? ''}" />
           <div class="field-error" id="err-passport_no" style="margin:0"></div>
+        </div>
+
+        <div class="pub-identity-row">
+          <span class="pub-id-icon"><i class="fa-solid fa-earth-americas"></i></span>
+          <span class="pub-id-label">Vehicle Registered Country</span>
+          <select name="vehicle_registered_country" class="pub-id-inline-select">
+            <option value="">Select country</option>
+            ${countries.map(c => `<option value="${esc(c.nationality)}" ${c.nationality === formData.vehicle_registered_country ? 'selected' : ''}>${esc(c.nationality)}</option>`).join('')}
+          </select>
+          <div class="field-error" id="err-vehicle_registered_country" style="margin:0"></div>
         </div>
 
         <div class="pub-identity-row">
@@ -2700,7 +3791,8 @@ export async function renderPublicApplyCPD(param = null) {
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-car-side"></i></span><span class="rv-id-label">Vehicle Model</span><span class="rv-id-value">${formData.vehicle_model || '—'}</span></div>
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-sack-dollar"></i></span><span class="rv-id-label">Vehicle Value (AED)</span><span class="rv-id-value">${formData.vehicle_value || '—'}</span></div>
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-location-dot"></i></span><span class="rv-id-label">Vehicle Registered In</span><span class="rv-id-value">${formData.vehicle_registered_in || '—'}</span></div>
-          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-shapes"></i></span><span class="rv-id-label">Body Type</span><span class="rv-id-value">${formData.body_type || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-earth-americas"></i></span><span class="rv-id-label">Vehicle Registered Country</span><span class="rv-id-value">${formData.vehicle_registered_country || '—'}</span></div>
+          <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-shapes"></i></span><span class="rv-id-label">Body Type</span><span class="rv-id-value">${cpdBodyTypeLabel(formData.body_type) || '—'}</span></div>
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-regular fa-calendar"></i></span><span class="rv-id-label">Year of Manufacture</span><span class="rv-id-value">${formData.manuf_year || '—'}</span></div>
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-palette"></i></span><span class="rv-id-label">Color as per Mulkiya</span><span class="rv-id-value">${formData.color || '—'}</span></div>
           <div class="rv-identity-row"><span class="rv-id-icon"><i class="fa-solid fa-weight-hanging"></i></span><span class="rv-id-label">Net Weight (Empty Load)</span><span class="rv-id-value">${formData.net_weight || '—'}</span></div>
@@ -2889,8 +3981,7 @@ export async function renderPublicApplyCPD(param = null) {
         <div class="rv-section-title" style="margin-bottom:12px">Declaration</div>
         <label class="disclaimer-check" id="disclaimer-check-1">
           <input type="checkbox" name="disclaimer_1" id="disclaimer_1" />
-          <span>I confirm that all the information provided is correct and complete. I understand that once I proceed to payment, I will not be able to make any changes. I agree to the <a href="#" style="color:var(--accent)">terms and conditions</a> and consent to the processing of my data.<br><br>
-          I understand that if I proceed and there is a mistake in the information, I will not hold EMSO responsible and no refund will be provided.</span>
+          <span>I have read and agree to the Carnet De Passages Online <a href="#" id="cpd-terms-link" style="color:var(--accent)">Terms &amp; Conditions</a>. I understand that issuance fees are non-refundable, an administrative fee between AED 300 – AED 1,000 applies for unreturned or late Carnets, and failure to return the Carnet within 60 days of expiry incurs an automatic AED 100,000 penalty plus foreign customs duties.</span>
         </label>
         <div class="field-error" id="err-disclaimer_1"></div>
       </div>
@@ -2994,7 +4085,7 @@ export async function renderPublicApplyCPD(param = null) {
       .map(id => countries.find(c => String(c.nationality_id) === String(id))?.nationality ?? '')
       .filter(Boolean);
 
-    if (!selectedNames.length) return { guaranteeFee: 0, bookingFee: 0, extraFee: 0, deliveryFee: 0, processingFee: 0, vat: 0, total: 0, notes: [], breakdown: [] };
+    if (!selectedNames.length) return { guaranteeFee: 0, bookingFee: 0, extraFee: 0, deliveryFee: 0, processingFee: 0, serviceFee: 0, vat: 0, total: 0, notes: [], breakdown: [] };
 
     const groupAmounts   = {};
     const groupCountries = {};
@@ -3037,6 +4128,27 @@ export async function renderPublicApplyCPD(param = null) {
     // (price list: Fee 1,500 + VAT 75 + Cash 100,000 = Total 101,575 exactly, with no
     // extra 2,500 for a processing fee).
     const winningGroupCode = Object.entries(groupAmounts).find(([, amt]) => amt === guaranteeFee)?.[0];
+    const winningGroup = winningGroupCode ? _groups[winningGroupCode] : null;
+
+    // Security cheque requirement is a property of the SELECTED DESTINATIONS, not of
+    // whichever group happens to win the main guarantee-fee comparison — those are two
+    // independent things. E.g. Egypt + India + GCC: India's guarantee amount is higher
+    // than Egypt's at every tier/year-band (confirmed via live rates: band 2 luxury is
+    // 100,000 for India vs 70,000 for Egypt), so India always "wins" guaranteeFee —
+    // but Egypt's security cheque requirement still applies because Egypt was
+    // explicitly selected. Checking only winningGroup (as this used to) meant Egypt's
+    // requirement silently never triggered whenever a higher-guarantee country was
+    // selected alongside it. Scan every group actually touched by the selection
+    // instead, and take the highest required amount if more than one applies.
+    let securityChequeRequired = false;
+    let securityChequeAmount   = 0;
+    Object.keys(groupAmounts).forEach(grpCode => {
+      const grp = _groups[grpCode];
+      if (grp?.requires_security_cheque) {
+        securityChequeRequired = true;
+        securityChequeAmount = Math.max(securityChequeAmount, +(grp.security_cheque_amount ?? 0));
+      }
+    });
 
     // Booking fee from mn_cpd_booking_fees by country IDs
     const bookingFee = calcBookingFee(savedCountries);
@@ -3045,26 +4157,50 @@ export async function renderPublicApplyCPD(param = null) {
     const EXTRA_FEE_AMOUNT = parseFloat(guaranteeRules.extra_driver_fee ?? 50);
     const extraFee = (formData.extra_owner1_name?.trim() || formData.extra_owner2_name?.trim()) ? EXTRA_FEE_AMOUNT : 0;
 
-    // Delivery fee — charged only for Home Delivery
-    const deliveryFee = (formData.delivery_option ?? 'home_delivery') === 'home_delivery' ? CPD_DELIVERY_FEE : 0;
+    // Pay at Office settles in person, so the card-gateway processing fee and any
+    // Aramex-courier charge (delivery, security cheque collection — both only make
+    // sense for the online/courier path, since paying at office means the customer
+    // is dropping everything off in person anyway) are excluded — guarantee,
+    // booking, extra driver and service fees still apply regardless.
+    const isPayAtOffice = formData.payment_method === 'PAY_AT_OFFICE';
 
-    // Processing fee — 2.5% of the guarantee fee, except Portugal (see note above)
-    const processingFee = winningGroupCode === 'PORTUGAL' ? 0 : Math.round(guaranteeFee * 0.025 * 100) / 100;
+    // Delivery fee — only Home Delivery actually dispatches a courier; Office
+    // Collection has no delivery to charge for (and Pay at Office waives it too).
+    const deliveryFee = (formData.delivery_option === 'home_delivery' && !isPayAtOffice) ? CPD_DELIVERY_FEE : 0;
 
-    // VAT 5% on booking + extra driver + delivery only (guarantee fee is excluded)
-    const vatBase = bookingFee + extraFee + deliveryFee;
+    // Security cheque Aramex collection fee — only when required by the destination,
+    // the customer chose courier collection over dropping it off at the office
+    // themselves, AND they're not already paying (and so visiting) in person.
+    const securityChequeCollectionFee = (securityChequeRequired && !isPayAtOffice && formData.security_cheque_delivery_method !== 'OFFICE')
+      ? parseFloat(guaranteeRules.security_cheque_collection_fee ?? 30) : 0;
+
+    // Processing fee — 2.5% of the guarantee fee for every destination, Portugal included.
+    const processingFee = isPayAtOffice ? 0 : Math.round(guaranteeFee * 0.025 * 100) / 100;
+
+    // Flat service fee, same treatment as IDL's AED 10 — VAT-exempt, so kept out of
+    // vatBase below, and always charged (unlike delivery/processing it isn't tied to
+    // the card/courier path).
+    const serviceFee = parseFloat(guaranteeRules.service_fee ?? 50);
+
+    // VAT 5% on booking + extra driver + delivery + security-cheque-collection only
+    // (guarantee fee and the service fee are excluded)
+    const vatBase = bookingFee + extraFee + deliveryFee + securityChequeCollectionFee;
     const vat     = Math.round(vatBase * 0.05 * 100) / 100;
-    const total   = guaranteeFee + bookingFee + extraFee + deliveryFee + processingFee + vat;
+    const total   = guaranteeFee + bookingFee + extraFee + deliveryFee + securityChequeCollectionFee + processingFee + vat + serviceFee;
 
     const breakdown = Object.entries(groupAmounts).map(([grpCode, amount]) => ({
       countries: groupCountries[grpCode].join(', '),
       amount,
     }));
 
-    return { guaranteeFee, bookingFee, extraFee, deliveryFee, processingFee, vat, total, notes: [...notesSet], breakdown };
+    return { guaranteeFee, bookingFee, extraFee, deliveryFee, processingFee, serviceFee, vat, total, notes: [...notesSet], breakdown,
+              securityChequeRequired, securityChequeAmount, securityChequeCollectionFee };
   }
   function stepPayment() {
-    const { guaranteeFee, bookingFee, extraFee, deliveryFee, processingFee, vat, total, notes, breakdown } = calcGuarantee();
+    const { guaranteeFee, bookingFee, extraFee, deliveryFee, processingFee, serviceFee, vat, total, notes, breakdown,
+            securityChequeRequired, securityChequeAmount, securityChequeCollectionFee } = calcGuarantee();
+    const isPayAtOffice = formData.payment_method === 'PAY_AT_OFFICE';
+    const SECURITY_CHEQUE_COLLECTION_FEE = parseFloat(guaranteeRules.security_cheque_collection_fee ?? 30);
     const tier      = getVehicleTier(formData.body_type, formData.vehicle_make);
     const band      = getYearBand(formData.manuf_year);
     const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1);
@@ -3148,6 +4284,45 @@ export async function renderPublicApplyCPD(param = null) {
         </div>
       </div>`}
 
+      <!-- Security cheque (destination-dependent, in addition to the guarantee above) -->
+      ${securityChequeRequired ? `
+      <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid #fde68a;background:#fefce8">
+        <div class="section-card-body" style="padding:16px 20px">
+          <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px">
+            <i class="fa-solid fa-money-check-dollar" style="color:#d97706;margin-top:2px"></i>
+            <div>
+              <div style="font-weight:600;color:#92400e;font-size:.9rem">
+                This selection of countries requires a security cheque of ${fmt(securityChequeAmount)}
+              </div>
+              <ul style="margin:8px 0 0;padding-left:18px;color:#92400e;font-size:.82rem;line-height:1.6">
+                <li>The cheque must be written under the name of <strong>Emirates Motorsports Organization</strong></li>
+                <li>Leave the date field blank</li>
+                <li>The security cheque will be returned to you via courier delivery upon successful return of the CPD</li>
+              </ul>
+            </div>
+          </div>
+          <div class="field">
+            <label>How will you send the security cheque?</label>
+            <div style="display:flex;gap:16px;margin-top:6px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.88rem">
+                <input type="radio" name="security_cheque_delivery_method" value="ARAMEX"
+                  ${formData.security_cheque_delivery_method !== 'OFFICE' ? 'checked' : ''} />
+                Courier collection via Aramex — ${isPayAtOffice ? 'waived, paying at office' : fmt(SECURITY_CHEQUE_COLLECTION_FEE) + ' delivery charge'}
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.88rem;white-space:nowrap;flex-shrink:0">
+                <input type="radio" name="security_cheque_delivery_method" value="OFFICE"
+                  ${formData.security_cheque_delivery_method === 'OFFICE' ? 'checked' : ''} />
+                Drop off at EMSO office
+              </label>
+            </div>
+          </div>
+          <div id="security-cheque-awb-field" style="margin-top:10px;font-size:.82rem;color:#92400e;${formData.security_cheque_delivery_method === 'OFFICE' ? 'display:none' : ''}">
+            <i class="fa-solid fa-circle-info"></i>
+            An Aramex courier pickup will be booked automatically once your payment is confirmed — you'll see the airway bill number on the confirmation screen and in your application details.
+          </div>
+        </div>
+      </div>` : ''}
+
       <!-- Fee breakdown -->
       <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border);background:var(--bg-surface)">
         <div class="section-card-header" style="font-size:.82rem">
@@ -3158,10 +4333,14 @@ export async function renderPublicApplyCPD(param = null) {
           <table style="width:100%;border-collapse:collapse">
             <tbody>
               ${feeRow('Guarantee Fee', guaranteeFee)}
-              ${feeRow('Processing Fee (2.5% of Guarantee Fee)', processingFee)}
+              ${isPayAtOffice ? feeRow('Processing Fee (2.5% card charge — waived, paying at office)', 0) : feeRow('Processing Fee (2.5% of Guarantee Fee)', processingFee)}
               ${feeRow('Booking Fee', bookingFee)}
               ${feeRow(`Extra Driver Fee${extraFee ? ' (driver added)' : ''}`, extraFee)}
-              ${deliveryFee ? feeRow('Delivery Fee', deliveryFee) : feeRow('Delivery Fee (Collection — Free)', 0)}
+              ${isPayAtOffice ? feeRow('Delivery Fee (waived, paying at office)', 0)
+                : formData.delivery_option !== 'home_delivery' ? feeRow('Delivery Fee (waived, office collection)', 0)
+                : feeRow('Delivery Fee', deliveryFee)}
+              ${securityChequeCollectionFee ? feeRow('Security Cheque Collection (Aramex)', securityChequeCollectionFee) : ''}
+              ${feeRow('Service Fee', serviceFee)}
               ${feeRow('VAT (5%)', vat)}
               ${feeRow('Total Payable', total, true, true)}
             </tbody>
@@ -3181,6 +4360,7 @@ export async function renderPublicApplyCPD(param = null) {
             <select id="cpd-payment-method" name="payment_method">
               <option value="">— Select —</option>
               <option value="CREDIT_CARD">Credit / Debit Card</option>
+              <option value="PAY_AT_OFFICE">Pay at Office</option>
             </select>
             <div class="field-error" id="err-cpd-payment-method"></div>
           </div>
@@ -3201,18 +4381,41 @@ export async function renderPublicApplyCPD(param = null) {
             <i class="fa-solid fa-credit-card" style="color:var(--accent);font-size:1.1rem"></i>
             <div style="font-size:.85rem">You will be redirected to the <strong>Telr</strong> secure payment gateway after submitting.</div>
           </div>`;
-      } else if (sel.value === 'CASH') {
+      } else if (sel.value === 'PAY_AT_OFFICE') {
         info.innerHTML = `
           <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:#f0fdf4;border:1px solid #86efac;border-radius:var(--radius)">
-            <i class="fa-solid fa-money-bill-wave" style="color:#16a34a;font-size:1.1rem"></i>
-            <div style="font-size:.85rem">Your application will be saved and you can <strong>pay cash</strong> at the EMSO office.</div>
+            <i class="fa-solid fa-building-circle-check" style="color:#16a34a;font-size:1.1rem"></i>
+            <div style="font-size:.85rem">Your application will be saved and sent for review. Once approved, you'll <strong>pay at the EMSO office</strong> — the card processing fee and delivery charge are waived.</div>
           </div>`;
       } else {
         info.innerHTML = '';
       }
     }
-    sel.addEventListener('change', updateInfo);
+    // The fee breakdown above (processing/delivery fee waived for Pay at Office) depends
+    // on formData.payment_method, so a change here has to re-render the whole step, not
+    // just this info box — formData.payment_method is otherwise only set at final submit
+    // validation, too late for the live breakdown to reflect it.
+    sel.addEventListener('change', () => {
+      formData.payment_method = sel.value;
+      renderCPDWizard();
+    });
     updateInfo();
+  }
+  function bindSecurityChequeToggle() {
+    const radios = document.querySelectorAll('[name="security_cheque_delivery_method"]');
+    if (!radios.length) return;
+    radios.forEach(radio => {
+      radio.addEventListener('change', () => {
+        formData.security_cheque_delivery_method = radio.value;
+        // Office drop-off waives the AED 30 Aramex collection fee — the fee
+        // breakdown table was computed once at render time and never updated, so
+        // switching this radio left the stale Aramex charge showing. A full
+        // re-render recalculates it, same as bindPaymentMethodToggle() does.
+        renderCPDWizard();
+      });
+    });
+    // Default to Aramex if not already chosen, so formData reflects the pre-checked radio
+    if (!formData.security_cheque_delivery_method) formData.security_cheque_delivery_method = 'ARAMEX';
   }
 
   const STEP_HTML = [stepIdentity, stepVehicle, stepTrip, stepCPDReview, stepPayment];
@@ -3251,7 +4454,7 @@ export async function renderPublicApplyCPD(param = null) {
             <i class="fa-solid fa-arrow-left"></i> ${currentStep === 0 ? 'Cancel' : 'Back'}
           </button>
           <button type="button" class="btn btn-primary" id="btn-cpd-next"
-            ${currentStep === 0 && !uaePassRejected ? 'disabled title="Continue with UAE PASS above, or reject the request to enter your details manually"' : ''}>
+            ${currentStep === 0 && viaUaePass && !uaePassRejected ? 'disabled title="Continue with UAE PASS above, or reject the request to enter your details manually"' : ''}>
             ${currentStep === CPD_STEPS.length - 1
               ? '<i class="fa-solid fa-paper-plane"></i> Submit Application'
               : 'Next <i class="fa-solid fa-arrow-right"></i>'}
@@ -3311,6 +4514,13 @@ export async function renderPublicApplyCPD(param = null) {
       if (!val && val !== '0') return;
       const el = document.querySelector(`[name="${name}"]`);
       if (!el) return;
+      // Radio groups (e.g. delivery_option's Home Delivery / Collection pair) share one
+      // `name` across multiple elements — blindly assigning .value to the first match
+      // (a querySelector, not querySelectorAll) overwrote that element's own value with
+      // whatever was selected, corrupting it so both radios ended up with the same value
+      // and the other option stopped doing anything when clicked. Their `checked` state
+      // is already set correctly at render time from formData, so just skip radios here.
+      if (el.type === 'radio') return;
       el.value = val;
     });
   }
@@ -3325,11 +4535,20 @@ export async function renderPublicApplyCPD(param = null) {
 
     // Bind payment method toggle on payment step
     bindPaymentMethodToggle();
+    bindSecurityChequeToggle();
 
-    // Toggle corporate-only documents when Usage Type changes
+    // Toggle corporate-only documents and the Company Name field when Usage Type changes
     document.getElementById('cpd-usage-type')?.addEventListener('change', e => {
+      const isCompany = e.target.value === 'COMPANY';
       const corpDocs = document.getElementById('cpd-corporate-docs');
-      if (corpDocs) corpDocs.style.display = e.target.value === 'COMPANY' ? 'contents' : 'none';
+      if (corpDocs) corpDocs.style.display = isCompany ? 'contents' : 'none';
+      const companyRow  = document.getElementById('cpd-company-name-row');
+      const companyInput = companyRow?.querySelector('[name="company_name"]');
+      if (companyRow) companyRow.style.display = isCompany ? '' : 'none';
+      if (companyInput) {
+        companyInput.required = isCompany;
+        if (!isCompany) companyInput.value = '';
+      }
     });
 
     // Toggle the "specify upholstery" textbox when Other is selected
@@ -3452,6 +4671,15 @@ export async function renderPublicApplyCPD(param = null) {
       });
     }
 
+    document.getElementById('cpd-terms-link')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      openModal({
+        title: 'Carnet De Passages Online — Terms & Conditions',
+        size: 'lg',
+        body: CPD_TERMS_HTML,
+      });
+    });
+
     // Collection office card selection (review step)
     const cpdOfficeCards = document.querySelectorAll('#cpd-del-collection-col .del-office-card');
     if (cpdOfficeCards.length) {
@@ -3535,9 +4763,17 @@ export async function renderPublicApplyCPD(param = null) {
         if (!file) return;
         if (!['image/jpeg','image/png'].includes(file.type)) { toast('Only JPG/PNG accepted','error'); input.value=''; return; }
         if (file.size > 2*1024*1024) { toast('File exceeds 2 MB','error'); input.value=''; return; }
+        // A manual pick replaces whatever UAE PASS supplied for this slot, so it's no
+        // longer DV-sourced — the remove button becomes available again.
+        dvSourcedDocs.delete(input.dataset.cpdDoc);
+        if (removeBtn) removeBtn.style.display = '';
         const reader = new FileReader();
         reader.onload = ev => {
-          if (img)     img.src = ev.target.result;
+          if (img) {
+            img.src = ev.target.result;
+            img.onclick = e => { e.stopPropagation(); openDocZoomModal(ev.target.result, file.name); };
+            img.style.cursor = 'zoom-in';
+          }
           if (nameEl)  nameEl.textContent = file.name;
           if (holder)  holder.style.display = 'none';
           if (preview) preview.style.display = 'flex';
@@ -3555,53 +4791,27 @@ export async function renderPublicApplyCPD(param = null) {
       // Restore preview if file already saved
       const slot = input.dataset.cpdDoc;
       if (savedDocs[slot]) {
-        const reader = new FileReader();
-        reader.onload = ev => {
-          if (img)     img.src = ev.target.result;
-          if (nameEl)  nameEl.textContent = savedDocs[slot].name;
-          if (holder)  holder.style.display = 'none';
-          if (preview) preview.style.display = 'flex';
-        };
-        reader.readAsDataURL(savedDocs[slot]);
+        renderDocPreview(savedDocs[slot], { img, preview, holder, nameEl, zone, removeBtn, locked: dvSourcedDocs.has(slot) });
       }
     });
 
     document.querySelector('.btn-uae-pass-continue')?.addEventListener('click', () => {
-      showUaePassLoader(
-        async () => {
-          uaePassJustVerified = true;
-          uaePassRejected     = false;
-          // "Continue with UAE PASS" jumps straight to step 2 without ever going through
-          // btn-cpd-next's saveCPDStep() call — so anything the user had typed here was
-          // being silently dropped, and full_name/mobile_no/email/sex were never captured
-          // at all (there's no real UAE PASS API call behind this loader — it's a fixed
-          // 5s delay). That left required identity fields permanently empty, which the
-          // frontend never re-checks after step 1 but the backend does — surfacing only
-          // as a generic "Validation failed" at final submit. Save whatever's in the DOM
-          // first, then backfill from the account's full profile (standing in for what a
-          // real UAE PASS response would supply) wherever the user didn't already fill it
-          // in. currentUser itself can't be trusted here — a fresh interactive login only
-          // ever populates it from the slim /auth/login response, which omits mobile_no —
-          // so re-fetch the full profile via /auth/me instead.
-          saveCPDStep();
-          try {
-            const profile = await api.auth.me();
-            if (!formData.full_name && (profile.first_name || profile.last_name)) {
-              formData.full_name  = [profile.first_name, profile.last_name].filter(Boolean).join(' ');
-              formData.first_name = profile.first_name ?? '';
-              formData.last_name  = profile.last_name  ?? '';
-            }
-            if (!formData.mobile_no) formData.mobile_no = profile.mobile_no ?? '';
-            if (!formData.email)     formData.email     = profile.email     ?? '';
-          } catch { /* fall back to whatever saveCPDStep() already captured */ }
-          currentStep = 1;
-          renderCPDWizard();
-        },
-        () => {
-          uaePassRejected = true;
-          renderCPDWizard();
-        },
-      );
+      // Real flow: full-page redirect to UAE PASS so the citizen can approve the
+      // Emirates ID + Driving License + Mulkiya document-sharing request on their
+      // phone — see the matching button handler in renderPublicApplyIDL for the fuller
+      // commentary (same mechanism, same reason the draft has to be saved first).
+      saveCPDStep();
+      sessionStorage.setItem('cpd_wizard_dv_draft', JSON.stringify({ step: currentStep, formData, isRenew, renewSource }));
+      window.location.href = api.auth.dvConsentStartUrl(DV_CONTEXT);
+    });
+
+    document.getElementById('btn-dv-cancel-cpd')?.addEventListener('click', () => {
+      stopDvPoll();
+      clearDvPendingStorage();
+      dvPending = false;
+      dvProofId = null;
+      uaePassRejected = true;
+      renderCPDWizard();
     });
 
     document.getElementById('btn-cpd-back')?.addEventListener('click', () => {
@@ -3773,14 +4983,14 @@ export async function renderPublicApplyCPD(param = null) {
     errEl?.classList.add('hidden');
 
     try {
-      const { guaranteeFee, bookingFee, extraFee, deliveryFee, processingFee, vat, total } = calcGuarantee();
-      const paymentMethod = formData.payment_method ?? 'CASH';
+      const { guaranteeFee, bookingFee, extraFee, deliveryFee, processingFee, serviceFee, vat, total, securityChequeCollectionFee } = calcGuarantee();
+      const paymentMethod = formData.payment_method ?? 'PAY_AT_OFFICE';
       const body = {
         ...formData,
         countries:        savedCountries.map(Number),
         guarantee_amount: guaranteeFee,
         booking_fee:      bookingFee,
-        extra_fees:       extraFee + deliveryFee,
+        extra_fees:       extraFee + deliveryFee + securityChequeCollectionFee + serviceFee,
         processing_fee:   processingFee,
         vat_amount:       vat,
         total_amount:     total,
@@ -3815,7 +5025,8 @@ export async function renderPublicApplyCPD(param = null) {
         const payment = await api.cpd.telrInit(res.auto_id);
         window.location.href = payment.redirect_url;
       } else {
-        // Cash — show success with application number
+        // Pay at Office — show success with application number; no Telr redirect, the
+        // request instead goes to the CPD Officer queue for review (see publicStore()).
         content.innerHTML = `
           <div class="section-card" style="margin-top:24px">
             <div class="section-card-body" style="padding:48px;text-align:center">
@@ -3824,7 +5035,7 @@ export async function renderPublicApplyCPD(param = null) {
               <p style="color:var(--text-muted);margin-bottom:4px">Your CPD application has been received.</p>
               <p style="margin-bottom:4px">Application Number: <strong style="color:var(--accent)">${res.request_id}</strong></p>
               <p style="color:var(--text-muted);margin-bottom:24px;font-size:.9rem">
-                Please visit the EMSO office to complete your cash payment.
+                Your application will be reviewed, after which you can visit the EMSO office to complete your payment.
               </p>
               <button class="btn btn-primary" id="btn-cpd-history">
                 <i class="fa-solid fa-clock-rotate-left"></i> View My Applications
@@ -3848,6 +5059,22 @@ export async function renderPublicApplyCPD(param = null) {
       btn.disabled = false;
       btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Submit Application';
     }
+  }
+
+  // Resume after returning from the real "Continue with UAE PASS" Digital Vault
+  // consent redirect — see the matching block in renderPublicApplyIDL above for the
+  // fuller commentary on why this is necessary (navigate('public-apply-cpd') passes no
+  // param, and the full page reload during the round trip wipes in-memory state).
+  const dvPendingIdCpd = sessionStorage.getItem(`dv_consent_pending_${DV_CONTEXT}`);
+  if (dvPendingIdCpd) {
+    dvProofId = dvPendingIdCpd;
+    dvPending = true;
+    try {
+      const draft = JSON.parse(sessionStorage.getItem('cpd_wizard_dv_draft') || '{}');
+      Object.assign(formData, draft.formData ?? {});
+      currentStep = draft.step ?? 0;
+    } catch { /* ignore a corrupt draft */ }
+    pollDvStatus();
   }
 
   renderCPDWizard();
@@ -4067,6 +5294,10 @@ export async function renderPublicHistory(defaultTab = 'idl') {
                   <button class="btn btn-danger btn-sm cancel-idl-btn" data-id="${r.auto_id}">
                     <i class="fa-solid fa-ban"></i> Cancel
                   </button>` : ''}
+                  ${[4, 5].includes(Number(r.request_status)) ? `
+                  <button class="btn btn-danger btn-sm cancel-issued-idl-btn" data-id="${r.auto_id}">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Report Lost/Stolen
+                  </button>` : ''}
                 </td>
               </tr>`).join('')}
             </tbody>
@@ -4082,6 +5313,37 @@ export async function renderPublicHistory(defaultTab = 'idl') {
     // Bind View IDP buttons — opens the print-ready PDF in a new tab
     idlEl.querySelectorAll('.view-idp-btn').forEach(btn => {
       btn.addEventListener('click', () => openIdlPreviewModal(btn.dataset.id));
+    });
+
+    // Holder reports an issued IDP as lost or stolen — queued for staff. Once issued,
+    // the physical booklet already exists, so plain self-service cancellation is no
+    // longer offered here (only possible before issuance, via cancelOwn() below).
+    idlEl.querySelectorAll('.cancel-issued-idl-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = Number(btn.dataset.id);
+        openModal({
+          title: 'Report Lost or Stolen',
+          body: `
+            <p>Report this IDP as lost or stolen?</p>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-top:8px">Our team will review your report. Once confirmed, this IDP is no longer valid.</p>`,
+          footer: `<button class="btn btn-ghost" onclick="closeModalGlobal()">
+                     <i class="fa-solid fa-arrow-left"></i> Back
+                   </button>
+                   <button class="btn btn-danger" id="confirm-issued-cancel">
+                     <i class="fa-solid fa-triangle-exclamation"></i> Submit
+                   </button>`,
+        });
+        document.getElementById('confirm-issued-cancel').onclick = async () => {
+          try {
+            await api.idl.requestCancellation(id, { is_lost_or_stolen: 1 });
+            closeModal();
+            toast('Lost or stolen report submitted', 'success');
+            renderPublicHistory('idl');
+          } catch (err) {
+            toast(err.message || 'Could not submit report', 'error');
+          }
+        };
+      });
     });
 
     // Bind Repay buttons
@@ -4562,6 +5824,7 @@ async function renderPublicCPDView(autoId) {
           ${ef('Vehicle Model',         'vehicle_model',    r.vehicle_model)}
           ${ef('Vehicle Value (AED)',   'vehicle_value',    r.vehicle_value, 'number')}
           ${ef('Vehicle Registered In', 'vehicle_registered_in', r.vehicle_registered_in)}
+          ${ef('Vehicle Registered Country', 'vehicle_registered_country', r.vehicle_registered_country)}
           ${ef('Body Type',             'body_type',        r.body_type)}
           ${ef('Year of Manufacture',   'manuf_year',       r.manuf_year, 'number')}
           ${ef('Color as per Mulkiya',  'color',            r.color)}
@@ -4582,7 +5845,8 @@ async function renderPublicCPDView(autoId) {
         ${identityRow('fa-solid fa-car-side',      'Vehicle Model',         r.vehicle_model)}
         ${identityRow('fa-solid fa-sack-dollar',   'Vehicle Value (AED)',   r.vehicle_value != null ? Number(r.vehicle_value).toLocaleString() : '')}
         ${identityRow('fa-solid fa-location-dot',  'Vehicle Registered In', r.vehicle_registered_in)}
-        ${identityRow('fa-solid fa-shapes',        'Body Type',             r.body_type)}
+        ${identityRow('fa-solid fa-earth-americas','Vehicle Registered Country', r.vehicle_registered_country)}
+        ${identityRow('fa-solid fa-shapes',        'Body Type',             cpdBodyTypeLabel(r.body_type))}
         ${identityRow('fa-regular fa-calendar',    'Year of Manufacture',   r.manuf_year)}
         ${identityRow('fa-solid fa-palette',       'Color as per Mulkiya',  r.color)}
         ${identityRow('fa-solid fa-weight-hanging','Net Weight (Empty Load)', r.net_weight ? r.net_weight + ' kg' : '')}
@@ -4729,6 +5993,25 @@ async function renderPublicCPDView(autoId) {
       </div>
     </div>
 
+    ${Number(r.security_cheque_required) === 1 ? `
+    <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border);background:var(--bg-surface)">
+      <div class="section-card-header" style="font-size:.82rem">
+        <i class="fa-solid fa-money-check-dollar" style="color:var(--accent);margin-right:6px"></i>
+        Security Cheque
+      </div>
+      <div class="section-card-body">
+        <div class="detail-grid">
+          ${d('Collection Method', r.security_cheque_delivery_method === 'OFFICE' ? 'Drop off at EMSO office' : 'Aramex courier pickup')}
+          ${r.security_cheque_delivery_method === 'ARAMEX'
+            ? (r.security_cheque_airway_bill
+                ? d('Aramex Airway Bill', `<span style="font-family:monospace">${esc(r.security_cheque_airway_bill)}</span>`)
+                : d('Aramex Airway Bill', 'Pickup will be booked once payment is confirmed'))
+            : ''}
+          ${r.security_cheque_received_datetime ? d('Received by EMSO', new Date(r.security_cheque_received_datetime).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})) : ''}
+        </div>
+      </div>
+    </div>` : ''}
+
     ${r.issued_carnet ? `
     <div class="section-card" style="margin-top:16px;border:1px solid rgba(34,197,94,.3)">
       <div class="section-card-header" style="background:rgba(34,197,94,.12)">
@@ -4797,12 +6080,13 @@ async function renderPublicCPDView(autoId) {
       <div class="section-card-body">
         <div class="detail-grid">
           ${d('Status', cancelApproved === 1
-            ? '<span class="badge badge-success">Approved</span>'
-            : cancelApproved === -1
+            ? '<span class="badge badge-success">Approved &mdash; Refunded</span>'
+            : cancelApproved === 2
               ? '<span class="badge badge-danger">Rejected</span>'
               : '<span class="badge badge-warning">Pending Review</span>')}
           ${d('Submitted',  formatDateTime(cancelReq.cancelled_datetime))}
           ${cancelReq.remarks ? d('Reason', esc(cancelReq.remarks)) : ''}
+          ${cancelApproved === 1 ? d('Refunded Amount', aed(cancelReq.refunded_amount)) : ''}
         </div>
       </div>
     </div>` : ''}`;
@@ -4821,11 +6105,16 @@ async function renderPublicCPDView(autoId) {
     });
   });
 
-  // Return Carnet handler (status=3 only)
+  // Return Carnet handler (status=3 only) — beneficiary name defaults to the
+  // company name for a company-use CPD, since the guarantee refund belongs to the
+  // company, not whichever individual applied on its behalf.
+  const beneficiaryName = r.usage_type === 'COMPANY' && r.company_name
+    ? r.company_name
+    : [r.title, r.first_name, r.last_name].filter(Boolean).join(' ');
   const openReturnCarnetModal = () => openCPDReturnModal(autoId, () => {
     document.getElementById('btn-return-carnet-header')?.setAttribute('disabled', 'true');
     document.getElementById('btn-return-carnet-footer')?.setAttribute('disabled', 'true');
-  }, [r.title, r.first_name, r.last_name].filter(Boolean).join(' '));
+  }, beneficiaryName);
 
   document.getElementById('btn-return-carnet-header')?.addEventListener('click', openReturnCarnetModal);
   document.getElementById('btn-return-carnet-footer')?.addEventListener('click', openReturnCarnetModal);
@@ -4909,7 +6198,7 @@ export async function renderPaymentResult(outcome) {
       icon:    'fa-circle-check',
       colour:  'var(--success)',
       title:   'Payment Successful',
-      message: 'Your payment was processed successfully. Your IDL application is now under review.',
+      message: 'Your payment was processed successfully. Your IDP application is now under review.',
       btnLabel:'View My Applications',
       route:   'public-history',
     },
@@ -4948,6 +6237,14 @@ export async function renderPaymentResult(outcome) {
       if (result?.return_id) {
         o.message = 'Your delivery fee was paid successfully. Our team will contact you to arrange carnet collection.';
         o.route   = 'public-history';
+      } else if (result?.module === 'CPD') {
+        o.message = 'Your payment was processed successfully. Your CPD application is now under review.';
+      }
+      // Security cheque Aramex pickup is booked right after payment (see
+      // CPDController::createSecurityChequeCollectionShipment) — surface the AWB here
+      // since this confirmation screen is the first place the citizen can see it.
+      if (result?.security_cheque_airway_bill) {
+        o.message += ` Your security cheque will be collected by Aramex — airway bill number: ${result.security_cheque_airway_bill}.`;
       }
     } catch (err) {
       if (err.status === 403) {
@@ -5024,7 +6321,9 @@ async function renderPublicIDLView(autoId) {
     pick_from_abudhabi_office: 'Pick up at Abu Dhabi Office',
   };
 
+  const cancelBannerHtml = await idlCancelBannerHtml(autoId);
   content.innerHTML = `
+      ${cancelBannerHtml}
     <div class="page-header">
       <div class="page-title-block">
         <h1 class="page-title">IDP Application</h1>
@@ -5150,6 +6449,21 @@ async function renderPublicIDLView(autoId) {
 // ── Public IDP verification page — the QR code target on every printed IDP.
 // Deliberately outside the login-screen / app-shell flow: anyone scanning the code
 // (e.g. a border or traffic officer) sees this with no portal account required. ──
+// Shows the cancellation status of an IDL application (open request, or processed as cancelled).
+async function idlCancelBannerHtml(id) {
+  try {
+    const c = await api.idl.getCancelRequest(id);
+    if (!c || !c.auto_id) return '';
+    const reason = Number(c.is_lost_or_stolen) === 1 ? 'Reported as lost or stolen' : 'By the holder\x27s request';
+    if (Number(c.is_processed) === 1) {
+      return `<div class="rv-info-banner" style="border-color:rgba(239,68,68,.4)"><i class="fa-solid fa-ban rv-info-icon" style="color:var(--danger,#ef4444)"></i><div class="rv-info-lines"><div><strong>This IDP is cancelled.</strong></div><div>${reason}</div></div></div>`;
+    }
+    return `<div class="rv-info-banner"><i class="fa-solid fa-clock rv-info-icon"></i><div class="rv-info-lines"><div><strong>Cancellation requested</strong></div><div>${reason} — awaiting review.</div></div></div>`;
+  } catch {
+    return '';
+  }
+}
+
 export async function renderPublicIdlDisplay(hash) {
   const screen = document.getElementById('public-display-screen');
   screen.innerHTML = `

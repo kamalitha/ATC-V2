@@ -10,6 +10,7 @@ require_once API_ROOT . '/core/Validator.php';
 require_once API_ROOT . '/core/Router.php';
 require_once API_ROOT . '/core/MailHandler.php';
 require_once API_ROOT . '/core/UaePassClient.php';
+require_once API_ROOT . '/core/DigitalVaultClient.php';
 
 // ── Global error/exception handlers ──────────────────────────────────────────
 set_exception_handler(function (\Throwable $e) {
@@ -29,6 +30,7 @@ require_once API_ROOT . '/controllers/IDLController.php';
 require_once API_ROOT . '/controllers/CPDController.php';
 require_once API_ROOT . '/controllers/ReportController.php';
 require_once API_ROOT . '/controllers/SupportController.php';
+require_once API_ROOT . '/controllers/DVController.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Access-Control-Allow-Origin: ' . Config::frontendUrl());
@@ -73,9 +75,26 @@ $r = new Router();
 // Auth
 $r->post('/api/auth/login',          [AuthController::class,'login']);
 $r->get('/api/auth/uaepass/start',    [AuthController::class,'uaePassStart'],    auth:false);
-$r->post('/api/auth/uaepass/callback',[AuthController::class,'uaePassCallback'], auth:false);
+// csrf:false — this is an OAuth provider callback; the `state` param IS its CSRF
+// protection (checked via hash_equals against the session-stored value inside
+// uaePassCallback()). It needs the exemption now that the real DV-consent flow can
+// call it from an ALREADY-logged-in session (unlike a fresh login, where
+// Auth::check() was false and this never mattered) — a full page reload happens on
+// the way back from UAE PASS, resetting the frontend's in-memory CSRF token to
+// null, so the generic auth:true-session CSRF check would otherwise reject this
+// call before uaePassCallback() ever runs.
+$r->post('/api/auth/uaepass/callback',[AuthController::class,'uaePassCallback'], auth:false, csrf:false);
 $r->post('/api/auth/logout',         [AuthController::class,'logout']);
 $r->get('/api/auth/me',              [AuthController::class,'me']);
+// Real "Continue with UAE PASS" Digital Vault consent round trip — see dvConsentStart().
+$r->get('/api/auth/uaepass/dv-consent/start', [AuthController::class,'dvConsentStart'], auth:true);
+
+// UAE PASS Digital Vault webhooks — called by DV, not the browser
+$r->post('/api/dv/webhook/receive-presentation',  [DVController::class,'receivePresentation'], auth:false);
+$r->post('/api/dv/webhook/reject-notification',   [DVController::class,'rejectNotification'],  auth:false);
+$r->post('/api/dv/webhook/receive-visualization', [DVController::class,'receiveVisualization'],auth:false);
+$r->get('/api/dv/requests/{id}/status',           [DVController::class,'requestStatus'],       auth:true);
+$r->get('/api/dv/requests/{id}/visualization/{docType}', [DVController::class,'serveVisualization'], auth:true);
 $r->post('/api/auth/forgot-password',[AuthController::class,'forgotPassword']);
 $r->get('/api/auth/captcha',         [AuthController::class,'captcha']);
 $r->post('/api/auth/register',       [AuthController::class,'register']);
@@ -133,6 +152,10 @@ $r->post('/api/idl/requests/{id}/issue',    [IDLController::class,'issue'],     
 $r->post('/api/idl/requests/{id}/dispatch', [IDLController::class,'markDispatched'],auth:true);
 $r->post('/api/idl/requests/{id}/cancel',   [IDLController::class,'cancel'],        auth:true);
 $r->post('/api/idl/requests/{id}/cancel-own',[IDLController::class,'cancelOwn'],    auth:true);
+$r->post('/api/idl/requests/{id}/cancellation',[IDLController::class,'requestCancellation'], auth:true);
+$r->get('/api/idl/cancel-requests',[IDLController::class,'listCancelRequests'], auth:true);
+$r->post('/api/idl/cancel-requests/{id}/confirm',[IDLController::class,'confirmCancelRequest'], auth:true);
+$r->get('/api/idl/requests/{id}/cancel-request',[IDLController::class,'getCancelRequest'], auth:true);
 $r->post('/api/idl/requests/{id}/void',     [IDLController::class,'voidRequest'],   auth:true);
 $r->get('/api/idl/requests/{id}/print',     [IDLController::class,'printIdl'],      auth:true);
 $r->get('/api/idl/display/{hash}',          [IDLController::class,'publicDisplay'], auth:false);
@@ -166,12 +189,25 @@ $r->get('/api/cpd/requests/{id}',               [CPDController::class,'show'],  
 $r->put('/api/cpd/requests/{id}',               [CPDController::class,'update'],      auth:true);
 $r->post('/api/cpd/requests/{id}/approve',      [CPDController::class,'approve'],     auth:true);
 $r->post('/api/cpd/requests/{id}/reject',       [CPDController::class,'reject'],      auth:true);
+$r->post('/api/cpd/requests/{id}/branch-approve', [CPDController::class,'approveBranchRequest'], auth:true);
+$r->post('/api/cpd/requests/{id}/branch-reject',  [CPDController::class,'rejectBranchRequest'],  auth:true);
 $r->post('/api/cpd/requests/{id}/pay',          [CPDController::class,'pay'],         auth:true);
+$r->post('/api/cpd/requests/{id}/receipt',      [CPDController::class,'createReceipt'], auth:true);
+$r->get('/api/cpd/requests/{id}/receipt',       [CPDController::class,'getReceipt'],    auth:true);
 $r->post('/api/cpd/requests/{id}/issue-carnet', [CPDController::class,'issueCarnet'], auth:true);
 $r->post('/api/cpd/requests/{id}/cancel',       [CPDController::class,'cancel'],      auth:true);
 $r->post('/api/cpd/requests/{id}/cancel-request',[CPDController::class,'cancelRequest'],    auth:true);
 $r->get('/api/cpd/requests/{id}/cancel-request', [CPDController::class,'getCancelRequest'], auth:true);
 $r->get('/api/cpd/cancellations',               [CPDController::class,'indexCancellations'], auth:true);
+$r->put('/api/cpd/cancel-requests/{id}/approve', [CPDController::class,'approveCancelRequest'], auth:true);
+$r->put('/api/cpd/cancel-requests/{id}/reject',  [CPDController::class,'rejectCancelRequest'],  auth:true);
+$r->post('/api/cpd/requests/{id}/cancel-notes',  [CPDController::class,'addCancelNote'],        auth:true);
+$r->get('/api/cpd/requests/{id}/cancel-attachments',                              [CPDController::class,'listCancelAttachments'],  auth:true);
+$r->get('/api/cpd/requests/{id}/cancel-attachments/raise/{filename}',             [CPDController::class,'serveCancelAttachment'],  auth:true);
+$r->get('/api/cpd/requests/{id}/cancel-attachments/notes/{commentId}/{filename}', [CPDController::class,'serveCancelAttachment'],  auth:true);
+$r->post('/api/cpd/requests/{id}/security-cheque',        [CPDController::class,'updateSecurityCheque'],       auth:true);
+$r->put('/api/cpd/requests/{id}/security-cheque-return',  [CPDController::class,'updateSecurityChequeReturn'], auth:true);
+$r->get('/api/cpd/requests/{id}/security-cheque-scan',    [CPDController::class,'serveSecurityChequeScan'],    auth:true);
 $r->get('/api/cpd/return-requests',             [CPDController::class,'indexReturnRequests'],  auth:true);
 $r->post('/api/cpd/return-requests/{id}/approve',[CPDController::class,'approveReturnRequest'], auth:true);
 $r->put('/api/cpd/return-requests/{id}/fine',    [CPDController::class,'saveReturnFine'],       auth:true);

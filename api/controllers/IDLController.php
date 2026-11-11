@@ -1044,6 +1044,7 @@ class IDLController
 
             Response::success([
                 'paid'     => true,
+                'module'   => 'IDL',
                 'auto_id'  => (int)$autoId,
                 'telr_ref' => $telrRef,
             ], 'Payment verified and recorded');
@@ -1442,7 +1443,7 @@ class IDLController
         $r = $this->db->queryOne(
             "SELECT r.*, iru.*,
                     u.email, u.mobile_no,
-                    (u.uaepass_uuid IS NOT NULL) AS applicant_via_uae_pass,
+                    r.identity_via_uae_pass AS applicant_via_uae_pass,
                     n.nationality,
                     iru.nationality        AS nationality_id,
                     r.issued_date          AS idl_issued_date,
@@ -1570,8 +1571,8 @@ class IDLController
                  (request_id, request_type, belonging_user_id, requested_by, travel_insurance,
                   delivery_option, delivery_address, total_amount, paid_status,
                   requested_datetime, request_status, payment_method, is_active, booking_channel,
-                  current_queue_position)
-                 VALUES (?,?,?,?,?,?,?,?,?,NOW(),1,?,1,?,?)",
+                  current_queue_position, identity_via_uae_pass)
+                 VALUES (?,?,?,?,?,?,?,?,?,NOW(),1,?,1,?,?,?)",
                 [
                     'PENDING',
                     $body['request_type']     ?? 'WALKIN',
@@ -1585,6 +1586,7 @@ class IDLController
                     $body['payment_method'] ?? null,
                     $publicRole ? 'WEB' : 'OFFICER',
                     $queuePosition,
+                    !empty($body['identity_via_uae_pass']) ? 1 : 0,
                 ],
             );
 
@@ -2064,20 +2066,38 @@ class IDLController
             Response::serverError("Aramex connection failed ({$curlErrno}): {$curlError}");
         }
 
-        $result = json_decode($jsonResponse, true);
+        // Aramex returns XML here despite the /json/ URL path — confirmed via a real
+        // test call (2026-10-23, see CPDController::createSecurityChequeCollectionShipment
+        // for the matching fix there). json_decode() on XML silently returns null, which
+        // meant HasErrors never actually triggered and no real AWB/label URL was ever
+        // extracted — $airBillNo has likely been blank in every "Dispatched" email sent
+        // from this method, not just unsaved on the request row.
+        $xml = @simplexml_load_string($jsonResponse);
+        if ($xml === false) {
+            Logger::error("Aramex response was not valid XML for IDL request {$id}: {$jsonResponse}");
+            Response::serverError('Aramex returned an unexpected response format');
+        }
 
-        // Check for Aramex-level errors
-        if (!empty($result['HasErrors']) && $result['HasErrors'] === true) {
-            $notifications = $result['Notifications'] ?? [];
-            $message = implode('; ', array_column($notifications, 'Message'));
+        $hasErrors = (string)$xml->HasErrors === 'true';
+        $messages  = [];
+        foreach (($xml->Notifications->Notification ?? []) as $n) {
+            $messages[] = (string)$n->Message;
+        }
+        foreach (($xml->Shipments->ProcessedShipment ?? []) as $shipment) {
+            foreach (($shipment->Notifications->Notification ?? []) as $n) {
+                $messages[] = (string)$n->Message;
+            }
+        }
+        if ($hasErrors || $messages) {
+            $message = implode('; ', $messages);
             Logger::error("Aramex error for IDL request {$id}: {$message}");
             Response::error("Aramex error: {$message}", 422);
         }
 
         // Extract shipment number and label URL
-        $shipment  = $result['Shipments'][0] ?? [];
-        $airBillNo = $shipment['ID'] ?? ($shipment['Number'] ?? '');
-        $labelUrl  = $result['ShipmentLabel']['LabelURL'] ?? '';
+        $processedShipment = $xml->Shipments->ProcessedShipment ?? null;
+        $airBillNo = (string)($processedShipment->ID ?? '');
+        $labelUrl  = (string)($processedShipment->ShipmentLabel->LabelURL ?? '');
 
         // Save air bill number back to the request
         if ($airBillNo) {
@@ -2110,7 +2130,7 @@ class IDLController
         Response::success([
             'air_bill_no' => $airBillNo,
             'label_url'   => $labelUrl,
-            'raw'         => $result,
+            'raw'         => $jsonResponse,
         ], 'AWB created successfully');
     }
 
@@ -2165,6 +2185,122 @@ class IDLController
     }
 
     /**
+     * POST /api/idl/requests/{id}/cancellation — the holder asks to cancel an issued IDL, or
+     * reports it lost or stolen (is_lost_or_stolen=1). Queued in mn_idl_cancel_requests for
+     * staff to confirm; one open request per IDL at a time.
+     */
+    public function requestCancellation(array $params, array $body, array $query): void
+    {
+        $autoId = (int) $params['id'];
+        $lost   = !empty($body['is_lost_or_stolen']) ? 1 : 0;
+
+        // Once an IDL is issued, the citizen can no longer self-service-cancel it — the
+        // physical booklet already exists, so the only self-service action left is
+        // reporting it lost or stolen. Plain cancellation is still allowed before
+        // issuance, via the separate cancelOwn() endpoint.
+        if (!$lost) {
+            Response::error('An issued IDL can no longer be cancelled — only reported lost or stolen', 422);
+        }
+
+        $req = $this->db->queryOne(
+            'SELECT auto_id, request_id, belonging_user_id, request_status, idl_no FROM mn_idl_requests WHERE auto_id = ?',
+            [$autoId],
+        );
+        if ($req === null) Response::notFound('IDL request not found');
+        if ((int) $req['belonging_user_id'] !== Auth::id()) Response::forbidden('Access denied');
+        if (!in_array((int) $req['request_status'], [4, 5], true) || empty($req['idl_no'])) {
+            Response::error('Only an issued IDL can be reported lost or stolen', 422);
+        }
+
+        $open = $this->db->queryOne(
+            'SELECT auto_id FROM mn_idl_cancel_requests WHERE idl_auto_id = ? AND is_processed = 0 LIMIT 1',
+            [$autoId],
+        );
+        if ($open) Response::error('A cancellation request is already pending for this IDL', 422);
+
+        $this->db->execute(
+            'INSERT INTO mn_idl_cancel_requests
+             (idl_auto_id, idl_request_id, idl_no, reported_datetime, reported_by, is_lost_or_stolen, is_processed)
+             VALUES (?, ?, ?, NOW(), ?, ?, 0)',
+            [$autoId, $req['request_id'], $req['idl_no'], Auth::id(), $lost],
+        );
+
+        $this->logEvent('CANCEL_REQUESTED', $autoId, $lost ? 'Reported lost or stolen' : 'Holder request');
+        Response::created(null, $lost ? 'Lost or stolen report submitted' : 'Cancellation request submitted');
+    }
+
+    /** GET /api/idl/cancel-requests — open cancellation and lost/stolen requests for staff. */
+    public function listCancelRequests(array $params, array $body, array $query): void
+    {
+        if (!Auth::can('idl')) Response::forbidden('Access denied');
+
+        $rows = $this->db->query(
+            "SELECT c.auto_id, c.idl_auto_id, c.idl_request_id, c.idl_no, c.reported_datetime, c.is_lost_or_stolen,
+                    r.request_status, u.first_name, u.last_name, usr.email, usr.mobile_no
+             FROM mn_idl_cancel_requests c
+             JOIN mn_idl_requests r ON r.auto_id = c.idl_auto_id
+             LEFT JOIN mn_idl_request_user u ON u.request_auto_id = r.auto_id
+             LEFT JOIN mn_users usr ON usr.user_id = r.belonging_user_id
+             WHERE c.is_processed = 0
+             ORDER BY c.reported_datetime DESC",
+        );
+        Response::success(['data' => $rows, 'total' => count($rows), 'page' => 1, 'per_page' => max(count($rows), 1), 'pages' => 1]);
+    }
+
+    /**
+     * POST /api/idl/cancel-requests/{id}/confirm — staff confirm a queued request. The IDL is
+     * deactivated and its status becomes Lost/Stolen (6), as in the legacy system.
+     */
+    public function confirmCancelRequest(array $params, array $body, array $query): void
+    {
+        if (!Auth::can('idl')) Response::forbidden('Access denied');
+
+        $autoId = (int) $params['id'];
+        $open = $this->db->queryOne(
+            'SELECT auto_id FROM mn_idl_cancel_requests WHERE idl_auto_id = ? AND is_processed = 0 LIMIT 1',
+            [$autoId],
+        );
+        if ($open === null) Response::notFound('No pending cancellation request for this IDL');
+
+        $this->db->beginTransaction();
+        try {
+            $this->db->execute(
+                'UPDATE mn_idl_cancel_requests SET is_processed = 1, processed_by = ?, processed_datetime = NOW()
+                 WHERE idl_auto_id = ? AND is_processed = 0',
+                [Auth::id(), $autoId],
+            );
+            $this->db->execute(
+                'UPDATE mn_idl_requests SET is_active = 0, request_status = 6 WHERE auto_id = ?',
+                [$autoId],
+            );
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            $this->db->rollback();
+            Logger::exception($e, 'IDLController::confirmCancelRequest');
+            Response::serverError('Could not confirm the cancellation');
+        }
+
+        $this->logEvent('CANCEL_CONFIRMED', $autoId);
+        Response::success(null, 'Cancellation confirmed');
+    }
+
+    /** GET /api/idl/requests/{id}/cancel-request — the latest cancellation (open or processed) for an IDL. */
+    public function getCancelRequest(array $params, array $body, array $query): void
+    {
+        $autoId = (int) $params['id'];
+        $req = $this->db->queryOne('SELECT belonging_user_id FROM mn_idl_requests WHERE auto_id = ?', [$autoId]);
+        if ($req === null) Response::notFound('IDL request not found');
+        if (!Auth::can('idl') && (int) $req['belonging_user_id'] !== Auth::id()) Response::forbidden('Access denied');
+
+        $row = $this->db->queryOne(
+            'SELECT auto_id, reported_datetime, is_lost_or_stolen, is_processed, processed_datetime
+             FROM mn_idl_cancel_requests WHERE idl_auto_id = ? ORDER BY auto_id DESC LIMIT 1',
+            [$autoId],
+        );
+        Response::success($row);
+    }
+
+    /**
      * POST /api/idl/requests/{id}/void
      * Voids an issued/dispatched IDL (e.g. printed in error, damaged booklet).
      * Restricted to idl_officer, and only for status 4 (Approved) or 5 (Dispatched).
@@ -2215,10 +2351,12 @@ class IDLController
         $r = $this->db->queryOne(
             "SELECT r.*, iru.*,
                     n.nationality,
+                    em.emirate AS emirate_name,
                     r.issued_date AS idl_issued_date
              FROM mn_idl_requests r
              JOIN mn_idl_request_user iru ON r.auto_id = iru.request_auto_id
              LEFT JOIN mn_nationalities n ON iru.nationality = n.nationality_id
+             LEFT JOIN mn_emirates em     ON iru.emirate    = em.emirate_id
              WHERE r.auto_id = ?",
             [$autoId],
         );
@@ -2326,7 +2464,11 @@ class IDLController
         $segments[] = ['html' => strtoupper((string)($r['first_name'] ?? '')),      'x' => $coordinates->first_name->x + $x_px,      'y' => $coordinates->first_name->y + $y_px];
         $segments[] = ['html' => strtoupper((string)($r['place_of_birth'] ?? '')),  'x' => $coordinates->place_of_birth->x + $x_px,  'y' => $coordinates->place_of_birth->y + $y_px];
         $segments[] = ['html' => strtoupper((string)($r['dob'] ?? '')),             'x' => $coordinates->dob->x + $x_px,             'y' => $coordinates->dob->y + $y_px];
-        $segments[] = ['html' => strtoupper((string)($r['city'] ?? '')),            'x' => $coordinates->city->x + $x_px,            'y' => $coordinates->city->y + $y_px];
+        // Template row (5) is "Permanent place of residence / Domicile" — not city (the
+        // wizard has no city field at all, so this slot always printed blank). The
+        // 'city' coordinate key is kept as-is so any officer's saved print-margin
+        // calibration for this slot still applies; only the value it prints changes.
+        $segments[] = ['html' => strtoupper((string)($r['emirate_name'] ?? '')),      'x' => $coordinates->city->x + $x_px,            'y' => $coordinates->city->y + $y_px];
         $segments[] = ['html' => strtoupper((string)($r['sex'] ?? '')),             'x' => $coordinates->sex->x + $x_px,             'y' => $coordinates->sex->y + $y_px];
         $segments[] = ['html' => strtoupper((string)($r['nationality'] ?? '')),     'x' => $coordinates->nationality->x + $x_px,     'y' => $coordinates->nationality->y + $y_px];
 
@@ -2427,11 +2569,13 @@ class IDLController
         $r = $this->db->queryOne(
             "SELECT r.auto_id, r.request_type, r.idl_no, r.request_id, r.request_status, r.issued_date,
                     iru.first_name, iru.last_name, iru.type_of_dl, iru.nationality,
-                    iru.place_of_birth, iru.dob, iru.city, iru.sex, iru.license_no,
-                    n.nationality AS nationality_name
+                    iru.place_of_birth, iru.dob, iru.sex, iru.license_no,
+                    n.nationality AS nationality_name,
+                    em.emirate AS emirate_name
              FROM mn_idl_requests r
              JOIN mn_idl_request_user iru ON r.auto_id = iru.request_auto_id
              LEFT JOIN mn_nationalities n ON iru.nationality = n.nationality_id
+             LEFT JOIN mn_emirates em     ON iru.emirate    = em.emirate_id
              WHERE r.print_hash = ?",
             [$hash],
         );
@@ -2478,6 +2622,34 @@ class IDLController
         imagedestroy($qrImg);
         @unlink($qrPath);
 
+        // ── Signature — same file lookup as printIdl(), scaled to fit next to the
+        // "Signature of holder" label (this endpoint has no officer-adjustable print
+        // margins, unlike printIdl(), so this position is a fixed best estimate). ──
+        $signatureSrc = null;
+        foreach (['jpg', 'jpeg', 'png'] as $ext) {
+            if (file_exists("$reqDir/signature.$ext")) { $signatureSrc = "$reqDir/signature.$ext"; break; }
+        }
+        if ($signatureSrc) {
+            $sigInfo     = @getimagesize($signatureSrc);
+            $sigCreateFn = ($sigInfo['mime'] ?? '') === 'image/jpeg' ? 'imagecreatefromjpeg' : 'imagecreatefrompng';
+            $sigImg      = @$sigCreateFn($signatureSrc);
+            if ($sigImg) {
+                $maxW  = 80;
+                $maxH  = 32;
+                $srcW  = imagesx($sigImg);
+                $srcH  = imagesy($sigImg);
+                $scale = min($maxW / $srcW, $maxH / $srcH, 1);
+                $dstW  = max(1, (int)round($srcW * $scale));
+                $dstH  = max(1, (int)round($srcH * $scale));
+                $sigResized = imagecreatetruecolor($dstW, $dstH);
+                imagefill($sigResized, 0, 0, imagecolorallocate($sigResized, 255, 255, 255));
+                imagecopyresampled($sigResized, $sigImg, 0, 0, 0, 0, $dstW, $dstH, $srcW, $srcH);
+                imagecopy($template, $sigResized, 440, 450, 0, 0, $dstW, $dstH);
+                imagedestroy($sigResized);
+                imagedestroy($sigImg);
+            }
+        }
+
         // ── Burn in text fields — same coordinates/logic as legacy display.phtml ──
         $black    = imagecolorallocate($template, 0, 0, 0);
         $fontPath = dirname(API_ROOT) . '/public/fonts/arial.ttf';
@@ -2493,7 +2665,9 @@ class IDLController
         imagettftext($template, 8, 0, 180, 360, $black, $fontPath, strtoupper((string)$r['first_name']));
         imagettftext($template, 8, 0, 180, 380, $black, $fontPath, strtoupper((string)$r['place_of_birth']));
         imagettftext($template, 8, 0, 180, 410, $black, $fontPath, strtoupper((string)$r['dob']));
-        imagettftext($template, 8, 0, 180, 433, $black, $fontPath, strtoupper((string)$r['city']));
+        // Row (5) on the template is "Permanent place of residence / Domicile" — not
+        // city (the wizard has no city field, so this always printed blank before).
+        imagettftext($template, 8, 0, 180, 433, $black, $fontPath, strtoupper((string)($r['emirate_name'] ?? '')));
         imagettftext($template, 8, 0, 180, 462, $black, $fontPath, strtoupper((string)$r['sex']));
 
         // Long nationality names get shrunk/wrapped rather than overflowing the column —

@@ -9,6 +9,16 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" />
   <script src="https://code.jquery.com/jquery-3.7.0.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+  <!-- PDF.js — renders DV's PDF card-scan evidence files to real images client-side,
+       since there's no server-side PDF rasteriser available on staging (no Ghostscript/
+       Imagick, and no root access to install one). See public.js's pdfBlobToImageFile(). -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous"></script>
+  <script>
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -337,6 +347,11 @@
           <span class="nav-badge" id="badge-idl-pending" style="display:none"></span>
         </a>
 
+        <a class="nav-item" data-route="idl-cancellations">
+          <span class="nav-icon"><i class="fa-solid fa-ban"></i></span>
+          <span class="nav-text">Cancellation Requests</span>
+        </a>
+
         <a class="nav-item nav-subitem" data-route="idl-requests" data-filter-type="ONLINE_WEBSITE">
           <span class="nav-icon"><i class="fa-solid fa-wifi"></i></span>
           <span class="nav-text">Online Applications</span>
@@ -573,6 +588,33 @@
 
 <!-- ── Toasts ─────────────────────────────────────────────────────────────── -->
 <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
+
+<!-- ── UAE PASS redirect-back overlay ────────────────────────────────────────
+     Covers the whole page, greyed out, for the round trip back from UAE PASS
+     (both a normal login and the "Continue with UAE PASS" Digital Vault consent
+     flow land on this same path with ?code=&state=). Shown by the inline script
+     below BEFORE any other script runs, so there is no flash of the login screen,
+     the sidebar, or any other page content while that round trip resolves — only
+     app.js's handleUaePassCallback() ever hides it again, once the real
+     destination page has actually finished rendering, not just been kicked off. -->
+<div id="uaepass-loading-overlay" class="hidden" style="position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.72);display:flex;align-items:center;justify-content:center;color:#fff">
+  <div style="text-align:center">
+    <i class="fa-solid fa-spinner fa-spin" style="font-size:2.2rem;margin-bottom:14px;display:block"></i>
+    <div id="uaepass-loading-overlay-text" style="font-size:1rem">Completing your UAE PASS request…</div>
+  </div>
+</div>
+<script>
+  // Runs before login-screen/app-shell get a chance to paint anything, so the
+  // overlay is already up by the time the browser shows a single frame of this
+  // page — see the overlay's own comment above for why this matters.
+  (function () {
+    var seg = window.location.pathname.split('/').filter(Boolean).pop();
+    var params = new URLSearchParams(window.location.search);
+    if (seg === 'uaepass-auth-success' && params.get('code') && params.get('state')) {
+      document.getElementById('uaepass-loading-overlay').classList.remove('hidden');
+    }
+  })();
+</script>
 
 <script type="module" src="js/app.js"></script>
 </body>

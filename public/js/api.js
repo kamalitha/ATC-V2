@@ -92,6 +92,9 @@ const api = {
     captchaUrl:  ()   => `${API_BASE}/auth/captcha?t=${Date.now()}`,
     uaepassLoginUrl: () => `${API_BASE}/auth/uaepass/start`, // full-page redirect target, not fetched
     uaepassCallback: (code, state) => request('POST', '/auth/uaepass/callback', { body: { code, state } }),
+    // Real "Continue with UAE PASS" document-sharing consent round trip (not a login) —
+    // full-page redirect target, same as uaepassLoginUrl above.
+    dvConsentStartUrl: (context) => `${API_BASE}/auth/uaepass/dv-consent/start?context=${encodeURIComponent(context)}`,
   },
 
   // Users
@@ -135,6 +138,10 @@ const api = {
     savePrintMargins:(b)=> request('POST', '/idl/print-margins', { body: b }),
     publicDisplay:  (hash) => request('GET', `/idl/display/${encodeURIComponent(hash)}`),
     cancelOwn:      (id)=> request('POST', `/idl/requests/${id}/cancel-own`),
+    requestCancellation: (id, b)=> request('POST', `/idl/requests/${id}/cancellation`, { body: b }),
+    getCancelRequest:    (id)=> request('GET',  `/idl/requests/${id}/cancel-request`),
+    cancelRequests:      ()=> request('GET',  '/idl/cancel-requests'),
+    confirmCancelRequest:(id)=> request('POST', `/idl/cancel-requests/${id}/confirm`),
     salesReport:    (p) => request('GET',  '/idl/sales-report',  { params: p }),
     aramexReport:   (p) => request('GET',  '/idl/aramex-report', { params: p }),
     empostReport:   (p) => request('GET',  '/idl/empost-report', { params: p }),
@@ -150,8 +157,12 @@ const api = {
     update:     (id, b) => request('PUT',  `/cpd/requests/${id}`,             { body: b }),
     approve:        (id)=> request('POST', `/cpd/requests/${id}/approve`,     { body: {} }),
     reject:     (id, b) => request('POST', `/cpd/requests/${id}/reject`,      { body: b }),
+    branchApprove:  (id)=> request('POST', `/cpd/requests/${id}/branch-approve`, { body: {} }),
+    branchReject:(id, b)=> request('POST', `/cpd/requests/${id}/branch-reject`,  { body: b }),
     issueCarnet:(id, b) => request('POST', `/cpd/requests/${id}/issue-carnet`,{ body: b }),
-    cancel:     (id, b) => request('POST', `/cpd/requests/${id}/cancel`,      { body: b }),
+    cancel:     (id, fd) => requestUpload(`/cpd/requests/${id}/cancel`, fd),
+    cancelAttachments: (id) => request('GET', `/cpd/requests/${id}/cancel-attachments`),
+    cancelAttachmentUrl: (id, file) => `${API_BASE}/cpd/requests/${id}/cancel-attachments/${file}`,
     carnets:        (p) => request('GET',  '/cpd/carnets',                    { params: p }),
     countries:      ()  => request('GET',  '/cpd/countries'),
     guaranteeRules: ()  => request('GET',  '/cpd/guarantee-rules'),
@@ -190,6 +201,8 @@ const api = {
     publicUpdate:   (id, b)  => request('PUT', `/cpd/requests/${id}/public-update`, { body: b }),
     returnCheque:       (id, b) => request('POST', `/cpd/requests/${id}/return-cheque`, { body: b }),
     pay:                (id, b) => request('POST', `/cpd/requests/${id}/pay`,            { body: b }),
+    getReceipt:         (id)    => request('GET',  `/cpd/requests/${id}/receipt`),
+    createReceipt:      (id)    => request('POST', `/cpd/requests/${id}/receipt`, { body: {} }),
     cancelRequest:      (id, b) => request('POST', `/cpd/requests/${id}/cancel-request`, { body: b }),
     returnCarnet:       (id, b) => request('POST', `/cpd/requests/${id}/return-carnet`,   { body: b }),
     officerReturn:      (id, b) => request('POST', `/cpd/requests/${id}/officer-return`,  { body: b }),
@@ -199,6 +212,12 @@ const api = {
     telrModuleCheck:    ()      => request('GET',  '/cpd/return/telr-module'),
     getCancelRequest:   (id)    => request('GET',  `/cpd/requests/${id}/cancel-request`),
     cancellations:      (p)     => request('GET',  '/cpd/cancellations',    { params: p }),
+    approveCancelRequest: (id, b) => request('PUT', `/cpd/cancel-requests/${id}/approve`, { body: b }),
+    rejectCancelRequest:  (id, b) => request('PUT', `/cpd/cancel-requests/${id}/reject`,  { body: b }),
+    addCancelNote:         (id, fd) => requestUpload(`/cpd/requests/${id}/cancel-notes`, fd),
+    updateSecurityCheque:       (id, fd) => requestUpload(`/cpd/requests/${id}/security-cheque`, fd),
+    updateSecurityChequeReturn: (id, b)  => request('PUT', `/cpd/requests/${id}/security-cheque-return`, { body: b }),
+    securityChequeScanUrl:      (id)     => `${API_BASE}/cpd/requests/${id}/security-cheque-scan`,
     returnRequests:         (p)     => request('GET',  '/cpd/return-requests',          { params: p }),
     approveReturnRequest:   (id)    => request('POST', `/cpd/return-requests/${id}/approve`, { body: {} }),
     saveReturnFine:         (id, b) => request('PUT',  `/cpd/return-requests/${id}/fine`,    { body: b }),
@@ -225,6 +244,13 @@ const api = {
       return requestUpload(`/support/tickets/${id}/comment`, fd);
     },
     getAttachment: (ticketId, commentId) => request('GET', `/support/tickets/${ticketId}/comments/${commentId}/attachment`),
+  },
+  dv: {
+    // Polled by the IDL/CPD wizard after returning from the "Continue with UAE PASS"
+    // consent redirect — see AuthController::dvConsentStart/uaePassCallback.
+    requestStatus: (id) => request('GET', `/dv/requests/${id}/status`),
+    // Fetched directly (not via request()) since the response is a binary file, not JSON.
+    visualizationUrl: (id, docType) => `${API_BASE}/dv/requests/${id}/visualization/${encodeURIComponent(docType)}`,
   },
 };
 

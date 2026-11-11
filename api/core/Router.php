@@ -5,15 +5,15 @@ class Router
 {
     private array $routes = [];
 
-    private function add(string $method, string $path, array $handler, bool $auth, array $roles, array $modules): void
+    private function add(string $method, string $path, array $handler, bool $auth, array $roles, array $modules, bool $csrf): void
     {
-        $this->routes[] = compact('method', 'path', 'handler', 'auth', 'roles', 'modules');
+        $this->routes[] = compact('method', 'path', 'handler', 'auth', 'roles', 'modules', 'csrf');
     }
 
-    public function get(string $p, array $h, bool $auth = false, array $roles = [], array $modules = []): void    { $this->add('GET',    $p, $h, $auth, $roles, $modules); }
-    public function post(string $p, array $h, bool $auth = false, array $roles = [], array $modules = []): void   { $this->add('POST',   $p, $h, $auth, $roles, $modules); }
-    public function put(string $p, array $h, bool $auth = false, array $roles = [], array $modules = []): void    { $this->add('PUT',    $p, $h, $auth, $roles, $modules); }
-    public function delete(string $p, array $h, bool $auth = false, array $roles = [], array $modules = []): void { $this->add('DELETE', $p, $h, $auth, $roles, $modules); }
+    public function get(string $p, array $h, bool $auth = false, array $roles = [], array $modules = []): void    { $this->add('GET',    $p, $h, $auth, $roles, $modules, true); }
+    public function post(string $p, array $h, bool $auth = false, array $roles = [], array $modules = [], bool $csrf = true): void   { $this->add('POST',   $p, $h, $auth, $roles, $modules, $csrf); }
+    public function put(string $p, array $h, bool $auth = false, array $roles = [], array $modules = []): void    { $this->add('PUT',    $p, $h, $auth, $roles, $modules, true); }
+    public function delete(string $p, array $h, bool $auth = false, array $roles = [], array $modules = []): void { $this->add('DELETE', $p, $h, $auth, $roles, $modules, true); }
 
     public function dispatch(): void
     {
@@ -39,7 +39,7 @@ class Router
                 if (!$ok) Response::forbidden('Module access denied');
             }
 
-            if (in_array($method, ['POST','PUT','PATCH','DELETE'], true) && Auth::check()) Auth::requireCsrf();
+            if (in_array($method, ['POST','PUT','PATCH','DELETE'], true) && Auth::check() && $route['csrf']) Auth::requireCsrf();
 
             $body = [];
             if (in_array($method, ['POST','PUT','PATCH'], true)) {

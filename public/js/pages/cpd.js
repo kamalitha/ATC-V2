@@ -3,11 +3,19 @@ import api from '../api.js';
 import { DataTable, statusBadge, formatDate, formatDateTime, formatCurrency } from '../components/table.js';
 import { navigate, openModal, closeModal, toast, confirm, currentUser } from '../app.js';
 
+// ── CPD body type display labels ────────────────────────────────────────────────
+// 'Station' and 'Saloon' remain the stored/submitted values (pricing tier
+// classification and existing DB rows key off them) — only the staff-facing
+// wording changes, to make clear what each category means.
+const CPD_BODY_TYPE_LABELS = { Station: 'Station – SUV', Saloon: 'Saloon- Sedan' };
+const cpdBodyTypeLabel = t => CPD_BODY_TYPE_LABELS[t] ?? t;
+
 // ── CPD Request list ──────────────────────────────────────────────────────────
 export function renderCPDRequests(param = null) {
   const content   = document.getElementById('page-content');
-  const isCashier    = currentUser?.role_name === 'idl_cpd_cashier';
-  const isCPDOfficer = currentUser?.role_name === 'cpd_officer';
+  const isCashier       = currentUser?.role_name === 'idl_cpd_cashier';
+  const isCPDOfficer    = currentUser?.role_name === 'cpd_officer';
+  const isBranchManager = currentUser?.role_name === 'cpd_branch';
 
   const typeParam = (param && typeof param === 'object') ? (param.type ?? null) : (param ?? null);
 
@@ -26,7 +34,7 @@ export function renderCPDRequests(param = null) {
         <h1 class="page-title">CPD Requests</h1>
         <p class="page-subtitle">${pageSubtitle}</p>
       </div>
-      ${!isCashier ? `
+      ${(!isCashier && !isBranchManager) ? `
       <div class="page-actions">
         <button class="btn btn-primary" id="btn-new-cpd">
           <i class="fa-solid fa-plus"></i> New Request
@@ -35,12 +43,16 @@ export function renderCPDRequests(param = null) {
     </div>
     <div id="cpd-table"></div>`;
 
-  if (!isCashier) {
+  if (!isCashier && !isBranchManager) {
     document.getElementById('btn-new-cpd').addEventListener('click', () => navigate('cpd-new'));
   }
 
-  // Queue filter: cashier sees their queue position
-  const defaultFilters = isCashier ? { queue_position: 'IDL_CPD_Cashier' } : {};
+  // Queue filter: cashier/branch manager see their own queue position. Cashier
+  // additionally defaults to "Processing" (1) — the status a CPD sits at while
+  // paid online and awaiting the cashier, or unpaid and awaiting Pay at Office
+  // collection — so already-handled requests don't clutter their queue by default.
+  const defaultFilters = isCashier ? { queue_position: 'IDL_CPD_Cashier', status: '1' }
+    : isBranchManager ? { queue_position: 'CPD_Branch_Manager' } : {};
 
   new DataTable(
     document.getElementById('cpd-table'),
@@ -55,10 +67,10 @@ export function renderCPDRequests(param = null) {
       { key: 'total_amount',  label: 'Amount',      render: v => formatCurrency(v) },
       { key: 'requested_datetime', label: 'Submitted', render: v => formatDateTime(v) },
       { key: 'request_status', label: 'Status',     render: (v, r) => statusBadge(r.status_label ?? v) },
-      { key: 'actions',       label: '',            width: isCashier ? '150px' : '100px',
+      { key: 'actions',       label: '',            width: (isCashier || isBranchManager) ? '150px' : '100px',
         render: (_, r) => `<div style="display:flex;gap:4px"><button class="btn btn-ghost btn-sm view-btn" data-id="${r.auto_id}" title="View">
           <i class="fa-solid fa-eye"></i></button>
-          ${(!isCashier && String(r.request_status) === '3') ? `<button class="btn btn-danger btn-sm cancel-cpd-btn" data-id="${r.auto_id}" title="Cancel CPD">
+          ${(!isCashier && !isBranchManager && String(r.request_status) === '3') ? `<button class="btn btn-danger btn-sm cancel-cpd-btn" data-id="${r.auto_id}" title="Cancel CPD">
           <i class="fa-solid fa-ban"></i></button>` : ''}</div>` },
     ],
     params => {
@@ -67,6 +79,7 @@ export function renderCPDRequests(param = null) {
       // CPD officer: default to their queue when no search and no status filter
       if (isCPDOfficer && !params.search && !params.status) extra.queue_position = 'CPD_Officer';
       if (isCashier) extra.queue_position = 'IDL_CPD_Cashier';
+      if (isBranchManager) extra.queue_position = 'CPD_Branch_Manager';
       return api.cpd.list({ ...params, ...extra });
     },
     {
@@ -74,15 +87,24 @@ export function renderCPDRequests(param = null) {
       searchPlaceholder: 'Search by ID, plate, name…',
       defaultFilters,
       rowStyle: r => parseInt(r.has_cheque) > 0 ? 'background:#ebffeb' : '',
-      filters: isCashier ? [] : [
+      filters: isCashier ? [
+        { key: 'status', label: 'Processing (default)', options: [
+          { value: '1',    label: 'Processing' },
+          { value: '2',    label: 'Confirmed' },
+          { value: '3',    label: 'Issued' },
+          { value: '9',    label: 'Dispatched' },
+          { value: 'all',  label: 'All (incl. processed)' },
+        ]},
+      ] : isBranchManager ? [] : [
         { key: 'status', label: 'All Statuses', options: [
-          { value: '1',          label: 'New' },
-          { value: '2',          label: 'Processing' },
-          { value: 'Confirmed',  label: 'Confirmed' },
+          { value: '1',          label: 'Processing' },
+          { value: '2',          label: 'Confirmed' },
           { value: '3',          label: 'Issued' },
           { value: '4',          label: 'Returned' },
-          { value: 'Cancelled',  label: 'Cancelled' },
+          { value: '6',          label: 'Cancelled' },
           { value: '8',          label: 'Sent for Corrections' },
+          { value: '9',          label: 'Dispatched' },
+          { value: 'all',        label: 'All Statuses' },
         ]},
         { key: 'request_type', label: 'All Types', options: [
           { value: 'ONLINE',     label: 'Online' },
@@ -223,19 +245,24 @@ async function openReturnChequeModal(id, defaultBeneficiary = '', onSaved = null
 
 function cpdCancelFromList(id) {
   openModal({
-    title: 'Cancel CPD Request',
+    title: 'Request Cancellation',
     body: `
       <div class="field">
         <label>Cancellation Reason <span style="color:var(--accent)">*</span></label>
         <textarea id="cancel-cpd-reason" rows="4"
           placeholder="Enter reason for cancellation…"
           style="width:100%;resize:vertical"></textarea>
-      </div>`,
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>Supporting Document <span style="color:var(--text-muted)">(optional — JPG, PNG or PDF)</span></label>
+        <input type="file" id="cancel-cpd-doc" accept=".jpg,.jpeg,.png,.pdf" />
+      </div>
+      <p style="font-size:.82rem;color:var(--text-muted);margin-top:8px">This submits a cancellation request for cpd_finance to review and approve.</p>`,
     footer: `<button class="btn btn-ghost" onclick="closeModalGlobal()">
                <i class="fa-solid fa-xmark"></i> Close
              </button>
              <button class="btn btn-danger" id="cancel-cpd-confirm">
-               <i class="fa-solid fa-ban"></i> Cancel CPD
+               <i class="fa-solid fa-ban"></i> Submit Request
              </button>`,
   });
   document.getElementById('cancel-cpd-confirm').onclick = async () => {
@@ -245,19 +272,512 @@ function cpdCancelFromList(id) {
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
     try {
-      await api.cpd.cancel(id, { reason });
+      const fd = new FormData();
+      fd.append('reason', reason);
+      const doc = document.getElementById('cancel-cpd-doc').files[0];
+      if (doc) fd.append('document', doc);
+      await api.cpd.cancel(id, fd);
       closeModal();
-      toast('CPD request cancelled', 'success');
+      toast('Cancellation request submitted for approval', 'success');
       navigate('cpd-requests');
     } catch (e) {
-      toast(e.message || 'Cancellation failed', 'error');
+      toast(e.message || 'Failed to submit cancellation request', 'error');
       btn.disabled = false;
-      btn.innerHTML = '<i class="fa-solid fa-ban"></i> Cancel CPD';
+      btn.innerHTML = '<i class="fa-solid fa-ban"></i> Submit Request';
     }
   };
 }
 
 // ── CPD New ───────────────────────────────────────────────────────────────────
+// Shared section markup for the New, Copy and Renew CPD forms — identity, vehicle,
+// licence, documents, additional information, references, trip, and request & payment.
+function cpdFormSectionsHtml({ nationalities, vehicleTypes, countries, docZone, feeTableId, fromRenew }) {
+  const UAE_STATES = ['Abu Dhabi','Dubai','Sharjah','Ajman','Umm Al Quwain','Ras Al Khaimah','Fujairah'];
+  const BODY_TYPES = ['Station','Saloon','Motor Cycle','Truck','Coupe','Bus','Trailer','-Coupe','-Station','-Saloon','Pickup','Caravan','Hatchback'];
+  const COLORS     = ['White','Silver','Black','Grey','Blue','Red','Brown','Green','Other'];
+  const yearOpts   = Array.from({length:41},(_,i)=>2030-i).map(y=>`<option value="${y}">${y}</option>`).join('');
+  return `
+      <!-- Your Identity Information (same card as the public CPD wizard) -->
+      <div class="pub-identity-card" style="margin-bottom:20px">
+        <div class="pub-identity-card-header" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Your Identity Information</span>
+${fromRenew ? '' : `          <button type="button" class="btn btn-ghost btn-sm" id="btn-cpd-walkin-uaepass" style="display:none">
+            <i class="fa-solid fa-mobile-screen"></i> Customer will log in with UAE PASS</button>
+`}
+        </div>
+        <div class="pub-identity-rows">
+          <input type="hidden" name="user_id" id="cpd-user-id" />
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
+            <span class="pub-id-label">Emirates ID *</span>
+            <input name="emirates_id" id="cpd-eid-input" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X — press Enter to search" />
+            <div id="cpd-eid-status" style="margin:0;font-size:.82rem;min-height:20px"></div>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
+            <span class="pub-id-label">Salutation</span>
+            <select name="title" class="pub-id-inline-select">
+              <option value="">Select</option>
+              <option value="Mr">Mr</option>
+              <option value="Mrs">Mrs</option>
+              <option value="Ms">Ms</option>
+              <option value="Dr">Dr</option>
+              <option value="Sheikh">Sheikh</option>
+              <option value="His Excellency">His Excellency</option>
+            </select>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
+            <span class="pub-id-label">Full Name *</span>
+            <input name="full_name" required class="pub-id-inline-input" placeholder="Full name" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-flag"></i></span>
+            <span class="pub-id-label">Nationality</span>
+            <select name="nationality" class="pub-id-inline-select">
+              <option value="">Select nationality</option>
+              ${nationalities.map(n => `<option value="${n.nationality_id}">${n.nationality}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-venus-mars"></i></span>
+            <span class="pub-id-label">Gender</span>
+            <select name="sex" class="pub-id-inline-select">
+              <option value="">Select</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+            <span class="pub-id-label">Mobile Number *</span>
+            <input name="mobile_no" id="cpd-mobile" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-envelope"></i></span>
+            <span class="pub-id-label">Email Address</span>
+            <input name="email" id="cpd-email" type="email" class="pub-id-inline-input" placeholder="email@example.com" />
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Vehicle Details (same card as the public CPD vehicle step) -->
+      <div class="pub-identity-card" style="margin-bottom:20px">
+        <div class="pub-identity-card-header"><span>Vehicle Details</span></div>
+        <div class="pub-identity-rows">
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-hashtag"></i></span>
+            <span class="pub-id-label">Vehicle Plate Number *</span>
+            <input name="registration_no" required class="pub-id-inline-input" placeholder="e.g. Dubai A 12345" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-file-lines"></i></span>
+            <span class="pub-id-label">Traffic File Number</span>
+            <input name="mulkiya_no" class="pub-id-inline-input" placeholder="Traffic file / Mulkiya number" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-car"></i></span>
+            <span class="pub-id-label">Vehicle Make *</span>
+            <select name="vehicle_make" required class="pub-id-inline-select">
+              <option value="">Select make</option>
+              ${vehicleTypes.map(v => `<option value="${v.vehicle_type}">${v.vehicle_type}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-car-side"></i></span>
+            <span class="pub-id-label">Vehicle Model *</span>
+            <input name="vehicle_model" required class="pub-id-inline-input" placeholder="e.g. Land Cruiser" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-shapes"></i></span>
+            <span class="pub-id-label">Body Type</span>
+            <select name="body_type" class="pub-id-inline-select">
+              <option value="">Select type</option>
+              ${BODY_TYPES.map(t => `<option value="${t}">${cpdBodyTypeLabel(t)}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-location-dot"></i></span>
+            <span class="pub-id-label">Vehicle Registered In</span>
+            <select name="vehicle_registered_in" class="pub-id-inline-select">
+              <option value="">Select emirate</option>
+              ${UAE_STATES.map(s => `<option value="${s}">${s}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-palette"></i></span>
+            <span class="pub-id-label">Color as per Mulkiya</span>
+            <select name="color" class="pub-id-inline-select">
+              <option value="">Select color</option>
+              ${COLORS.map(c => `<option value="${c}">${c}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-calendar"></i></span>
+            <span class="pub-id-label">Year of Manufacture *</span>
+            <select name="manuf_year" required class="pub-id-inline-select">
+              <option value="">Select year</option>
+              ${yearOpts}
+            </select>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-barcode"></i></span>
+            <span class="pub-id-label">Chassis No *</span>
+            <input name="chassis_no" required class="pub-id-inline-input" placeholder="VIN / Chassis number" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-weight-hanging"></i></span>
+            <span class="pub-id-label">Net Weight (Empty Load)</span>
+            <input name="net_weight" class="pub-id-inline-input" placeholder="kg" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-gears"></i></span>
+            <span class="pub-id-label">Engine No</span>
+            <input name="engine_no" class="pub-id-inline-input" placeholder="Engine number" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-users"></i></span>
+            <span class="pub-id-label">No of Seats</span>
+            <input name="no_of_seats" type="number" class="pub-id-inline-input" placeholder="5" />
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Driving Licence Details (same card as the public CPD vehicle step) -->
+      <div class="pub-identity-card" style="margin-bottom:20px">
+        <div class="pub-identity-card-header"><span>Driving Licence Details</span></div>
+        <div class="pub-identity-rows">
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-id-card"></i></span>
+            <span class="pub-id-label">Driving Licence Number</span>
+            <input name="license_no" class="pub-id-inline-input" placeholder="Enter driving licence number" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-calendar-xmark"></i></span>
+            <span class="pub-id-label">Driving Licence Expiry Date</span>
+            <input name="license_expiry" type="date" class="pub-id-inline-input" />
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Documents (same card as the public CPD vehicle step) -->
+      <div class="pub-identity-card" style="margin-bottom:20px">
+        <div class="pub-identity-card-header"><span>Documents</span></div>
+        <div class="doc-upload-grid" style="padding:16px">
+          ${docZone('eid_front',      'Emirates ID (Front)')}
+          ${docZone('eid_back',       'Emirates ID (Back)')}
+          ${docZone('dl_front',       'Driving License (Front)')}
+          ${docZone('dl_back',        'Driving License (Back)')}
+          ${docZone('traffic_front',  'Traffic File (Front)')}
+          ${docZone('traffic_back',   'Traffic File (Back)')}
+          ${docZone('passport_photo', 'Passport Copy')}
+          <div id="cpd-new-corporate-docs" style="display:none;grid-column:1/-1">
+            <div class="doc-upload-grid">
+              ${docZone('visa_page',      'Visa Page of Owner')}
+              ${docZone('trade_license',  'Trade License')}
+              ${docZone('noc',            'NOC from Company Owner')}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Additional Information (same card as the public CPD vehicle step, then the officer-only rows) -->
+      <div class="pub-identity-card" style="margin-bottom:20px">
+        <div class="pub-identity-card-header"><span>Additional Information</span></div>
+        <div class="pub-identity-rows">
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-briefcase"></i></span>
+            <span class="pub-id-label">Usage Type</span>
+            <select name="usage_type" id="cpd-new-usage-type" class="pub-id-inline-select" required>
+              <option value="PERSONAL" selected>Personal Use</option>
+              <option value="COMPANY">Company Use</option>
+            </select>
+          </div>
+
+          <div class="pub-identity-row" id="cpd-new-company-name-row" style="display:none">
+            <span class="pub-id-icon"><i class="fa-solid fa-building"></i></span>
+            <span class="pub-id-label">Company Name *</span>
+            <input name="company_name" class="pub-id-inline-input" placeholder="Registered company name" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
+            <span class="pub-id-label">Passport Number</span>
+            <input name="passport_no" class="pub-id-inline-input" placeholder="Passport number" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-sack-dollar"></i></span>
+            <span class="pub-id-label">Vehicle Value (AED)</span>
+            <input name="vehicle_value" type="number" class="pub-id-inline-input" placeholder="80000" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-gauge-high"></i></span>
+            <span class="pub-id-label">Horse Power</span>
+            <input name="horse_power" class="pub-id-inline-input" placeholder="e.g. 200" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-layer-group"></i></span>
+            <span class="pub-id-label">No of Cylinders</span>
+            <input name="no_of_cylinders" class="pub-id-inline-input" placeholder="e.g. 4" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-chair"></i></span>
+            <span class="pub-id-label">Upholstery</span>
+            <input name="upholstery" class="pub-id-inline-input" placeholder="e.g. Leather" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-radio"></i></span>
+            <span class="pub-id-label">Radio</span>
+            <select name="radio" class="pub-id-inline-select">
+              <option value="">Select</option><option value="Yes">Yes</option><option value="No">No</option>
+            </select>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-ring"></i></span>
+            <span class="pub-id-label">Spare Tyre</span>
+            <select name="spare_tyre" class="pub-id-inline-select">
+              <option value="">Select</option><option value="Yes">Yes</option><option value="No">No</option>
+            </select>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-list"></i></span>
+            <span class="pub-id-label">Other Particulars (1)</span>
+            <input name="others1" class="pub-id-inline-input" placeholder="e.g. Roof rack…" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-list"></i></span>
+            <span class="pub-id-label">Other Particulars (2)</span>
+            <input name="others2" class="pub-id-inline-input" placeholder="e.g. Winch, spare parts…" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-envelope-open-text"></i></span>
+            <span class="pub-id-label">PO Box</span>
+            <input name="po_box" class="pub-id-inline-input" placeholder="PO Box" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-location-dot"></i></span>
+            <span class="pub-id-label">Address</span>
+            <input name="address" class="pub-id-inline-input" placeholder="Street, area, emirate" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-city"></i></span>
+            <span class="pub-id-label">City</span>
+            <input name="city" class="pub-id-inline-input" placeholder="City" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
+            <span class="pub-id-label">Extra Driver 1 Full Name</span>
+            <input name="extra_owner1_name" class="pub-id-inline-input" placeholder="Full name" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
+            <span class="pub-id-label">Extra Driver 1 Emirates ID</span>
+            <input name="extra_owner1_eid" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
+            <span class="pub-id-label">Extra Driver 1 Passport Number</span>
+            <input name="extra_owner1_passport" class="pub-id-inline-input" placeholder="Passport number" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-user"></i></span>
+            <span class="pub-id-label">Extra Driver 2 Full Name</span>
+            <input name="extra_owner2_name" class="pub-id-inline-input" placeholder="Full name" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-id-card"></i></span>
+            <span class="pub-id-label">Extra Driver 2 Emirates ID</span>
+            <input name="extra_owner2_eid" class="pub-id-inline-input" placeholder="784-XXXX-XXXXXXX-X" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-passport"></i></span>
+            <span class="pub-id-label">Extra Driver 2 Passport Number</span>
+            <input name="extra_owner2_passport" class="pub-id-inline-input" placeholder="Passport number" />
+          </div>
+
+        </div>
+      </div>
+
+      <!-- References (same card as the public CPD vehicle step) -->
+      <div class="pub-identity-card" style="margin-bottom:20px">
+        <div class="pub-identity-card-header"><span>References</span></div>
+        <div class="pub-identity-rows">
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
+            <span class="pub-id-label">Reference 1 in UAE Full Name</span>
+            <input name="uae_refree1" class="pub-id-inline-input" placeholder="Full name" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+            <span class="pub-id-label">Reference 1 in UAE Mobile Number</span>
+            <input name="uae_refree1_mobile" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
+            <span class="pub-id-label">Reference 2 in UAE Full Name</span>
+            <input name="uae_refree2" class="pub-id-inline-input" placeholder="Full name" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+            <span class="pub-id-label">Reference 2 in UAE Mobile Number</span>
+            <input name="uae_refree2_mobile" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
+            <span class="pub-id-label">Reference 1 in Destination Full Name</span>
+            <input name="destination_refree1" class="pub-id-inline-input" placeholder="Full name" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+            <span class="pub-id-label">Reference 1 in Destination Mobile Number</span>
+            <input name="destination_refree1_mobile" class="pub-id-inline-input" placeholder="Mobile number" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
+            <span class="pub-id-label">Reference 2 in Destination Full Name</span>
+            <input name="destination_refree2" class="pub-id-inline-input" placeholder="Full name" />
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
+            <span class="pub-id-label">Reference 2 in Destination Mobile Number</span>
+            <input name="destination_refree2_mobile" class="pub-id-inline-input" placeholder="Mobile number" />
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Trip Details (same as the public trip step: destination chips, then remarks) -->
+      <div class="pub-identity-card" style="margin-bottom:20px">
+        <div class="pub-identity-card-header"><span>Trip Details</span></div>
+        <div style="padding:16px">
+          <label style="display:block;margin-bottom:2px;font-weight:600">Destination Countries *</label>
+          <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:12px">Select all countries you plan to visit.</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            ${countries.map(c => `
+              <label class="cpd-country-check">
+                <input type="checkbox" name="countries" value="${c.nationality_id}" style="accent-color:var(--accent)" />
+                ${c.nationality}
+              </label>`).join('')}
+          </div>
+          <div style="margin-top:16px">
+            <label style="display:block;margin-bottom:6px;font-weight:600">Additional Remarks</label>
+            <textarea name="additional_remarks" rows="3" style="width:100%;resize:vertical" placeholder="Any special requirements or notes…"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Request & Payment (officer-only fields; fee figures are calculated, not editable) -->
+      <div class="pub-identity-card" style="margin-bottom:20px">
+        <div class="pub-identity-card-header"><span>Request &amp; Payment</span></div>
+        <div class="pub-identity-rows">
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-tags"></i></span>
+            <span class="pub-id-label">Request Category *</span>
+            <select name="request_category" required class="pub-id-inline-select">
+              <option value="NORMAL">Normal</option>
+              <option value="SPECIAL">Special</option>
+              <option value="MOI">MOI</option>
+              <option value="ADP">ADP</option>
+            </select>
+          </div>
+
+          <div class="pub-identity-row">
+            <span class="pub-id-icon"><i class="fa-solid fa-credit-card"></i></span>
+            <span class="pub-id-label">Payment Method *</span>
+            <select name="method_of_payment" required class="pub-id-inline-select">
+              <option value="CASH">Cash</option>
+              <option value="CHEQUE">Cheque</option>
+              <option value="BANK_GUARANTEE">Bank Guarantee</option>
+              <option value="CREDIT_CARD">Credit Card</option>
+              <option value="CASH_CHEQUE">Cash + Cheque</option>
+              <option value="CASH_BANKGUARANTEE">Cash + Bank Guarantee</option>
+            </select>
+          </div>
+
+        </div>
+
+        <!-- Fee breakdown is computed automatically (same figures the customer sees on the online
+             application) — not manually editable. -->
+        <input type="hidden" name="guarantee_amount" id="cpd-guarantee-amount" value="0" />
+        <input type="hidden" name="booking_fee"      id="cpd-booking-fee"      value="0" />
+        <input type="hidden" name="processing_fee"   id="cpd-processing-fee"   value="0" />
+        <input type="hidden" name="extra_fees"       id="cpd-extra-fees"       value="0" />
+        <input type="hidden" name="vat_amount"       id="cpd-vat-amount"       value="0" />
+        <input type="hidden" name="total_amount"     id="cpd-total-amount"     value="0" />
+      </div>
+
+      <div class="section-card" style="margin:0 0 16px;box-shadow:none;border:1px solid var(--border);background:var(--bg-surface)">
+        <div class="section-card-header" style="font-size:.82rem">
+          <i class="fa-solid fa-calculator" style="color:var(--accent);margin-right:6px"></i>
+          Fee Breakdown
+        </div>
+        <div class="section-card-body" style="padding:0">
+          <table style="width:100%;border-collapse:collapse" id="${feeTableId}">
+            ${cpdFeeRow('Guarantee Fee', 0)}
+            ${cpdFeeRow('Processing Fee (2.5% of Guarantee Fee)', 0)}
+            ${cpdFeeRow('Booking Fee', 0)}
+            ${cpdFeeRow('Extra Driver Fee', 0)}
+            ${cpdFeeRow('VAT (5%)', 0)}
+            ${cpdFeeRow('Total Payable', 0, true, true)}
+          </table>
+        </div>
+      </div>
+
+
+`;
+}
+
 export async function renderCPDNew() {
   const content = document.getElementById('page-content');
   const [vehicleTypes, countries, nationalities, guaranteeRules] = await Promise.all([
@@ -293,393 +813,7 @@ export async function renderCPDNew() {
 
     <form id="cpd-form" novalidate>
 
-      <!-- Usage Type — determines whether the corporate documents are required and
-           whether the "hand the device" UAE PASS option (personal-use only) is offered. -->
-      <div class="section-card">
-        <div class="section-card-header" style="display:flex;justify-content:space-between;align-items:center">
-          <span>Usage Type</span>
-          <button type="button" class="btn btn-ghost btn-sm" id="btn-cpd-walkin-uaepass" style="display:none">
-            <i class="fa-solid fa-mobile-screen"></i> Customer will log in with UAE PASS</button>
-        </div>
-        <div class="section-card-body">
-          <div class="field" style="max-width:280px">
-            <select name="usage_type" id="cpd-new-usage-type" required>
-              <option value="PERSONAL" selected>Personal Use</option>
-              <option value="COMPANY">Company Use</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <!-- Personal Information -->
-      <div class="section-card">
-        <div class="section-card-header">Personal Information</div>
-        <div class="section-card-body">
-          <div class="form-grid">
-            <div class="field">
-              <label>Emirates ID *</label>
-              <input name="emirates_id" id="cpd-eid-input" placeholder="784-XXXX-XXXXXXX-X — press Enter to search" />
-              <div id="cpd-eid-status" style="margin-top:6px;font-size:.82rem;min-height:20px"></div>
-            </div>
-            <input type="hidden" name="user_id" id="cpd-user-id" />
-            <div class="field">
-              <label>Salutation</label>
-              <select name="title">
-                <option value="">Select</option>
-                <option value="Mr">Mr</option>
-                <option value="Mrs">Mrs</option>
-                <option value="Ms">Ms</option>
-                <option value="Dr">Dr</option>
-                <option value="Sheikh">Sheikh</option>
-                <option value="His Excellency">His Excellency</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>Full Name *</label>
-              <input name="full_name" required placeholder="Full name" />
-            </div>
-            <div class="field">
-              <label>Mobile No *</label>
-              <input name="mobile_no" id="cpd-mobile" placeholder="+971 50 xxx xxxx" />
-            </div>
-            <div class="field">
-              <label>Nationality</label>
-              <select name="nationality">
-                <option value="">Select nationality</option>
-                ${nationalities.map(n => `<option value="${n.nationality_id}">${n.nationality}</option>`).join('')}
-              </select>
-            </div>
-            <div class="field">
-              <label>Email</label>
-              <input name="email" id="cpd-email" type="email" placeholder="email@example.com" />
-            </div>
-            <div class="field">
-              <label>Passport No</label>
-              <input name="passport_no" placeholder="Passport number" />
-            </div>
-            <div class="field">
-              <label>PO Box</label>
-              <input name="po_box" placeholder="PO Box" />
-            </div>
-            <div class="field field-full">
-              <label>Address</label>
-              <input name="address" placeholder="Street, area, emirate" />
-            </div>
-            <div class="field">
-              <label>City</label>
-              <input name="city" placeholder="City" />
-            </div>
-            <div class="field">
-              <label>Extra Driver 1 Full Name</label>
-              <input name="extra_owner1_name" placeholder="Full name" />
-            </div>
-            <div class="field">
-              <label>Extra Driver 1 Emirates ID</label>
-              <input name="extra_owner1_eid" placeholder="784-XXXX-XXXXXXX-X" />
-            </div>
-            <div class="field">
-              <label>Extra Driver 1 Passport Number</label>
-              <input name="extra_owner1_passport" placeholder="Passport number" />
-            </div>
-            <div class="field">
-              <label>Extra Driver 2 Full Name</label>
-              <input name="extra_owner2_name" placeholder="Full name" />
-            </div>
-            <div class="field">
-              <label>Extra Driver 2 Emirates ID</label>
-              <input name="extra_owner2_eid" placeholder="784-XXXX-XXXXXXX-X" />
-            </div>
-            <div class="field">
-              <label>Extra Driver 2 Passport Number</label>
-              <input name="extra_owner2_passport" placeholder="Passport number" />
-            </div>
-          </div>
-        </div>
-      </div>
-      <!-- Vehicle Information -->
-      <div class="section-card">
-        <div class="section-card-header">Vehicle Information</div>
-        <div class="section-card-body">
-          <div class="pub-identity-card cpd-officer-form-card">
-            <div class="pub-identity-rows">
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-regular fa-file-lines"></i></span>
-                <span class="pub-id-label">Traffic File No</span>
-                <input name="mulkiya_no" class="pub-id-inline-input" placeholder="Traffic file / Mulkiya number" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-hashtag"></i></span>
-                <span class="pub-id-label">Registration No</span>
-                <input name="registration_no" required class="pub-id-inline-input" placeholder="e.g. Dubai A 12345" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-car"></i></span>
-                <span class="pub-id-label">Vehicle Make</span>
-                <select name="vehicle_make" required class="pub-id-inline-select">
-                  <option value="">Select make</option>
-                  ${vehicleTypes.map(v => `<option value="${v.vehicle_type}">${v.vehicle_type}</option>`).join('')}
-                </select>
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-car-side"></i></span>
-                <span class="pub-id-label">Vehicle Model</span>
-                <input name="vehicle_model" required class="pub-id-inline-input" placeholder="e.g. Land Cruiser" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-sack-dollar"></i></span>
-                <span class="pub-id-label">Vehicle Value (AED)</span>
-                <input name="vehicle_value" type="number" class="pub-id-inline-input" placeholder="80000" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-location-dot"></i></span>
-                <span class="pub-id-label">Vehicle Registered In</span>
-                <select name="vehicle_registered_in" class="pub-id-inline-select">
-                  <option value="">Select emirate</option>
-                  ${UAE_STATES.map(s => `<option value="${s}">${s}</option>`).join('')}
-                </select>
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-shapes"></i></span>
-                <span class="pub-id-label">Body Type</span>
-                <select name="body_type" class="pub-id-inline-select">
-                  <option value="">Select type</option>
-                  ${BODY_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
-                </select>
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-regular fa-calendar"></i></span>
-                <span class="pub-id-label">Year of Manufacture</span>
-                <select name="manuf_year" required class="pub-id-inline-select">
-                  <option value="">Select year</option>
-                  ${yearOpts}
-                </select>
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-palette"></i></span>
-                <span class="pub-id-label">Color as per Mulkiya</span>
-                <select name="color" class="pub-id-inline-select">
-                  <option value="">Select color</option>
-                  ${COLORS.map(c => `<option value="${c}">${c}</option>`).join('')}
-                </select>
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-weight-hanging"></i></span>
-                <span class="pub-id-label">Net Weight (Empty Load)</span>
-                <input name="net_weight" class="pub-id-inline-input" placeholder="kg" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-barcode"></i></span>
-                <span class="pub-id-label">Chassis No</span>
-                <input name="chassis_no" required class="pub-id-inline-input" placeholder="VIN / Chassis number" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-gears"></i></span>
-                <span class="pub-id-label">Engine No</span>
-                <input name="engine_no" class="pub-id-inline-input" placeholder="Engine number" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-gauge-high"></i></span>
-                <span class="pub-id-label">Horse Power</span>
-                <input name="horse_power" class="pub-id-inline-input" placeholder="e.g. 200" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-layer-group"></i></span>
-                <span class="pub-id-label">No of Cylinders</span>
-                <input name="no_of_cylinders" class="pub-id-inline-input" placeholder="e.g. 4" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-chair"></i></span>
-                <span class="pub-id-label">Upholstery</span>
-                <input name="upholstery" class="pub-id-inline-input" placeholder="e.g. Leather" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-users"></i></span>
-                <span class="pub-id-label">No of Seats</span>
-                <input name="no_of_seats" type="number" class="pub-id-inline-input" placeholder="5" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-radio"></i></span>
-                <span class="pub-id-label">Radio</span>
-                <select name="radio" class="pub-id-inline-select">
-                  <option value="">Select</option><option value="Yes">Yes</option><option value="No">No</option>
-                </select>
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-ring"></i></span>
-                <span class="pub-id-label">Spare Tyre</span>
-                <select name="spare_tyre" class="pub-id-inline-select">
-                  <option value="">Select</option><option value="Yes">Yes</option><option value="No">No</option>
-                </select>
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-regular fa-comment"></i></span>
-                <span class="pub-id-label">Additional Remarks</span>
-                <textarea name="additional_remarks" rows="1" class="pub-id-inline-input" style="resize:vertical" placeholder="Any additional remarks…"></textarea>
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-list"></i></span>
-                <span class="pub-id-label">Other Particulars (1)</span>
-                <input name="others1" class="pub-id-inline-input" placeholder="e.g. Roof rack…" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-list"></i></span>
-                <span class="pub-id-label">Other Particulars (2)</span>
-                <input name="others2" class="pub-id-inline-input" placeholder="e.g. Winch, spare parts…" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
-                <span class="pub-id-label">Reference 1 in UAE Full Name</span>
-                <input name="uae_refree1" class="pub-id-inline-input" placeholder="Full name" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
-                <span class="pub-id-label">Reference 1 in UAE Mobile Number</span>
-                <input name="uae_refree1_mobile" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
-                <span class="pub-id-label">Reference 2 in UAE Full Name</span>
-                <input name="uae_refree2" class="pub-id-inline-input" placeholder="Full name" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
-                <span class="pub-id-label">Reference 2 in UAE Mobile Number</span>
-                <input name="uae_refree2_mobile" class="pub-id-inline-input" placeholder="+971 50 xxx xxxx" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
-                <span class="pub-id-label">Reference 1 in Destination Full Name</span>
-                <input name="destination_refree1" class="pub-id-inline-input" placeholder="Full name" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
-                <span class="pub-id-label">Reference 1 in Destination Mobile Number</span>
-                <input name="destination_refree1_mobile" class="pub-id-inline-input" placeholder="Mobile number" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-regular fa-address-book"></i></span>
-                <span class="pub-id-label">Reference 2 in Destination Full Name</span>
-                <input name="destination_refree2" class="pub-id-inline-input" placeholder="Full name" />
-              </div>
-
-              <div class="pub-identity-row">
-                <span class="pub-id-icon"><i class="fa-solid fa-mobile-screen"></i></span>
-                <span class="pub-id-label">Reference 2 in Destination Mobile Number</span>
-                <input name="destination_refree2_mobile" class="pub-id-inline-input" placeholder="Mobile number" />
-              </div>
-
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="section-card">
-        <div class="section-card-header">Travel Countries</div>
-        <div class="section-card-body">
-          <div class="field">
-            <label>Destination Countries *</label>
-            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
-              ${countries.map(c => `
-                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 10px;
-                  background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;">
-                  <input type="checkbox" name="countries" value="${c.nationality_id}" style="accent-color:var(--accent)" />
-                  ${c.nationality}
-                </label>`).join('')}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="section-card">
-        <div class="section-card-header">Request &amp; Payment</div>
-        <div class="section-card-body">
-          <div class="form-grid">
-            <div class="field">
-              <label>Request Category *</label>
-              <select name="request_category" required>
-                <option value="NORMAL">Normal</option>
-                <option value="SPECIAL">Special</option>
-                <option value="MOI">MOI</option>
-                <option value="ADP">ADP</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>Payment Method *</label>
-              <select name="method_of_payment" required>
-                <option value="CASH">Cash</option>
-                <option value="CHEQUE">Cheque</option>
-                <option value="BANK_GUARANTEE">Bank Guarantee</option>
-                <option value="CREDIT_CARD">Credit Card</option>
-                <option value="CASH_CHEQUE">Cash + Cheque</option>
-                <option value="CASH_BANKGUARANTEE">Cash + Bank Guarantee</option>
-              </select>
-            </div>
-            <div class="field"><label>Guarantee Amount (AED)</label><input name="guarantee_amount" type="number" step="0.01" placeholder="0.00" /></div>
-            <div class="field"><label>Booking Fee (AED)</label><input name="booking_fee" type="number" step="0.01" placeholder="0.00" /></div>
-            <div class="field">
-              <label>Processing Fee (AED)</label>
-              <input name="processing_fee" id="cpd-processing-fee" type="number" step="0.01" placeholder="0.00" readonly
-                style="background:var(--bg-elevated);cursor:default" />
-              <div style="font-size:.75rem;color:var(--text-muted);margin-top:3px">2.5% of the guarantee amount, except Portugal</div>
-            </div>
-            <div class="field">
-              <label>Extra Fees (AED)</label>
-              <input name="extra_fees" id="cpd-extra-fees" type="number" step="0.01" placeholder="0.00" readonly
-                style="background:var(--bg-elevated);cursor:default" />
-              <div style="font-size:.75rem;color:var(--text-muted);margin-top:3px">AED 50 per extra driver added automatically</div>
-            </div>
-            <div class="field"><label>VAT Amount (AED)</label><input name="vat_amount" type="number" step="0.01" placeholder="0.00" /></div>
-            <div class="field"><label>Total Amount (AED)</label><input name="total_amount" type="number" step="0.01" placeholder="0.00" /></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="section-card">
-        <div class="section-card-header">Documents</div>
-        <div class="section-card-body">
-          <div class="doc-upload-grid">
-            ${officerCpdDocZone('traffic_front',  'Traffic File Front Image')}
-            ${officerCpdDocZone('traffic_back',   'Traffic File Back Image')}
-            ${officerCpdDocZone('eid_front',      'Emirates ID Front')}
-            ${officerCpdDocZone('eid_back',       'Emirates ID Back')}
-            ${officerCpdDocZone('passport_photo', 'Passport Size Photo')}
-            <div id="cpd-new-corporate-docs" style="display:none">
-              ${officerCpdDocZone('visa_page',      'Visa Page of Owner')}
-              ${officerCpdDocZone('trade_license',  'Trade License')}
-              ${officerCpdDocZone('noc',            'NOC from Company Owner')}
-            </div>
-            <!-- corporate-docs shown/hidden via #cpd-new-usage-type change; 'contents' keeps grid layout intact when visible -->
-          </div>
-        </div>
-      </div>
+      ${cpdFormSectionsHtml({ nationalities, vehicleTypes, countries, docZone: officerCpdDocZone, feeTableId: 'cpd-new-fee-table', fromRenew: false })}
 
       <div id="form-error" class="form-error hidden"></div>
       <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:16px">
@@ -781,11 +915,8 @@ export async function renderCPDNew() {
     });
 
     const guaranteeFee = Math.max(0, ...Object.values(groupAmounts));
-    // Portugal's cash+cheque guarantee doesn't carry the 2.5% processing fee the way
-    // every other destination's does (price list total is Fee+VAT+Cash only) —
-    // matches the same exception in public.js's calcGuarantee().
-    const winningGroupCode = Object.entries(groupAmounts).find(([, amt]) => amt === guaranteeFee)?.[0];
-    const processingFee = winningGroupCode === 'PORTUGAL' ? 0 : Math.round(guaranteeFee * 0.025 * 100) / 100;
+    // Processing fee — 2.5% of the guarantee fee for every destination, Portugal included.
+    const processingFee = Math.round(guaranteeFee * 0.025 * 100) / 100;
     const bookingFee   = cpdBookingFee(selectedIds);
     const vat          = Math.round((bookingFee + extraFee) * 0.05 * 100) / 100;
     const total        = guaranteeFee + bookingFee + extraFee + processingFee + vat;
@@ -795,7 +926,7 @@ export async function renderCPDNew() {
   function setFeeFields(guarantee, booking, extra, vat, total, processingFee = 0) {
     const set = (name, val) => {
       const el = document.querySelector(`[name="${name}"]`);
-      if (el) el.value = val > 0 ? val.toFixed(2) : '';
+      if (el) el.value = val > 0 ? val.toFixed(2) : '0.00';
     };
     set('guarantee_amount', guarantee);
     set('booking_fee',      booking);
@@ -803,6 +934,17 @@ export async function renderCPDNew() {
     set('extra_fees',       extra);
     set('vat_amount',       vat);
     set('total_amount',     total);
+
+    const table = document.getElementById('cpd-new-fee-table');
+    if (table) {
+      table.innerHTML =
+        cpdFeeRow('Guarantee Fee', guarantee) +
+        cpdFeeRow('Processing Fee (2.5% of Guarantee Fee)', processingFee) +
+        cpdFeeRow('Booking Fee', booking) +
+        cpdFeeRow('Extra Driver Fee', extra) +
+        cpdFeeRow('VAT (5%)', vat) +
+        cpdFeeRow('Total Payable', total, true, true);
+    }
   }
 
   // When no countries selected still recalc in case extra driver changed
@@ -846,6 +988,13 @@ export async function renderCPDNew() {
     const corpDocs = document.getElementById('cpd-new-corporate-docs');
     if (corpDocs) corpDocs.style.display = isCompany ? 'contents' : 'none';
     if (uaePassWalkinBtn) uaePassWalkinBtn.style.display = isCompany ? 'none' : '';
+    const companyRow   = document.getElementById('cpd-new-company-name-row');
+    const companyInput = companyRow?.querySelector('[name="company_name"]');
+    if (companyRow) companyRow.style.display = isCompany ? '' : 'none';
+    if (companyInput) {
+      companyInput.required = isCompany;
+      if (!isCompany) companyInput.value = '';
+    }
   }
   usageTypeSelect?.addEventListener('change', syncUsageTypeUI);
   syncUsageTypeUI();
@@ -874,6 +1023,13 @@ export async function renderCPDNew() {
       const eidField = document.getElementById('cpd-eid-input');
       if (eidField) { eidField.value = cpdWalkinPrefill.emirates_id; eidField.readOnly = true; eidField.style.background = 'var(--bg-elevated)'; }
     }
+    // Marks this application as identity-verified via UAE PASS, same as the public
+    // wizard's DV share — read by the detail view to lock identity fields from editing.
+    const viaUaePassFlag = document.createElement('input');
+    viaUaePassFlag.type  = 'hidden';
+    viaUaePassFlag.name  = 'identity_via_uae_pass';
+    viaUaePassFlag.value = '1';
+    document.getElementById('cpd-form').appendChild(viaUaePassFlag);
   }
 
   // Bind document upload zones
@@ -1049,12 +1205,14 @@ export async function renderCPDNew() {
 
     // Validate all documents are selected. The 3 corporate docs are only ever shown
     // (and thus fillable) when Usage Type is Company — requiring them unconditionally
-    // made every Personal-use walk-in submission impossible.
-    const REQUIRED_DOCS = ['traffic_front','traffic_back','eid_front','eid_back','passport_photo'];
+    // made every Personal-use walk-in submission impossible. Full doc set (incl. Driving
+    // License, previously missing here) must match the online wizard's requiredDocSlots.
+    const REQUIRED_DOCS = ['eid_front','eid_back','dl_front','dl_back','traffic_front','traffic_back','passport_photo'];
     if (body.usage_type === 'COMPANY') REQUIRED_DOCS.push('visa_page','trade_license','noc');
     const DOC_LABELS    = {
-      traffic_front: 'Traffic File Front', traffic_back: 'Traffic File Back',
       eid_front: 'Emirates ID Front',      eid_back: 'Emirates ID Back',
+      dl_front: 'Driving License Front',   dl_back: 'Driving License Back',
+      traffic_front: 'Traffic File Front', traffic_back: 'Traffic File Back',
       passport_photo: 'Passport Photo',    visa_page: 'Visa Page',
       trade_license: 'Trade License',      noc: 'NOC',
     };
@@ -1116,12 +1274,15 @@ export async function renderCPDDetail(param) {
   const createReturn = (typeof param === 'object') ? !!param.createReturn : false;
 
   const content = document.getElementById('page-content');
-  const [r, docs, existingCheque] = await Promise.all([
+  const [r, docs, existingCheque, cancelReq, cancelFiles] = await Promise.all([
     api.cpd.get(id),
     api.cpd.getDocs(id).catch(() => []),
     returnId ? api.cpd.getReturnCheque(id).catch(() => null) : Promise.resolve(null),
+    api.cpd.getCancelRequest(id).catch(() => null),
+    api.cpd.cancelAttachments(id).catch(() => []),
   ]);
   window.__cpdCurrentRecord = r;
+  const isCpdFinance = currentUser?.role_name === 'cpd_finance';
 
   // Identity edit — same UAE-PASS lock concept as IDL: locked once the applicant
   // supplied name/Emirates ID/nationality/gender via UAE PASS; everything else
@@ -1228,7 +1389,7 @@ export async function renderCPDDetail(param) {
         ${identityRow('fa-solid fa-car-side',      'Vehicle Model',         r.vehicle_model)}
         ${identityRow('fa-solid fa-sack-dollar',   'Vehicle Value (AED)',   r.vehicle_value ? formatCurrency(r.vehicle_value) : '')}
         ${identityRow('fa-solid fa-location-dot',  'Vehicle Registered In', r.vehicle_registered_in)}
-        ${identityRow('fa-solid fa-shapes',        'Body Type',             r.body_type)}
+        ${identityRow('fa-solid fa-shapes',        'Body Type',             cpdBodyTypeLabel(r.body_type))}
         ${identityRow('fa-regular fa-calendar',    'Year of Manufacture',   r.manuf_year)}
         ${identityRow('fa-solid fa-palette',       'Color as per Mulkiya',  r.color)}
         ${identityRow('fa-solid fa-weight-hanging','Net Weight (Empty Load)', r.net_weight ? r.net_weight + ' kg' : '')}
@@ -1242,6 +1403,7 @@ export async function renderCPDDetail(param) {
         ${identityRow('fa-solid fa-ring',          'Spare Tyre',            r.spare_tyre)}
         ${identityRow('fa-regular fa-calendar-check', 'Mulkiya Expiry',     r.mulkiya_expiry ? formatDate(r.mulkiya_expiry) : '')}
         ${identityRow('fa-solid fa-building',      'Usage Type',            r.usage_type === 'COMPANY' ? 'Company Use' : 'Personal Use')}
+        ${r.usage_type === 'COMPANY' ? identityRow('fa-solid fa-building-flag', 'Company Name', r.company_name) : ''}
       </div>
       <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--bg-base)">
         <div class="rv-extra-rows">
@@ -1362,40 +1524,6 @@ export async function renderCPDDetail(param) {
             <td style="padding:8px">${formatDateTime(p.added_datetime)}</td>
           </tr>`).join('')}</tbody>
         </table>
-      </div>
-    </div>` : ''}
-
-    ${currentUser?.role_name === 'idl_cpd_cashier' ? `
-    <div class="section-card" style="margin-top:16px" id="cpd-payment-section">
-      <div class="section-card-header">Payment</div>
-      <div class="section-card-body">
-        <div class="detail-grid" style="margin-bottom:16px">
-          ${detail('Booking Fee',  formatCurrency(r.booking_fee))}
-          ${detail('Extra Fees',   formatCurrency(r.extra_fees))}
-          ${detail('VAT',          formatCurrency(r.vat_amount))}
-          ${detail('Total Amount', `<strong style="color:var(--accent)">${formatCurrency(r.total_amount)}</strong>`)}
-          ${detail('Payment Status', r.booking_fee_status == 1
-            ? '<span class="badge badge-success">Paid</span>'
-            : '<span class="badge badge-warning">Unpaid</span>')}
-        </div>
-        ${r.booking_fee_status != 1 ? `
-        <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
-          <div class="field" style="min-width:200px;margin:0">
-            <label>Payment Method <span style="color:var(--accent)">*</span></label>
-            <select id="cpd-payment-method">
-              <option value="">— Select —</option>
-              <option value="CASH">Cash</option>
-              <option value="CREDIT_CARD">Credit Card</option>
-            </select>
-          </div>
-          <button class="btn btn-success" id="cpd-pay-btn">
-            <i class="fa-solid fa-circle-check"></i> Save Payment
-          </button>
-        </div>` : `
-        <div style="color:var(--success,#22c55e);font-weight:600;font-size:.9rem">
-          <i class="fa-solid fa-circle-check"></i>
-          Payment recorded — ${r.method_of_payment ?? ''}
-        </div>`}
       </div>
     </div>` : ''}
 
@@ -1551,6 +1679,148 @@ export async function renderCPDDetail(param) {
       })() : ''}`;
     })() : ''}
 
+    ${cancelReq && Number(cancelReq.cancelled_approved) === 0 ? (() => {
+      const original = Number(cancelReq.original_amount ?? 0);
+      return `
+      <div class="section-card" style="margin-top:16px">
+        <div class="section-card-header">Cancellation Request</div>
+        <div class="section-card-body">
+          <div class="detail-grid">
+            ${detail('Requested By', cancelReq.cancelled_by ?? '—')}
+            ${detail('Requested On', formatDateTime(cancelReq.cancelled_datetime))}
+            ${detail('Reason', cancelReq.remarks ?? '—')}
+            ${detail('Original Receipt Amount', formatCurrency(original))}
+          </div>
+          ${(cancelFiles ?? []).length ? `
+          <div style="margin-top:12px">
+            <div style="font-weight:600;margin-bottom:6px">Attachments</div>
+            ${cancelFiles.map(f => `
+              <div><a href="${api.cpd.cancelAttachmentUrl(id, f.file)}" target="_blank" rel="noopener">
+                <i class="fa-solid fa-paperclip"></i> ${f.label} — ${f.file.split('/').pop()}</a></div>`).join('')}
+          </div>` : ''}
+          ${isCpdFinance ? `
+          <div class="form-grid" style="margin-top:12px">
+            <div class="field">
+              <label>Refund Amount (AED)</label>
+              <input type="number" step="0.01" min="0" max="${original}" id="cpd-cancel-refund" value="${original.toFixed(2)}" />
+            </div>
+            <div class="field">
+              <label>Charge Amount (AED)</label>
+              <input type="text" id="cpd-cancel-charge-display" readonly
+                style="background:var(--bg-elevated);cursor:default;font-weight:600" value="${formatCurrency(0)}" />
+            </div>
+          </div>
+          <div style="margin-top:12px">
+            <label>Comment <span style="color:var(--text-muted);font-weight:400">(required to reject, optional to approve)</span></label>
+            <textarea id="cpd-cancel-comment" rows="3" style="width:100%;resize:vertical" placeholder="Add a comment…"></textarea>
+          </div>
+          <div class="field" style="margin-top:8px">
+            <label>Attachments <span style="color:var(--text-muted);font-weight:400">(Optional — JPG, PNG or PDF)</span></label>
+            <input type="file" id="cpd-cancel-note-files" accept=".jpg,.jpeg,.png,.pdf" multiple />
+          </div>
+          <div id="cpd-cancel-error" class="form-error hidden" style="margin-top:8px"></div>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button class="btn btn-success btn-sm" id="btn-approve-cancel" data-id="${id}">
+              <i class="fa-solid fa-check"></i> Approve Cancellation</button>
+            <button class="btn btn-danger btn-sm" id="btn-reject-cancel" data-id="${id}">
+              <i class="fa-solid fa-xmark"></i> Reject</button>
+          </div>` : `
+          <div style="margin-top:8px;color:var(--text-muted);font-size:.85rem">
+            <i class="fa-solid fa-clock"></i> Awaiting cpd_finance approval.
+          </div>`}
+        </div>
+      </div>`;
+    })() : ''}
+
+    ${Number(r.security_cheque_required) === 1 ? `
+      <div class="section-card" style="margin-top:16px">
+        <div class="section-card-header">Security Cheque</div>
+        <div class="section-card-body">
+          <div class="detail-grid">
+            ${detail('Collection Method', r.security_cheque_delivery_method === 'OFFICE' ? 'Drop off at EMSO office' : 'Aramex Courier')}
+            ${r.security_cheque_airway_bill ? detail('Airway Bill / Reference No', r.security_cheque_airway_bill) : ''}
+          </div>
+          ${r.security_cheque_received_datetime ? `
+          <div style="margin-top:12px;padding:12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:var(--radius)">
+            <div style="font-size:.78rem;font-weight:700;color:var(--success,#22c55e);text-transform:uppercase;letter-spacing:.05em">
+              <i class="fa-solid fa-circle-check"></i> Cheque Received
+            </div>
+            <div class="detail-grid" style="margin-top:8px">
+              ${detail('Cheque No', r.security_cheque_no)}
+              ${detail('Received On', formatDateTime(r.security_cheque_received_datetime))}
+            </div>
+            ${r.security_cheque_scan_path ? `<a class="btn btn-ghost btn-sm" href="${api.cpd.securityChequeScanUrl(id)}" target="_blank" rel="noopener" style="margin-top:8px"><i class="fa-solid fa-file-arrow-down"></i> View Scan</a>` : ''}
+          </div>` : `
+          <div style="margin-top:12px" class="form-grid">
+            <div class="field"><label>Cheque Number</label><input type="text" id="security-cheque-no" placeholder="Cheque number" /></div>
+            <div class="field"><label>Scan Copy <span style="color:var(--text-muted);font-weight:400">(JPG, PNG or PDF)</span></label>
+              <input type="file" id="security-cheque-scan" accept=".jpg,.jpeg,.png,.pdf" /></div>
+          </div>
+          <div id="security-cheque-error" class="form-error hidden" style="margin-top:8px"></div>
+          <button class="btn btn-primary btn-sm" id="btn-save-security-cheque" data-id="${id}" style="margin-top:8px">
+            <i class="fa-solid fa-floppy-disk"></i> Record Cheque Receipt</button>`}
+          ${returnId ? `
+          <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+            <div style="font-size:.85rem;color:var(--text-muted);margin-bottom:8px">
+              Security cheque return delivery ${r.security_cheque_return_airway_bill ? `— Airway Bill: <strong>${r.security_cheque_return_airway_bill}</strong>` : 'not yet dispatched'}
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="text" id="security-cheque-return-awb" placeholder="Airway bill number" value="${r.security_cheque_return_airway_bill ?? ''}" style="max-width:220px" />
+              <button class="btn btn-ghost btn-sm" id="btn-save-security-cheque-return" data-id="${id}">
+                <i class="fa-solid fa-truck"></i> Save</button>
+            </div>
+          </div>` : ''}
+        </div>
+      </div>` : ''}
+
+    ${currentUser?.role_name === 'idl_cpd_cashier' ? `
+    <div class="section-card" style="margin-top:16px" id="cpd-payment-section">
+      <div class="section-card-header">Payment</div>
+      <div class="section-card-body">
+        <div class="detail-grid" style="margin-bottom:16px">
+          ${detail('Booking Fee',  formatCurrency(r.booking_fee))}
+          ${detail('Extra Fees',   formatCurrency(r.extra_fees))}
+          ${detail('VAT',          formatCurrency(r.vat_amount))}
+          ${detail('Total Amount', `<strong style="color:var(--accent)">${formatCurrency(r.total_amount)}</strong>`)}
+          ${detail('Payment Status', r.booking_fee_status == 1
+            ? '<span class="badge badge-success">Paid</span>'
+            : '<span class="badge badge-warning">Unpaid</span>')}
+        </div>
+        ${r.booking_fee_status != 1 ? `
+        <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
+          <div class="field" style="min-width:200px;margin:0">
+            <label>Payment Method <span style="color:var(--accent)">*</span></label>
+            <select id="cpd-payment-method">
+              <option value="">— Select —</option>
+              <option value="CASH">Cash</option>
+              <option value="CREDIT_CARD">Credit Card</option>
+            </select>
+          </div>
+          <button class="btn btn-success" id="cpd-pay-btn">
+            <i class="fa-solid fa-circle-check"></i> Save Payment
+          </button>
+        </div>` : `
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+          <div style="color:var(--success,#22c55e);font-weight:600;font-size:.9rem">
+            <i class="fa-solid fa-circle-check"></i>
+            Payment recorded — ${r.method_of_payment ?? ''}
+          </div>
+          <button class="btn btn-info btn-sm" id="cpd-print-receipt-btn" data-id="${id}">
+            <i class="fa-solid fa-print"></i> Print Receipt</button>
+        </div>`}
+      </div>
+    </div>` : ''}
+
+    ${cancelReq && Number(cancelReq.cancelled_approved) !== 0 && (cancelFiles ?? []).length ? `
+    <div class="section-card" style="margin-top:16px">
+      <div class="section-card-header">Cancellation Attachments</div>
+      <div class="section-card-body">
+        ${cancelFiles.map(f => `
+          <div><a href="${api.cpd.cancelAttachmentUrl(id, f.file)}" target="_blank" rel="noopener">
+            <i class="fa-solid fa-paperclip"></i> ${f.label} — ${f.file.split('/').pop()}</a></div>`).join('')}
+      </div>
+    </div>` : ''}
+
     ${createReturn ? `
     <div class="section-card" style="margin-top:16px" id="cpd-return-note-section">
       <div class="section-card-header">Return Note</div>
@@ -1558,6 +1828,10 @@ export async function renderCPDDetail(param) {
         <div class="field" style="margin:0 0 1rem">
           <textarea id="cpd-return-note" rows="4" style="width:100%;resize:vertical"
             placeholder="Enter return remarks / notes…"></textarea>
+        </div>
+        <div class="field" style="margin:0 0 1rem">
+          <label>Attachments <span style="color:var(--text-muted);font-weight:400">(Optional — JPG, PNG or PDF, multiple allowed)</span></label>
+          <input type="file" id="cpd-return-note-create-files" accept=".jpg,.jpeg,.png,.pdf" multiple />
         </div>
         <div id="cpd-return-note-error" class="form-error hidden"></div>
         <button class="btn btn-warning" id="cpd-return-note-save">
@@ -1637,11 +1911,26 @@ export async function renderCPDDetail(param) {
       returnNoteSave.disabled = true;
       returnNoteSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving…';
       try {
-        await api.cpd.officerReturn(id, {
+        const res = await api.cpd.officerReturn(id, {
           remarks,
           delivery_option: 'DELIVER_BY_HAND',
           payment_option:  'COLLECT_CHEQUE',
         });
+        // Attachments reuse the same addReturnNote() endpoint the post-creation
+        // "Add Note / Attachment" section uses — officerReturn() itself only stores
+        // a single plain remarks string, with no file support.
+        const files = document.getElementById('cpd-return-note-create-files')?.files;
+        if (files?.length) {
+          const fd = new FormData();
+          fd.append('comment', '');
+          [...files].forEach(f => fd.append('documents[]', f));
+          try {
+            const noteRes = await api.cpd.addReturnNote(res.return_id, fd);
+            if (noteRes.errors?.length) toast(noteRes.errors.join('; '), 'error');
+          } catch (noteErr) {
+            toast('Return created, but attachments failed: ' + noteErr.message, 'error');
+          }
+        }
         toast('Return request created successfully', 'success');
         navigate('cpd-return-requests');
       } catch (e) {
@@ -1743,6 +2032,127 @@ export async function renderCPDDetail(param) {
     }
   });
 
+  // Cancellation Request — refund input recalculates the displayed charge amount live.
+  const cancelRefundInput = document.getElementById('cpd-cancel-refund');
+  if (cancelRefundInput) {
+    const recalcCharge = () => {
+      const original = Number(cancelReq?.original_amount ?? 0);
+      const refund = Number(cancelRefundInput.value) || 0;
+      document.getElementById('cpd-cancel-charge-display').value = formatCurrency(Math.max(original - refund, 0));
+    };
+    cancelRefundInput.addEventListener('input', recalcCharge);
+    recalcCharge();
+  }
+
+  document.getElementById('btn-approve-cancel')?.addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    const errEl = document.getElementById('cpd-cancel-error');
+    errEl.classList.add('hidden');
+    const refund = Number(document.getElementById('cpd-cancel-refund').value);
+    if (isNaN(refund) || refund < 0) {
+      errEl.textContent = 'Enter a valid refund amount';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Approving…';
+    try {
+      await maybeAddCancelNote(id);
+      await api.cpd.approveCancelRequest(id, { refund_amount: refund });
+      toast('Cancellation approved', 'success');
+      renderCPDDetail(param);
+    } catch (err) {
+      errEl.textContent = err.message || 'Approval failed';
+      errEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-check"></i> Approve Cancellation';
+    }
+  });
+
+  document.getElementById('btn-reject-cancel')?.addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    const errEl = document.getElementById('cpd-cancel-error');
+    errEl.classList.add('hidden');
+    const comment = document.getElementById('cpd-cancel-comment').value.trim();
+    if (!comment) {
+      errEl.textContent = 'A comment is required to reject a cancellation request';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Rejecting…';
+    try {
+      await maybeAddCancelNote(id);
+      await api.cpd.rejectCancelRequest(id, { comment });
+      toast('Cancellation request rejected', 'info');
+      renderCPDDetail(param);
+    } catch (err) {
+      errEl.textContent = err.message || 'Rejection failed';
+      errEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-xmark"></i> Reject';
+    }
+  });
+
+  async function maybeAddCancelNote(requestId) {
+    const commentEl = document.getElementById('cpd-cancel-comment');
+    const filesEl = document.getElementById('cpd-cancel-note-files');
+    const comment = commentEl?.value.trim();
+    const files = filesEl?.files;
+    if (!comment && !files?.length) return;
+    const fd = new FormData();
+    fd.append('comment', comment ?? '');
+    [...(files ?? [])].forEach(f => fd.append('documents[]', f));
+    await api.cpd.addCancelNote(requestId, fd);
+  }
+
+  // Security Cheque — record receipt (cheque no + scan) and, during a return, the
+  // Aramex airway bill for delivering it back to the customer.
+  document.getElementById('btn-save-security-cheque')?.addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    const errEl = document.getElementById('security-cheque-error');
+    errEl.classList.add('hidden');
+    const chequeNo = document.getElementById('security-cheque-no').value.trim();
+    if (!chequeNo) {
+      errEl.textContent = 'Enter the cheque number';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving…';
+    try {
+      const fd = new FormData();
+      fd.append('cheque_no', chequeNo);
+      const scanFile = document.getElementById('security-cheque-scan').files[0];
+      if (scanFile) fd.append('scan', scanFile);
+      await api.cpd.updateSecurityCheque(btn.dataset.id, fd);
+      toast('Security cheque receipt recorded', 'success');
+      renderCPDDetail(param);
+    } catch (err) {
+      errEl.textContent = err.message || 'Failed to save';
+      errEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Record Cheque Receipt';
+    }
+  });
+
+  document.getElementById('btn-save-security-cheque-return')?.addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    const awb = document.getElementById('security-cheque-return-awb').value.trim();
+    if (!awb) return toast('Enter the airway bill number', 'error');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    try {
+      await api.cpd.updateSecurityChequeReturn(btn.dataset.id, { airway_bill: awb });
+      toast('Airway bill saved', 'success');
+      renderCPDDetail(param);
+    } catch (err) {
+      toast(err.message || 'Failed to save', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-truck"></i> Save';
+    }
+  });
+
   // Upload Deposit Slip — closes off an approved return
   document.getElementById('upload-deposit-slip-btn')?.addEventListener('click', () => {
     const returnId = document.getElementById('upload-deposit-slip-btn').dataset.returnId;
@@ -1833,6 +2243,8 @@ export async function renderCPDDetail(param) {
     });
   }
 
+  document.getElementById('cpd-print-receipt-btn')?.addEventListener('click', () => handleCPDPrintReceipt(id, r));
+
   function handleCPDAction(e) {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
@@ -1846,7 +2258,133 @@ export async function renderCPDDetail(param) {
     if (action === 'print-awb')     cpdPrintAWB(id);
     if (action === 'dispatch')      cpdMarkDispatched(id, param);
     if (action === 'create-return') cpdOfficerCreateReturn(id);
+    if (action === 'branch-approve') cpdBranchApprove(id);
+    if (action === 'branch-reject')  cpdBranchReject(id);
   }
+}
+
+// Cashier "Print Receipt" — same receipt format/print mechanism as IDLController's
+// (idl.js's handlePrintReceipt), adapted for CPD's request/amount fields.
+async function handleCPDPrintReceipt(id, r) {
+  try {
+    // If a receipt already exists for this request, this is a reprint — fetch it
+    // instead of creating a new one, and mark the printout as a copy.
+    let rec, isReprint;
+    try {
+      rec = await api.cpd.getReceipt(id);
+      isReprint = true;
+    } catch {
+      rec = await api.cpd.createReceipt(id);
+      isReprint = false;
+    }
+
+    // Compute amounts: total = fees + 5% VAT; base fee = total / 1.05
+    const total    = parseFloat(r.total_amount ?? 0);
+    const baseFee  = Math.round((total / 1.05) * 100) / 100;
+    const vatAmt   = Math.round((total - baseFee) * 100) / 100;
+    const dateStr  = new Date().toISOString().split('T')[0];
+    const custName = `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim();
+
+    const receiptHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Receipt ${rec.receipt_no}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Arial, sans-serif; font-size: 13px; color: #000;
+           padding: 40px; max-width: 700px; margin: auto; }
+    h1 { text-align: center; font-size: 22px; font-weight: bold;
+         text-decoration: underline; margin-bottom: 24px; letter-spacing: 2px; }
+    .meta { margin-bottom: 16px; line-height: 1.8; }
+    .vat-reg { text-align: center; font-weight: bold; margin-bottom: 18px; }
+    .customer { margin-bottom: 24px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    thead tr { background: #ddd; }
+    th, td { padding: 8px 12px; text-align: left; }
+    th:last-child, td:last-child { text-align: right; }
+    td:last-child { min-width: 110px; }
+    .amount-words { margin-bottom: 60px; }
+    .signature { text-align: center; padding-top: 8px;
+                 border-top: 1px dotted #333; width: 60%; margin: 0 auto; }
+    .sig-label { margin-top: 6px; font-weight: bold; letter-spacing: 1px; }
+    @media print { body { padding: 20px; } }
+  </style>
+</head>
+<body>
+  <h1>RECEIPT${isReprint ? ' <span style="font-size:14px;letter-spacing:1px">(COPY)</span>' : ''}</h1>
+  <div class="meta">
+    <div>Date: ${dateStr}</div>
+    <div>Receipt #: ${rec.receipt_no}</div>
+    <div>Request #: ${r.request_id}</div>
+  </div>
+  <div class="vat-reg">VAT REGISTRATION NUMBER : 100233632700003</div>
+  <div class="customer">Customer Name: ${custName}</div>
+  <table>
+    <thead>
+      <tr><th>Items</th><th>Amount (in AED)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Fees</td><td>${baseFee.toFixed(2)}</td></tr>
+      <tr><td>VAT (5%) against Fees</td><td>${vatAmt.toFixed(2)}</td></tr>
+      <tr><td><strong>Total (AED)</strong></td><td><strong>${total.toFixed(2)}</strong></td></tr>
+    </tbody>
+  </table>
+  <div class="amount-words">
+    Amount in words : &nbsp;&nbsp; ${cpdAmountToWords(total).toUpperCase()}
+  </div>
+  <div class="signature">
+    <div>.....................................................................</div>
+    <div class="sig-label">CASHIER</div>
+  </div>
+</body>
+</html>`;
+
+    const win = window.open('', '_blank', 'width=750,height=600');
+    win.document.write(receiptHtml);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 500);
+
+  } catch (err) {
+    toast('Receipt error: ' + err.message, 'error');
+  }
+}
+
+// Same word-conversion idea as idl.js's amountToWords, extended with thousand/
+// million groups — CPD guarantee amounts routinely run into the tens of
+// thousands, unlike IDL's small flat fees (that version only covers up to 999.99).
+function cpdAmountToWords(amount) {
+  const ones = ['','ONE','TWO','THREE','FOUR','FIVE','SIX','SEVEN','EIGHT','NINE',
+                 'TEN','ELEVEN','TWELVE','THIRTEEN','FOURTEEN','FIFTEEN',
+                 'SIXTEEN','SEVENTEEN','EIGHTEEN','NINETEEN'];
+  const tens = ['','','TWENTY','THIRTY','FORTY','FIFTY','SIXTY','SEVENTY','EIGHTY','NINETY'];
+
+  function twoDigits(n) {
+    if (n < 20) return ones[n];
+    return tens[Math.floor(n / 10)] + (n % 10 ? '-' + ones[n % 10] : '');
+  }
+  function threeDigits(n) {
+    if (n >= 100) return ones[Math.floor(n / 100)] + ' HUNDRED' + (n % 100 ? ' ' + twoDigits(n % 100) : '');
+    return twoDigits(n);
+  }
+  function wholeNumber(n) {
+    if (n === 0) return 'ZERO';
+    const millions  = Math.floor(n / 1000000);
+    const thousands = Math.floor((n % 1000000) / 1000);
+    const rest      = n % 1000;
+    let out = '';
+    if (millions)  out += threeDigits(millions) + ' MILLION ';
+    if (thousands) out += threeDigits(thousands) + ' THOUSAND ';
+    if (rest || !out) out += threeDigits(rest);
+    return out.trim();
+  }
+
+  const intPart  = Math.floor(amount);
+  const fracPart = Math.round((amount - intPart) * 100);
+  let   words    = wholeNumber(intPart);
+  if (fracPart > 0) words += ' POINT ' + twoDigits(fracPart);
+  return words || 'ZERO';
 }
 
 async function cpdReject(id) {
@@ -1882,10 +2420,49 @@ async function cpdReject(id) {
 
 async function cpdApprove(id) {
   confirm('Approve this CPD request?', async () => {
-    await api.cpd.approve(id);
-    toast('Request approved', 'success');
+    const res = await api.cpd.approve(id);
+    toast(res.message || 'Request approved', 'success');
     renderCPDDetail(id);
   }, false);
+}
+
+async function cpdBranchApprove(id) {
+  confirm('Approve this Special CPD request and forward it to the Cashier?', async () => {
+    await api.cpd.branchApprove(id);
+    toast('Request approved and forwarded to the Cashier', 'success');
+    renderCPDDetail(id);
+  }, false);
+}
+
+async function cpdBranchReject(id) {
+  openModal({
+    title: 'Send Back to CS',
+    body: `
+      <div class="field">
+        <label>Comment <span style="color:var(--accent)">*</span></label>
+        <textarea id="branch-reject-comment" rows="5"
+          placeholder="Describe what needs to be corrected before resubmitting for branch approval…"
+          style="width:100%;resize:vertical"></textarea>
+      </div>`,
+    footer: `<button class="btn btn-ghost" onclick="closeModalGlobal()">
+               <i class="fa-solid fa-arrow-left"></i> Back
+             </button>
+             <button class="btn btn-warning" id="confirm-branch-reject">
+               <i class="fa-solid fa-rotate-left"></i> Send Back to CS
+             </button>`,
+  });
+  document.getElementById('confirm-branch-reject').onclick = async () => {
+    const comment = document.getElementById('branch-reject-comment').value.trim();
+    if (!comment) return toast('Please enter a comment', 'error');
+    try {
+      await api.cpd.branchReject(id, { comment });
+      closeModal();
+      toast('Request sent back to CS', 'warning');
+      renderCPDDetail(id);
+    } catch (e) {
+      toast(e.message || 'Failed to update request', 'error');
+    }
+  };
 }
 
 async function cpdIssueCarnet(id) {
@@ -2065,23 +2642,36 @@ async function cpdIssueCarnet(id) {
 
 function cpdCancel(id) {
   openModal({
-    title: 'Cancel Request',
+    title: 'Request Cancellation',
     body: `<div class="field"><label>Reason *</label>
-      <textarea id="cancel-reason" rows="3" style="width:100%;resize:vertical"></textarea></div>`,
+      <textarea id="cancel-reason" rows="3" style="width:100%;resize:vertical"></textarea></div>
+      <div class="field" style="margin-top:12px">
+        <label>Supporting Document <span style="color:var(--text-muted)">(optional — JPG, PNG or PDF)</span></label>
+        <input type="file" id="cancel-doc" accept=".jpg,.jpeg,.png,.pdf" />
+      </div>
+      <p style="font-size:.82rem;color:var(--text-muted);margin-top:8px">This submits a cancellation request for cpd_finance to review and approve.</p>`,
     footer: `<button class="btn btn-ghost" onclick="closeModalGlobal()">
                <i class="fa-solid fa-arrow-left"></i> Back
              </button>
              <button class="btn btn-danger" id="confirm-cancel">
-               <i class="fa-solid fa-ban"></i> Cancel Request
+               <i class="fa-solid fa-ban"></i> Submit Request
              </button>`,
   });
   document.getElementById('confirm-cancel').onclick = async () => {
     const reason = document.getElementById('cancel-reason').value.trim();
     if (!reason) return toast('Enter a reason', 'error');
-    await api.cpd.cancel(id, { reason });
-    closeModal();
-    toast('Request cancelled', 'info');
-    renderCPDDetail(id);
+    try {
+      const fd = new FormData();
+      fd.append('reason', reason);
+      const doc = document.getElementById('cancel-doc').files[0];
+      if (doc) fd.append('document', doc);
+      await api.cpd.cancel(id, fd);
+      closeModal();
+      toast('Cancellation request submitted for approval', 'info');
+      renderCPDDetail(id);
+    } catch (e) {
+      toast(e.message || 'Failed to submit cancellation request', 'error');
+    }
   };
 }
 
@@ -2660,11 +3250,12 @@ export function renderCPDCarnets() {
 }
 
 function buildCPDActionBtns(r, returnId = null) {
-  const btns      = [];
-  const s         = String(r.request_status);
-  const isCashier = currentUser?.role_name === 'idl_cpd_cashier';
-  const isFinance = currentUser?.role_name === 'cpd_finance';
-  const isPending = ['1','2','NEW','Processing'].includes(s);
+  const btns            = [];
+  const s               = String(r.request_status);
+  const isCashier       = currentUser?.role_name === 'idl_cpd_cashier';
+  const isFinance       = currentUser?.role_name === 'cpd_finance';
+  const isBranchManager = currentUser?.role_name === 'cpd_branch';
+  const isPending       = ['1','2','NEW','Processing'].includes(s);
 
   // Return request view: only Approve button — disabled until the officer ticks the
   // "documents received" acknowledgment checkbox rendered alongside the return details.
@@ -2678,6 +3269,18 @@ function buildCPDActionBtns(r, returnId = null) {
       <i class="fa-solid fa-check"></i> Accept</button>`);
     btns.push(`<button class="btn btn-danger btn-sm" data-action="cancel">
       <i class="fa-solid fa-ban"></i> Reject</button>`);
+    return btns.join('');
+  }
+
+  // Special-category walk-in awaiting Branch Manager approval (CS → Branch Manager →
+  // Cashier → CS) — a distinct queue/action set from the normal CS approve/reject flow.
+  if (isBranchManager) {
+    if (r.current_queue_position === 'CPD_Branch_Manager') {
+      btns.push(`<button class="btn btn-success btn-sm" data-action="branch-approve">
+        <i class="fa-solid fa-check"></i> Approve</button>`);
+      btns.push(`<button class="btn btn-warning btn-sm" data-action="branch-reject">
+        <i class="fa-solid fa-rotate-left"></i> Send Back to CS</button>`);
+    }
     return btns.join('');
   }
 
@@ -2964,179 +3567,7 @@ export async function renderCPDRenew() {
     <div id="cpd-renew-form-wrap" style="display:none">
       <form id="cpd-renew-form" novalidate>
         <input type="hidden" name="parent_request_id" />
-        <input type="hidden" name="user_id" />
-
-        <div class="section-card">
-          <div class="section-card-header">Personal Information</div>
-          <div class="section-card-body">
-            <div class="form-grid">
-              <div class="field">
-                <label>Salutation</label>
-                <select name="title">
-                  <option value="">Select</option>
-                  <option value="Mr">Mr</option><option value="Mrs">Mrs</option>
-                  <option value="Ms">Ms</option><option value="Dr">Dr</option>
-                  <option value="Sheikh">Sheikh</option><option value="His Excellency">His Excellency</option>
-                </select>
-              </div>
-              <div class="field"><label>First Name *</label><input name="first_name" required placeholder="First name" /></div>
-              <div class="field"><label>Last Name *</label><input name="last_name" required placeholder="Last name" /></div>
-              <div class="field"><label>Mobile No *</label><input name="mobile_no" placeholder="+971 50 xxx xxxx" /></div>
-              <div class="field">
-                <label>Nationality</label>
-                <select name="nationality">
-                  <option value="">Select nationality</option>
-                  ${nationalities.map(n=>`<option value="${n.nationality_id}">${n.nationality}</option>`).join('')}
-                </select>
-              </div>
-              <div class="field"><label>Email</label><input name="email" type="email" placeholder="email@example.com" /></div>
-              <div class="field"><label>Passport No</label><input name="passport_no" placeholder="Passport number" /></div>
-              <div class="field"><label>PO Box</label><input name="po_box" placeholder="PO Box" /></div>
-              <div class="field field-full"><label>Address</label><input name="address" placeholder="Street, area, emirate" /></div>
-              <div class="field"><label>City</label><input name="city" placeholder="City" /></div>
-              <div class="field"><label>Extra Driver 1 Name</label><input name="extra_owner1_name" placeholder="Full name" /></div>
-              <div class="field"><label>Extra Driver 2 Name</label><input name="extra_owner2_name" placeholder="Full name" /></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-card-header">Vehicle Information</div>
-          <div class="section-card-body">
-            <div class="form-grid">
-              <div class="field"><label>Traffic File No</label><input name="mulkiya_no" placeholder="Traffic file / Mulkiya number" /></div>
-              <div class="field"><label>Registration No *</label><input name="registration_no" required placeholder="e.g. Dubai A 12345" /></div>
-              <div class="field">
-                <label>Vehicle Make *</label>
-                <select name="vehicle_make" required>
-                  <option value="">Select make</option>
-                  ${vehicleTypes.map(v=>`<option value="${v.vehicle_type}">${v.vehicle_type}</option>`).join('')}
-                </select>
-              </div>
-              <div class="field"><label>Vehicle Model *</label><input name="vehicle_model" required placeholder="e.g. Land Cruiser" /></div>
-              <div class="field"><label>Vehicle Value (AED)</label><input name="vehicle_value" type="number" placeholder="80000" /></div>
-              <div class="field">
-                <label>Vehicle Registered In</label>
-                <select name="vehicle_registered_in">
-                  <option value="">Select emirate</option>
-                  ${UAE_STATES.map(s=>`<option value="${s}">${s}</option>`).join('')}
-                </select>
-              </div>
-              <div class="field">
-                <label>Body Type</label>
-                <select name="body_type">
-                  <option value="">Select type</option>
-                  ${BODY_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('')}
-                </select>
-              </div>
-              <div class="field">
-                <label>Year of Manufacture *</label>
-                <select name="manuf_year" required>
-                  <option value="">Select year</option>${yearOpts}
-                </select>
-              </div>
-              <div class="field">
-                <label>Color as per Mulkiya</label>
-                <select name="color">
-                  <option value="">Select color</option>
-                  ${COLORS.map(c=>`<option value="${c}">${c}</option>`).join('')}
-                </select>
-              </div>
-              <div class="field"><label>Net Weight (Empty Load)</label><input name="net_weight" placeholder="kg" /></div>
-              <div class="field"><label>Chassis No *</label><input name="chassis_no" required placeholder="VIN / Chassis number" /></div>
-              <div class="field"><label>Engine No</label><input name="engine_no" placeholder="Engine number" /></div>
-              <div class="field"><label>Horse Power</label><input name="horse_power" placeholder="e.g. 200" /></div>
-              <div class="field"><label>No of Cylinders</label><input name="no_of_cylinders" placeholder="e.g. 4" /></div>
-              <div class="field"><label>Upholstery</label><input name="upholstery" placeholder="e.g. Leather" /></div>
-              <div class="field"><label>No of Seats</label><input name="no_of_seats" type="number" placeholder="5" /></div>
-              <div class="field">
-                <label>Radio</label>
-                <select name="radio"><option value="">Select</option><option value="Yes">Yes</option><option value="No">No</option></select>
-              </div>
-              <div class="field">
-                <label>Spare Tyre</label>
-                <select name="spare_tyre"><option value="">Select</option><option value="Yes">Yes</option><option value="No">No</option></select>
-              </div>
-              <div class="field field-full"><label>Additional Remarks</label><textarea name="additional_remarks" rows="2" style="width:100%;resize:vertical" placeholder="Any additional remarks…"></textarea></div>
-              <div class="field field-full"><label>Other Particulars / Extra Items (1)</label><input name="others1" placeholder="e.g. Roof rack…" /></div>
-              <div class="field field-full"><label>Other Particulars / Extra Items (2)</label><input name="others2" placeholder="e.g. Winch, spare parts…" /></div>
-              <div class="field"><label>Reference 1 (UAE) Name / Contact</label><input name="uae_refree1" placeholder="Full name and phone number" /></div>
-              <div class="field"><label>Reference 2 (UAE) Name / Contact</label><input name="uae_refree2" placeholder="Full name and phone number" /></div>
-              <div class="field"><label>Reference 1 (Destination) Name / Contact</label><input name="destination_refree1" placeholder="Full name and phone number" /></div>
-              <div class="field"><label>Reference 2 (Destination) Name / Contact</label><input name="destination_refree2" placeholder="Full name and phone number" /></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-card-header">Travel Countries</div>
-          <div class="section-card-body">
-            <div class="field">
-              <label>Destination Countries *</label>
-              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
-                ${countries.map(c=>`
-                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 10px;
-                    background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;">
-                    <input type="checkbox" name="countries" value="${c.nationality_id}" style="accent-color:var(--accent)" />
-                    ${c.nationality}
-                  </label>`).join('')}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-card-header">Request &amp; Payment</div>
-          <div class="section-card-body">
-            <div class="form-grid">
-              <div class="field">
-                <label>Request Category *</label>
-                <select name="request_category" required>
-                  <option value="NORMAL">Normal</option><option value="SPECIAL">Special</option>
-                  <option value="MOI">MOI</option><option value="ADP">ADP</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Payment Method *</label>
-                <select name="method_of_payment" required>
-                  <option value="CASH">Cash</option><option value="CHEQUE">Cheque</option>
-                  <option value="BANK_GUARANTEE">Bank Guarantee</option><option value="CREDIT_CARD">Credit Card</option>
-                  <option value="CASH_CHEQUE">Cash + Cheque</option><option value="CASH_BANKGUARANTEE">Cash + Bank Guarantee</option>
-                </select>
-              </div>
-              <div class="field"><label>Guarantee Amount (AED)</label><input name="guarantee_amount" type="number" step="0.01" placeholder="0.00" /></div>
-              <div class="field"><label>Booking Fee (AED)</label><input name="booking_fee" type="number" step="0.01" placeholder="0.00" /></div>
-              <div class="field">
-                <label>Processing Fee (AED)</label>
-                <input name="processing_fee" type="number" step="0.01" placeholder="0.00" readonly style="background:var(--bg-elevated);cursor:default" />
-                <div style="font-size:.75rem;color:var(--text-muted);margin-top:3px">2.5% of the guarantee amount, except Portugal</div>
-              </div>
-              <div class="field">
-                <label>Extra Fees (AED)</label>
-                <input name="extra_fees" type="number" step="0.01" placeholder="0.00" readonly style="background:var(--bg-elevated);cursor:default" />
-                <div style="font-size:.75rem;color:var(--text-muted);margin-top:3px">AED 50 per extra driver added automatically</div>
-              </div>
-              <div class="field"><label>VAT Amount (AED)</label><input name="vat_amount" type="number" step="0.01" placeholder="0.00" /></div>
-              <div class="field"><label>Total Amount (AED)</label><input name="total_amount" type="number" step="0.01" placeholder="0.00" /></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-card-header">Documents</div>
-          <div class="section-card-body">
-            <div class="doc-upload-grid">
-              ${docZone('traffic_front','Traffic File Front Image')}
-              ${docZone('traffic_back','Traffic File Back Image')}
-              ${docZone('eid_front','Emirates ID Front')}
-              ${docZone('eid_back','Emirates ID Back')}
-              ${docZone('passport_photo','Passport Size Photo')}
-              ${docZone('visa_page','Visa Page of Owner')}
-              ${docZone('trade_license','Trade License')}
-              ${docZone('noc','NOC from Company Owner')}
-            </div>
-          </div>
-        </div>
+      ${cpdFormSectionsHtml({ nationalities, vehicleTypes, countries, docZone, feeTableId: 'cpd-renew-fee-table', fromRenew: true })}
 
         <div id="renew-form-error" class="form-error hidden"></div>
         <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:16px">
@@ -3198,8 +3629,13 @@ export async function renderCPDRenew() {
       set('parent_request_id',  row.auto_id);
       set('user_id',            row.belonging_user_id);
       set('title',              row.title);
-      set('first_name',         row.first_name);
-      set('last_name',          row.last_name);
+      set('full_name',          [row.first_name, row.last_name].filter(Boolean).join(' '));
+      set('emirates_id',        row.emirates_id);
+      set('sex',                row.sex);
+      set('usage_type',         row.usage_type);
+      set('company_name',       row.company_name);
+      set('license_no',         row.license_no);
+      set('license_expiry',     row.license_expiry);
       set('mobile_no',          row.mobile_no);
       set('email',              row.email);
       set('nationality',        row.nationality_id ?? row.nationality);
@@ -3208,7 +3644,11 @@ export async function renderCPDRenew() {
       set('address',            row.uae_address);
       set('city',               row.city);
       set('extra_owner1_name',  row.extra_owner1_name);
+      set('extra_owner1_eid',      row.extra_owner1_eid);
+      set('extra_owner1_passport', row.extra_owner1_passport);
       set('extra_owner2_name',  row.extra_owner2_name);
+      set('extra_owner2_eid',      row.extra_owner2_eid);
+      set('extra_owner2_passport', row.extra_owner2_passport);
       set('mulkiya_no',         row.mulkiya_no);
       set('registration_no',    row.registration_no);
       set('vehicle_make',       row.vehicle_make);
@@ -3236,10 +3676,13 @@ export async function renderCPDRenew() {
       set('destination_refree2', row.destination_refree2);
       set('request_category',   row.request_category);
       set('method_of_payment',  row.method_of_payment);
-      set('guarantee_amount',   row.guarantee_amount);
-      set('booking_fee',        row.booking_fee);
-      set('vat_amount',         row.vat_amount);
-      set('total_amount',       row.total_amount);
+      // Display the source request's own saved fee breakdown (not a fresh recalculation —
+      // rules may have changed since it was created, or an officer may have manually
+      // adjusted it) via the same read-only table used for a live recalc.
+      setRenewFees(
+        +row.guarantee_amount || 0, +row.booking_fee || 0, +row.extra_fees || 0,
+        +row.vat_amount || 0, +row.total_amount || 0, +row.processing_fee || 0,
+      );
 
       const countryIds = new Set((row.countries ?? []).map(c => String(c.country_id)));
       document.querySelectorAll('#cpd-renew-form [name="countries"]').forEach(cb => {
@@ -3252,6 +3695,8 @@ export async function renderCPDRenew() {
         'cpd_mulkiya_back':      'traffic_back',
         'cpd_emirates_id_front': 'eid_front',
         'cpd_emirates_id_back':  'eid_back',
+        'cpd_dl_front':          'dl_front',
+        'cpd_dl_back':           'dl_back',
         'cpd_passport':          'passport_photo',
         'cpd_owner_visa':        'visa_page',
         'cpd_trade_license':     'trade_license',
@@ -3283,6 +3728,7 @@ export async function renderCPDRenew() {
       }
 
       lastFoundRow = row;
+      syncRenewUsage();
       applyFoundRow(row);
     } catch (e) {
       btn.disabled = false;
@@ -3364,10 +3810,8 @@ export async function renderCPDRenew() {
       if (!ga[gc]||amt>ga[gc]) ga[gc]=amt;
     });
     const gFee = Math.max(0,...Object.values(ga));
-    // Portugal's cash+cheque guarantee doesn't carry the 2.5% processing fee the way
-    // every other destination's does — matches the same exception in public.js.
-    const winningGroupCode = Object.entries(ga).find(([, amt]) => amt === gFee)?.[0];
-    const processingFee = winningGroupCode === 'PORTUGAL' ? 0 : Math.round(gFee * 0.025 * 100) / 100;
+    // Processing fee — 2.5% of the guarantee fee for every destination, Portugal included.
+    const processingFee = Math.round(gFee * 0.025 * 100) / 100;
     const bFee = calcBookingFee(ids);
     const vat  = Math.round((bFee+extra)*.05*100)/100;
     setRenewFees(gFee, bFee, extra, vat, gFee+bFee+extra+processingFee+vat, processingFee);
@@ -3376,11 +3820,22 @@ export async function renderCPDRenew() {
   function setRenewFees(guarantee,booking,extra,vat,total,processingFee = 0) {
     const form = document.getElementById('cpd-renew-form');
     if (!form) return;
-    const set = (n,v) => { const el=form.querySelector(`[name="${n}"]`); if(el) el.value=v>0?v.toFixed(2):''; };
+    const set = (n,v) => { const el=form.querySelector(`[name="${n}"]`); if(el) el.value=v>0?v.toFixed(2):'0.00'; };
     set('guarantee_amount',guarantee); set('booking_fee',booking);
     set('processing_fee',processingFee);
     set('extra_fees',extra);           set('vat_amount',vat);
     set('total_amount',total);
+
+    const table = document.getElementById('cpd-renew-fee-table');
+    if (table) {
+      table.innerHTML =
+        cpdFeeRow('Guarantee Fee', guarantee) +
+        cpdFeeRow('Processing Fee (2.5% of Guarantee Fee)', processingFee) +
+        cpdFeeRow('Booking Fee', booking) +
+        cpdFeeRow('Extra Driver Fee', extra) +
+        cpdFeeRow('VAT (5%)', vat) +
+        cpdFeeRow('Total Payable', total, true, true);
+    }
   }
 
   document.querySelectorAll('#cpd-renew-form input[name="countries"]').forEach(cb=>cb.addEventListener('change',recalcRenew));
@@ -3389,6 +3844,18 @@ export async function renderCPDRenew() {
   document.querySelector('#cpd-renew-form [name="nationality"]')?.addEventListener('change',recalcRenew);
   document.querySelector('#cpd-renew-form [name="extra_owner1_name"]')?.addEventListener('input',recalcRenew);
   document.querySelector('#cpd-renew-form [name="extra_owner2_name"]')?.addEventListener('input',recalcRenew);
+
+  const syncRenewUsage = () => {
+    const isCompany    = document.getElementById('cpd-new-usage-type')?.value === 'COMPANY';
+    const companyRow   = document.getElementById('cpd-new-company-name-row');
+    const companyInput = companyRow?.querySelector('[name="company_name"]');
+    const corpDocs     = document.getElementById('cpd-new-corporate-docs');
+    if (companyRow)   companyRow.style.display = isCompany ? '' : 'none';
+    if (corpDocs)     corpDocs.style.display   = isCompany ? 'contents' : 'none';
+    if (companyInput) companyInput.required    = isCompany;
+  };
+  document.getElementById('cpd-new-usage-type')?.addEventListener('change', syncRenewUsage);
+  syncRenewUsage();
 
   // ── Doc upload zones ───────────────────────────────────────────────────────
   document.querySelectorAll('.doc-upload-zone[id^="renew-cpd-zone-"]').forEach(zone => {
@@ -3425,8 +3892,13 @@ export async function renderCPDRenew() {
     const fd   = new FormData(e.target);
     const body = Object.fromEntries(fd.entries());
     body.countries = fd.getAll('countries').map(Number);
+    if (body.full_name) {
+      const nameParts = body.full_name.trim().split(/\s+/).filter(Boolean);
+      body.first_name = nameParts.slice(0, 2).join(' ');
+      body.last_name  = nameParts.slice(2).join(' ');
+    }
 
-    const DOC_KEYS = ['traffic_front','traffic_back','eid_front','eid_back',
+    const DOC_KEYS = ['eid_front','eid_back','dl_front','dl_back','traffic_front','traffic_back',
                       'passport_photo','visa_page','trade_license','noc'];
 
     // Include the selected Copy/Renew action so the backend can branch logic

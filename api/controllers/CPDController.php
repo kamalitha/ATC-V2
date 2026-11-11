@@ -16,12 +16,16 @@ class CPDController
     {
         $total    = (int)$this->db->scalar('SELECT COUNT(*) FROM mn_cpd_requests');
         $pending  = (int)$this->db->scalar("SELECT COUNT(*) FROM mn_cpd_requests WHERE current_queue_position='CPD_Officer'");
-        $confirmed= (int)$this->db->scalar("SELECT COUNT(*) FROM mn_cpd_requests WHERE request_status='Confirmed'");
-        $issued   = (int)$this->db->scalar("SELECT COUNT(*) FROM mn_cpd_requests WHERE request_status='Issued'");
-        $returned = (int)$this->db->scalar("SELECT COUNT(*) FROM mn_cpd_requests WHERE request_status='Returned'");
-        $cancelled= (int)$this->db->scalar("SELECT COUNT(*) FROM mn_cpd_requests WHERE request_status='Cancelled'");
+        // request_status is numeric (mn_cpd_statuses.carnet_status_id: 2=Confirmed,
+        // 3=Issued, 4=Returned, 6=Cancelled) — these used to compare against string
+        // literals, which MySQL coerces to 0, so every count/revenue figure below
+        // always matched nothing (or only rows corrupted by that same bug elsewhere).
+        $confirmed= (int)$this->db->scalar("SELECT COUNT(*) FROM mn_cpd_requests WHERE request_status=2");
+        $issued   = (int)$this->db->scalar("SELECT COUNT(*) FROM mn_cpd_requests WHERE request_status=3");
+        $returned = (int)$this->db->scalar("SELECT COUNT(*) FROM mn_cpd_requests WHERE request_status=4");
+        $cancelled= (int)$this->db->scalar("SELECT COUNT(*) FROM mn_cpd_requests WHERE request_status=6");
         $revenue  = (float)$this->db->scalar(
-            "SELECT COALESCE(SUM(total_amount),0) FROM mn_cpd_requests WHERE request_status IN ('Confirmed','Issued','Returned')",
+            "SELECT COALESCE(SUM(total_amount),0) FROM mn_cpd_requests WHERE request_status IN (2,3,4)",
         );
         $this_month = (int)$this->db->scalar(
             "SELECT COUNT(*) FROM mn_cpd_requests
@@ -32,10 +36,10 @@ class CPDController
         );
 
         $online_pending = (int)$this->db->scalar(
-            "SELECT COUNT(*) FROM mn_cpd_requests WHERE booking_channel='ONLINE' AND request_status IN ('NEW','Processing',1,2)",
+            "SELECT COUNT(*) FROM mn_cpd_requests WHERE booking_channel='ONLINE' AND request_status IN (1,2)",
         );
         $walkin_pending = (int)$this->db->scalar(
-            "SELECT COUNT(*) FROM mn_cpd_requests WHERE booking_channel='WALKIN' AND request_status IN ('NEW','Processing',1,2)",
+            "SELECT COUNT(*) FROM mn_cpd_requests WHERE booking_channel='WALKIN' AND request_status IN (1,2)",
         );
 
         $cashier_pending = (int)$this->db->scalar(
@@ -43,6 +47,9 @@ class CPDController
         );
         $idl_cashier_pending = (int)$this->db->scalar(
             "SELECT COUNT(*) FROM mn_idl_requests WHERE current_queue_position='IDL_CPD_Cashier' AND is_active=1",
+        );
+        $branch_pending = (int)$this->db->scalar(
+            "SELECT COUNT(*) FROM mn_cpd_requests WHERE current_queue_position='CPD_Branch_Manager'",
         );
         $cancellations_pending = (int)$this->db->scalar(
             "SELECT COUNT(*) FROM mn_cpd_cancelled_requests WHERE cancelled_approved=0",
@@ -54,7 +61,7 @@ class CPDController
         Response::success(compact(
             'total','pending','confirmed','issued','returned','cancelled',
             'revenue','this_month','stock_available','online_pending','walkin_pending',
-            'cashier_pending','idl_cashier_pending','cancellations_pending','returns_pending',
+            'cashier_pending','idl_cashier_pending','branch_pending','cancellations_pending','returns_pending',
         ));
     }
 
@@ -138,8 +145,9 @@ class CPDController
                     COALESCE(cru.home_country_address, cu.home_country_address) AS home_country_address,
                     COALESCE(cru.uae_address,          cu.uae_address)          AS uae_address,
                     COALESCE(cru.po_box,               cu.po_box)               AS po_box,
+                    COALESCE(cru.company_name,         cu.company_name)         AS company_name,
                     n.nationality,
-                    (u.uaepass_uuid IS NOT NULL) AS applicant_via_uae_pass
+                    r.identity_via_uae_pass AS applicant_via_uae_pass
              FROM mn_cpd_requests r
              LEFT JOIN mn_cpd_statuses     s   ON s.carnet_status_id = r.request_status
              LEFT JOIN mn_users            u   ON u.user_id          = r.belonging_user_id
@@ -214,7 +222,8 @@ class CPDController
         }
 
         $req = $this->db->queryOne(
-            "SELECT auto_id, belonging_user_id, paid_status, order_ref_no
+            "SELECT auto_id, belonging_user_id, paid_status, order_ref_no,
+                    security_cheque_required, security_cheque_delivery_method
              FROM mn_cpd_requests
              WHERE auto_id = ? AND telr_cart_id = ?",
             [(int)$autoId, $cartId],
@@ -292,16 +301,219 @@ class CPDController
 
             $this->sendCpdPaymentConfirmedEmail((int)$autoId);
 
+            // Payment is the right trigger point for the actual Aramex pickup — not
+            // creation time, so an abandoned/unpaid draft never generates a real
+            // courier request. Non-fatal on failure: the citizen has already paid, so
+            // an officer can arrange collection manually rather than the payment
+            // confirmation itself failing over a courier booking issue.
+            $securityChequeAwb = null;
+            if ((int)($req['security_cheque_required'] ?? 0) === 1
+                && ($req['security_cheque_delivery_method'] ?? null) === 'ARAMEX') {
+                $securityChequeAwb = $this->createSecurityChequeCollectionShipment((int)$autoId);
+            }
+
             Response::success([
-                'paid'     => true,
-                'auto_id'  => (int)$autoId,
-                'telr_ref' => $telrRef,
+                'paid'                        => true,
+                'module'                      => 'CPD',
+                'auto_id'                     => (int)$autoId,
+                'telr_ref'                    => $telrRef,
+                'security_cheque_airway_bill' => $securityChequeAwb,
             ], 'CPD payment verified and recorded');
         } else {
             $statusText = $ipgOutput['order']['status']['text'] ?? 'Unknown';
             $statusCode = $ipgOutput['order']['status']['code'] ?? 'null';
             Response::error("Payment not confirmed — status code: {$statusCode}, text: {$statusText}", 402);
         }
+    }
+
+    /**
+     * Creates an Aramex shipment to collect the citizen's security cheque from their
+     * own address and deliver it to the EMSO office — the reverse direction of
+     * printAwb() below (which ships EMSO -> citizen for an issued carnet). Called
+     * once, right after Telr payment is confirmed (see telrVerify() above), only
+     * when the citizen chose Aramex collection for a destination that requires a
+     * security cheque. Saves the resulting AWB onto security_cheque_airway_bill —
+     * previously this field could only be filled in manually by the citizen typing
+     * in a reference number they had no way of actually having.
+     */
+    private function createSecurityChequeCollectionShipment(int $requestId): ?string
+    {
+        $req = $this->db->queryOne(
+            "SELECT r.auto_id, r.request_id,
+                    cu.first_name, cu.last_name, cu.uae_address, cu.city,
+                    u.email, u.mobile_no
+             FROM mn_cpd_requests r
+             LEFT JOIN mn_cpd_request_user cu ON cu.request_auto_id = r.auto_id
+             LEFT JOIN mn_users            u  ON u.user_id          = r.belonging_user_id
+             WHERE r.auto_id = ?",
+            [$requestId],
+        );
+        if (!$req) {
+            Logger::error("Security cheque Aramex pickup — request {$requestId} not found");
+            return null;
+        }
+
+        $fullName = trim(($req['first_name'] ?? '') . ' ' . ($req['last_name'] ?? ''));
+        $ref      = $req['request_id'] ?: "CPD-{$requestId}";
+
+        $data = [
+            "Shipments" => [[
+                "Reference1" => "SecurityCheque-{$ref}",
+                "Reference2" => null,
+                "Reference3" => null,
+                // Reversed from printAwb() — the citizen is the shipper here (this is
+                // a pickup FROM them), EMSO is the consignee receiving it. AccountNumber
+                // still goes on the Shipper regardless (confirmed via a real test call,
+                // 2026-10-23: Aramex rejects the shipment with "Shipment.Shipper.
+                // AccountNumber - Account Entity is empty" otherwise) — Aramex ties the
+                // paying-account validation to the Shipper field structurally, not to
+                // whichever party happens to be EMSO.
+                "Shipper" => [
+                    "Reference1"    => "SecurityCheque-{$ref}",
+                    "Reference2"    => null,
+                    "AccountNumber" => ARAMAX_ACCOUNT_NO,
+                    "PartyAddress"  => [
+                        "Line1" => $req['uae_address'] ?? '', "Line2" => "", "Line3" => "",
+                        "City" => $req['city'] ?? '', "StateOrProvinceCode" => "DXB", "PostCode" => "",
+                        "CountryCode" => "AE", "Longitude" => 0, "Latitude" => 0,
+                        "BuildingNumber" => null, "BuildingName" => null, "Floor" => null,
+                        "Apartment" => null, "POBox" => null, "Description" => null,
+                    ],
+                    "Contact" => [
+                        "Department" => null, "PersonName" => $fullName, "Title" => null,
+                        "CompanyName" => $fullName, "PhoneNumber1" => $req['mobile_no'] ?? '',
+                        "PhoneNumber1Ext" => "", "PhoneNumber2" => $req['mobile_no'] ?? '',
+                        "PhoneNumber2Ext" => "", "FaxNumber" => null, "CellPhone" => $req['mobile_no'] ?? '',
+                        "EmailAddress" => $req['email'] ?? '', "Type" => "",
+                    ],
+                ],
+                "Consignee" => [
+                    "Reference1"    => "EMSO",
+                    "Reference2"    => null,
+                    "AccountNumber" => null,
+                    "PartyAddress"  => [
+                        "Line1" => "Al Wuheida Street", "Line2" => "Al Mamzar – Po Box 5078 Dubai", "Line3" => "",
+                        "City" => "Dubai", "StateOrProvinceCode" => "", "PostCode" => "000000", "CountryCode" => "AE",
+                        "Longitude" => 0, "Latitude" => 0, "BuildingNumber" => null, "BuildingName" => null,
+                        "Floor" => null, "Apartment" => null, "POBox" => null, "Description" => null,
+                    ],
+                    "Contact" => [
+                        "Department" => null, "PersonName" => "EMSO", "Title" => null, "CompanyName" => "EMSO",
+                        "PhoneNumber1" => "+97142961122", "PhoneNumber1Ext" => "", "PhoneNumber2" => "+97142961122",
+                        "PhoneNumber2Ext" => "", "FaxNumber" => null, "CellPhone" => "+97142961122",
+                        "EmailAddress" => "", "Type" => "",
+                    ],
+                ],
+                "ThirdParty"             => null,
+                "ShippingDateTime"       => "/Date(" . (floor(microtime(true) * 1000)) . ")/",
+                "DueDate"                => "/Date(" . (floor(microtime(true) * 1000)) . ")/",
+                "Comments"               => "Security cheque collection for CPD request {$ref}",
+                "PickupLocation"         => null,
+                "OperationsInstructions" => null,
+                "AccountingInstrcutions" => null,
+                "Details" => [
+                    "Dimensions"           => ["Length" => 0, "Width" => 0, "Height" => 0, "Unit" => "CM"],
+                    "ActualWeight"         => ["Unit" => "KG", "Value" => 0.1],
+                    "ChargeableWeight"     => ["Unit" => "KG", "Value" => 0],
+                    "DescriptionOfGoods"   => "Security Cheque",
+                    "GoodsOriginCountry"   => "AE",
+                    "NumberOfPieces"       => 1,
+                    "ProductGroup"         => "DOM",
+                    "ProductType"          => "ONP",
+                    "PaymentType"          => "P",
+                    "PaymentOptions"       => "ACCT",
+                    "CustomsValueAmount"   => ["CurrencyCode" => "AED", "Value" => 10],
+                    "CashOnDeliveryAmount" => ["CurrencyCode" => "AED", "Value" => 0],
+                    "InsuranceAmount"      => ["CurrencyCode" => "AED", "Value" => 0],
+                    "CashAdditionalAmount" => ["CurrencyCode" => "AED", "Value" => 0],
+                    "CashAdditionalAmountDescription" => null,
+                    "CollectAmount"        => ["CurrencyCode" => "AED", "Value" => 0],
+                    "Services"             => "",
+                    "Items" => [[
+                        "PackageType" => "item", "Quantity" => 1, "Weight" => ["Unit" => "CM", "Value" => 0],
+                        "Comments" => "Security Cheque", "Reference" => $ref, "PiecesDimensions" => null,
+                        "CommodityCode" => null, "GoodsDescription" => null, "CountryOfOrigin" => null,
+                        "CustomsValue" => null, "ContainerNumber" => null,
+                    ]],
+                    "DeliveryInstructions"   => null,
+                    "AdditionalProperties"   => null,
+                    "ContainsDangerousGoods" => false,
+                ],
+                "Attachments"       => null,
+                "ForeignHAWB"       => null,
+                "TransportType "    => 0,
+                "PickupGUID"        => null,
+                "Number"            => null,
+                "ScheduledDelivery" => null,
+            ]],
+            "LabelInfo"  => ["ReportID" => 9729, "ReportType" => "URL"],
+            "ClientInfo" => [
+                "UserName" => ARAMAX_USERNAME, "Password" => ARAMAX_PASSWORD, "Version" => "v1",
+                "AccountNumber" => ARAMAX_ACCOUNT_NO, "AccountPin" => ARAMAX_ACCOUNT_PIN,
+                "AccountEntity" => "DXB", "AccountCountryCode" => "AE", "Source" => 24,
+                "PreferredLanguageCode" => null,
+            ],
+            "Transaction" => null,
+        ];
+
+        $ch = curl_init(ARAMAX_CREATE_SHIPMENT_URL);
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => json_encode($data),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+            CURLOPT_TIMEOUT        => 30,
+        ]);
+        $response  = curl_exec($ch);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($curlError) {
+            Logger::error("Security cheque Aramex pickup — cURL error for request {$requestId}: {$curlError}");
+            return null;
+        }
+
+        // Aramex returns XML here despite the /json/ URL path — confirmed via a real
+        // test call (2026-10-23). json_decode() on XML silently returns null, which
+        // would make every response look error-free (HasErrors never set) while also
+        // never actually extracting a real AWB — the same latent bug exists in
+        // printAwb() above. Notifications can appear at the top level or nested inside
+        // Shipments->ProcessedShipment (seen both ways in testing), so both are checked.
+        $xml = @simplexml_load_string($response);
+        if ($xml === false) {
+            Logger::error("Security cheque Aramex pickup — response was not valid XML for request {$requestId}");
+            return null;
+        }
+
+        $hasErrors = (string)$xml->HasErrors === 'true';
+        $messages  = [];
+        foreach (($xml->Notifications->Notification ?? []) as $n) {
+            $messages[] = (string)$n->Message;
+        }
+        foreach (($xml->Shipments->ProcessedShipment ?? []) as $shipment) {
+            foreach (($shipment->Notifications->Notification ?? []) as $n) {
+                $messages[] = (string)$n->Message;
+            }
+        }
+        if ($hasErrors || $messages) {
+            Logger::error("Security cheque Aramex pickup — Aramex error for request {$requestId}: " . implode('; ', $messages));
+            return null;
+        }
+
+        $airBillNo = (string)($xml->Shipments->ProcessedShipment->ID ?? '');
+        if ($airBillNo === '') {
+            Logger::error("Security cheque Aramex pickup — no AWB returned for request {$requestId}");
+            return null;
+        }
+
+        $this->db->execute(
+            'UPDATE mn_cpd_requests SET security_cheque_airway_bill = ? WHERE auto_id = ?',
+            [$airBillNo, $requestId],
+        );
+        Logger::info("Security cheque Aramex pickup created for CPD request {$requestId}: AWB={$airBillNo}");
+        return $airBillNo;
     }
 
     public function telrModuleCheck(array $params, array $body, array $query): void
@@ -569,6 +781,7 @@ class CPDController
                        'uae_refree2','uae_refree2_mobile','destination_refree2','destination_refree2_mobile')
             ->validate();
         $this->validateExtraDriversRequired($body);
+        $this->validateCompanyNameRequired($body);
 
         $userId = Auth::id();
 
@@ -579,6 +792,25 @@ class CPDController
                 [$eid],
             );
             if ($hold) Response::error('Your account has been placed on hold. Please contact ATC for assistance.', 403);
+        }
+
+        $paymentMethod = $body['payment_method'] ?? 'CREDIT_CARD';
+        if (!in_array($paymentMethod, ['CREDIT_CARD', 'PAY_AT_OFFICE'], true)) {
+            Response::error('Invalid payment method', 422);
+        }
+
+        // Credit-card requests get their queue position when Telr confirms payment (see
+        // telrVerify) — a Pay at Office request skips that gateway entirely, so it needs
+        // a queue position set right away or it would never appear in anyone's queue.
+        // CREATE_REQUEST_PUBLIC_USER already existed in mn_workflows_actions for exactly
+        // this case; it just had no caller until now.
+        $queuePosition = null;
+        if ($paymentMethod === 'PAY_AT_OFFICE') {
+            $wf = $this->db->queryOne(
+                "SELECT next_role FROM mn_workflows_actions
+                 WHERE section='CPD' AND action='CREATE_REQUEST_PUBLIC_USER' LIMIT 1",
+            );
+            $queuePosition = $wf['next_role'] ?? 'CPD_Officer';
         }
 
         // ── Renewal — verify ownership of the parent Carnet and that it hasn't
@@ -629,8 +861,9 @@ class CPDController
                   destination_refree2, destination_refree2_mobile,
                   delivery_option, delivery_address,
                   guarantee_amount, booking_fee, processing_fee, extra_fees, vat_amount, total_amount,
-                  method_of_payment, booking_channel, request_type, request_status, parent_request_id, requested_datetime)
-                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ONLINE','ONLINE',1,?,NOW())",
+                  method_of_payment, booking_channel, request_type, request_status, current_queue_position,
+                  parent_request_id, requested_datetime, identity_via_uae_pass, vehicle_registered_country)
+                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ONLINE','ONLINE',1,?,?,NOW(),?,?)",
                 [
                     $parentAutoId ? 'RENEW' : 'NORMAL',
                     $body['usage_type']           ?? 'PERSONAL',
@@ -678,8 +911,11 @@ class CPDController
                     $body['extra_fees']           ?? 0,
                     $body['vat_amount']           ?? 0,
                     $body['total_amount']         ?? 0,
-                    $body['payment_method']       ?? 'CASH',
+                    $paymentMethod,
+                    $queuePosition,
                     $parentAutoId ?: null,
+                    !empty($body['identity_via_uae_pass']) ? 1 : 0,
+                    $body['vehicle_registered_country'] ?? '',
                 ],
             );
             // Update request_id using the auto_id
@@ -696,8 +932,8 @@ class CPDController
                 "INSERT INTO mn_cpd_request_user
                  (user_id, request_auto_id, title, first_name, last_name,
                   nationality_id, city, uae_address, po_box,
-                  emirates_id, passport_no, dob, sex, license_no, license_expiry, registered_date)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURDATE())",
+                  emirates_id, passport_no, dob, sex, license_no, license_expiry, company_name, registered_date)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURDATE())",
                 [
                     $userId,
                     $id,
@@ -713,7 +949,8 @@ class CPDController
                     $body['dob']             ?? null,
                     $body['sex']             ?? null,
                     $body['license_no']      ?? '',
-                    $body['license_expiry']  ?: null,
+                    ($body['license_expiry'] ?? '') ?: null,
+                    ($body['usage_type'] ?? '') === 'COMPANY' ? ($body['company_name'] ?? '') : null,
                 ],
             );
 
@@ -724,6 +961,8 @@ class CPDController
                     [$id, (int)$cid],
                 );
             }
+
+            $this->saveSecurityChequeSelection($id, $body);
 
         } catch (\Throwable $e) {
             if ($id) {
@@ -736,6 +975,26 @@ class CPDController
 
         $this->logEvent('CREATE', $id);
         Response::created(['auto_id' => $id, 'request_id' => $requestId]);
+    }
+
+    /**
+     * Persists the security-cheque collection choice (Aramex/office drop-off) made at
+     * application time, when the selected destination requires one. A no-op today since
+     * no guarantee group has requires_security_cheque=1 yet (pending the country/amount
+     * list from ATC) — see the migration.sql entry for this feature.
+     */
+    private function saveSecurityChequeSelection(int $requestId, array $body): void
+    {
+        $method = $body['security_cheque_delivery_method'] ?? null;
+        if (!in_array($method, ['ARAMEX', 'OFFICE'], true)) return;
+
+        $this->db->execute(
+            'UPDATE mn_cpd_requests
+             SET security_cheque_required = 1, security_cheque_delivery_method = ?,
+                 security_cheque_airway_bill = ?
+             WHERE auto_id = ?',
+            [$method, $method === 'ARAMEX' ? ($body['security_cheque_airway_bill'] ?? null) : null, $requestId],
+        );
     }
 
     // ── Create ────────────────────────────────────────────────────────────────
@@ -795,6 +1054,7 @@ class CPDController
             ->numeric('vehicle_value')->numeric('guarantee_amount')->numeric('booking_fee')
             ->validate();
         $this->validateExtraDriversRequired($body);
+        $this->validateCompanyNameRequired($body);
 
         // user_id: from EID lookup hidden field, or fall back to logged-in officer
         $userId = !empty($body['user_id']) ? (int)$body['user_id'] : Auth::id();
@@ -808,10 +1068,14 @@ class CPDController
             if ($hold) Response::error('This customer has an active hold. Lift the hold before creating a new request.', 403);
         }
 
-        // Look up queue position from workflow table
+        // Look up queue position from workflow table — Special-category walk-ins
+        // route through Branch Manager approval first (CS → Branch Manager → Cashier →
+        // CS); Normal-category walk-ins go straight to the Cashier.
+        $isSpecial = strtoupper(trim($body['request_category'] ?? 'NORMAL')) === 'SPECIAL';
         $wf = $this->db->queryOne(
             "SELECT next_role FROM mn_workflows_actions
-             WHERE section='CPD' AND action='CREATE_NORMAL_REQUEST_WALKIN' LIMIT 1",
+             WHERE section='CPD' AND action=? LIMIT 1",
+            [$isSpecial ? 'CREATE_SPECIAL_REQUEST_WALKIN_BRANCH' : 'CREATE_NORMAL_REQUEST_WALKIN'],
         );
         $queuePosition = $wf['next_role'] ?? null;
 
@@ -830,8 +1094,8 @@ class CPDController
                   destination_refree2, destination_refree2_mobile,
                   guarantee_amount, booking_fee, processing_fee, extra_fees, vat_amount, total_amount,
                   method_of_payment, booking_channel, request_type, request_status,
-                  current_queue_position, requested_datetime)
-                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WALKIN','CALL_CENTER','NEW',?,NOW())",
+                  current_queue_position, requested_datetime, identity_via_uae_pass)
+                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WALKIN','CALL_CENTER',1,?,NOW(),?)",
                 [
                     $body['request_category']   ?? 'NORMAL',
                     $body['usage_type']         ?? 'PERSONAL',
@@ -871,6 +1135,7 @@ class CPDController
                     $body['total_amount']       ?? 0,
                     $body['method_of_payment'],
                     $queuePosition,
+                    !empty($body['identity_via_uae_pass']) ? 1 : 0,
                 ],
             );
 
@@ -888,8 +1153,8 @@ class CPDController
                 "INSERT INTO mn_cpd_request_user
                  (user_id, request_auto_id, title, first_name, last_name,
                   nationality_id, city, uae_address, po_box,
-                  emirates_id, passport_no, registered_date)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,CURDATE())",
+                  emirates_id, passport_no, company_name, sex, license_no, license_expiry, registered_date)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURDATE())",
                 [
                     $userId,
                     $id,
@@ -902,6 +1167,10 @@ class CPDController
                     $body['po_box']          ?? '',
                     $body['emirates_id']     ?? '',
                     $body['passport_no']     ?? '',
+                    ($body['usage_type'] ?? '') === 'COMPANY' ? ($body['company_name'] ?? '') : null,
+                    $body['sex']             ?? null,
+                    $body['license_no']      ?? '',
+                    ($body['license_expiry'] ?? '') ?: null,
                 ],
             );
 
@@ -911,6 +1180,8 @@ class CPDController
                     [$id, (int)$cid],
                 );
             }
+
+            $this->saveSecurityChequeSelection($id, $body);
 
             $this->db->commit();
         } catch (\Throwable $e) {
@@ -984,13 +1255,45 @@ class CPDController
 
     public function approve(array $params, array $body, array $query): void
     {
+        $id = (int) $params['id'];
+
+        // A Pay at Office request reaches the CPD_Officer queue unpaid (see
+        // publicStore()) — CS review here means forwarding it to the Cashier to
+        // actually collect the fee, not confirming a payment that hasn't happened yet.
+        // Every other path (Telr-paid online, or already cashier-paid walk-ins) reaches
+        // this queue with booking_fee_status already 1, so they fall through to the
+        // normal confirm below.
+        $req = $this->db->queryOne(
+            'SELECT method_of_payment, booking_fee_status FROM mn_cpd_requests WHERE auto_id=?',
+            [$id],
+        );
+        if ($req && $req['method_of_payment'] === 'PAY_AT_OFFICE' && (int)($req['booking_fee_status'] ?? 0) !== 1) {
+            $wf = $this->db->queryOne(
+                "SELECT next_role FROM mn_workflows_actions
+                 WHERE section='CPD' AND action='FORWARD_PAY_AT_OFFICE_TO_CASHIER' LIMIT 1",
+            );
+            $nextQueue = $wf['next_role'] ?? 'IDL_CPD_Cashier';
+
+            $this->db->execute(
+                'UPDATE mn_cpd_requests SET current_queue_position = ? WHERE auto_id = ?',
+                [$nextQueue, $id],
+            );
+            $this->logEvent('FORWARD_TO_CASHIER', $id);
+            Response::success(null, 'Request forwarded to the Cashier for payment collection');
+            return;
+        }
+
+        // request_status is numeric (mn_cpd_statuses.carnet_status_id) — 2 is
+        // "Confirmed". The literal string 'Confirmed' used to be written here, which
+        // MySQL silently coerces to 0 (no matching status), leaving the request in
+        // limbo with an invalid status that no queue/list filter recognizes.
         $this->db->execute(
             "UPDATE mn_cpd_requests
-             SET request_status='Confirmed', payment_verified_by=?, payment_verified_datetime=NOW()
+             SET request_status=2, payment_verified_by=?, payment_verified_datetime=NOW()
              WHERE auto_id=?",
-            [Auth::id(), $params['id']],
+            [Auth::id(), $id],
         );
-        $this->logEvent('APPROVE', $params['id']);
+        $this->logEvent('APPROVE', $id);
         Response::success(null, 'CPD request confirmed');
     }
 
@@ -1064,6 +1367,65 @@ class CPDController
         }
 
         Response::success(null, 'Request sent for corrections');
+    }
+
+    /**
+     * POST /api/cpd/requests/{id}/branch-approve
+     * Branch Manager approval step for a Special-category walk-in request
+     * (CS → Branch Manager → Cashier → CS). Forwards the request to the Cashier queue.
+     */
+    public function approveBranchRequest(array $params, array $body, array $query): void
+    {
+        $id = (int) $params['id'];
+
+        $wf = $this->db->queryOne(
+            "SELECT next_role FROM mn_workflows_actions
+             WHERE section='CPD' AND action='APPROVE_BRANCH_MANAGER_SPECIAL_REQUEST_WALKIN' LIMIT 1",
+        );
+        $nextQueue = $wf['next_role'] ?? 'IDL_CPD_Cashier';
+
+        $this->db->execute(
+            "UPDATE mn_cpd_requests SET current_queue_position = ? WHERE auto_id = ?",
+            [$nextQueue, $id],
+        );
+        $this->logEvent('BRANCH_MANAGER_APPROVE', $id);
+        Response::success(null, 'Request approved and forwarded to the Cashier');
+    }
+
+    /**
+     * POST /api/cpd/requests/{id}/branch-reject
+     * Branch Manager sends a Special-category walk-in request back to CS with a
+     * comment, without changing its status — the request stays in-flight for CS to
+     * correct and resubmit for branch approval.
+     */
+    public function rejectBranchRequest(array $params, array $body, array $query): void
+    {
+        Validator::make($body)->required('comment')->validate();
+
+        $id      = (int) $params['id'];
+        $comment = trim($body['comment']);
+
+        $this->db->beginTransaction();
+        try {
+            $this->db->execute(
+                "UPDATE mn_cpd_requests SET current_queue_position = 'CPD_Officer' WHERE auto_id = ?",
+                [$id],
+            );
+            $this->db->execute(
+                "INSERT INTO mn_cpd_officer_comments
+                 (request_id, comment, added_by, added_datetime, read_flag)
+                 VALUES (?, ?, ?, NOW(), 0)",
+                [$id, $comment, Auth::id()],
+            );
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            $this->db->rollback();
+            Logger::exception($e, 'CPDController::rejectBranchRequest');
+            Response::serverError('Reject failed: ' . $e->getMessage());
+        }
+
+        $this->logEvent('BRANCH_MANAGER_REJECT', $id, $comment);
+        Response::success(null, 'Request sent back to CS');
     }
 
     public function issueCarnet(array $params, array $body, array $query): void
@@ -1524,11 +1886,13 @@ class CPDController
     public function getCancelRequest(array $params, array $body, array $query): void
     {
         $row = $this->db->queryOne(
-            "SELECT cancel_auto_id, cancelled_by, cancelled_datetime,
-                    cancelled_approved, remarks
-             FROM mn_cpd_cancelled_requests
-             WHERE request_auto_id = ?
-             ORDER BY cancel_auto_id DESC LIMIT 1",
+            "SELECT c.cancel_auto_id, c.cancelled_by, c.cancelled_datetime,
+                    c.cancelled_approved, c.cancelled_approved_by, c.refunded_amount,
+                    c.charge_amount, c.remarks, r.total_amount AS original_amount
+             FROM mn_cpd_cancelled_requests c
+             JOIN mn_cpd_requests r ON r.auto_id = c.request_auto_id
+             WHERE c.request_auto_id = ?
+             ORDER BY c.cancel_auto_id DESC LIMIT 1",
             [(int) $params['id']],
         );
         Response::success($row);
@@ -1623,7 +1987,7 @@ class CPDController
                  FROM mn_cpd_requests r
                  JOIN mn_cpd_issued_carnets ic ON ic.request_id = r.auto_id
                  JOIN mn_cpd_carnets c         ON c.carnet_id   = ic.carnet_id
-                 WHERE r.belonging_user_id = ? AND r.request_status = 3
+                 WHERE r.belonging_user_id = ? AND r.request_status IN (3, 9)
              ) t
              WHERE t.rn = 1
              ORDER BY t.auto_id DESC",
@@ -1716,6 +2080,13 @@ class CPDController
      * enforced server-side so this can't be bypassed by calling the API directly.
      * Mirrors the client-side check in public.js's validateCPDStep().
      */
+    private function validateCompanyNameRequired(array $body): void
+    {
+        if (($body['usage_type'] ?? '') === 'COMPANY' && trim($body['company_name'] ?? '') === '') {
+            Response::error('Company Name is required for Company Use', 422);
+        }
+    }
+
     private function validateExtraDriversRequired(array $body): void
     {
         foreach ([1, 2] as $n) {
@@ -1821,7 +2192,7 @@ class CPDController
         if ((int)$req['belonging_user_id'] !== Auth::id()) Response::error('Forbidden', 403);
 
         // Check not already cancelled
-        if ($req['request_status'] === 'Cancelled') Response::error('Request is already cancelled', 422);
+        if ((int) $req['request_status'] === 6) Response::error('Request is already cancelled', 422);
 
         // Check if a cancellation request already exists
         $existing = $this->db->queryOne(
@@ -1840,30 +2211,248 @@ class CPDController
         Response::created(null, 'Cancellation request submitted. Our team will review and contact you shortly.');
     }
 
+    /**
+     * POST /api/cpd/requests/{id}/cancel — Customer Service raises a cancellation request.
+     * Per CPD Feedback 24-09-2026.docx this no longer cancels the request immediately —
+     * it only creates a pending record for cpd_finance to approve/reject (mirrors the
+     * public self-service cancelRequest() below). The previous behaviour here had a
+     * pre-existing bug regardless: it set request_status='Cancelled' (a string) against
+     * an int column, which MySQL silently coerced to 0, not the real Cancelled status (6).
+     */
     public function cancel(array $params, array $body, array $query): void
     {
-        Validator::make($body)->required('reason')->validate();
+        $id     = (int) $params['id'];
+        $reason = trim((string) ($_POST['reason'] ?? $body['reason'] ?? ''));
+        if ($reason === '') Response::error('reason is required', 422);
+
+        $status = $this->db->scalar('SELECT request_status FROM mn_cpd_requests WHERE auto_id = ?', [$id]);
+        if ((int) $status === 6) Response::error('Request is already cancelled', 422);
+
+        $existing = $this->db->queryOne(
+            'SELECT cancel_auto_id FROM mn_cpd_cancelled_requests WHERE request_auto_id = ? AND cancelled_approved = 0 LIMIT 1',
+            [$id],
+        );
+        if ($existing) Response::error('A cancellation request is already pending for this application', 422);
+
+        $cancelId = $this->db->insert(
+            "INSERT INTO mn_cpd_cancelled_requests
+             (request_auto_id, cancelled_by, cancelled_datetime, cancelled_approved, remarks)
+             VALUES (?,?,NOW(),0,?)",
+            [$id, Auth::roleName(), $reason],
+        );
+
+        $saved = $this->saveCancelRaiseDocument($id);
+
+        $this->logEvent('CANCEL_REQUESTED', $id);
+        Response::created(['saved' => $saved], 'Cancellation request submitted for approval');
+    }
+
+    // Optional supporting document attached when the cancellation is raised (JPG/PNG/PDF).
+    private function saveCancelRaiseDocument(int $requestId): ?string
+    {
+        $file = $_FILES['document'] ?? null;
+        if ($file === null || $file['error'] === UPLOAD_ERR_NO_FILE) return null;
+        if ($file['error'] !== UPLOAD_ERR_OK) Response::error('Document upload failed', 422);
+
+        $mime = mime_content_type($file['tmp_name']);
+        if (!in_array($mime, ['image/jpeg', 'image/png', 'application/pdf'], true)) {
+            Response::error('Only JPG, PNG or PDF files are accepted', 422);
+        }
+        if ($file['size'] > Config::UPLOAD_MAX_BYTES) Response::error('Document exceeds file size limit', 422);
+
+        $dir = $this->cancelAttachmentsDir($requestId) . DIRECTORY_SEPARATOR . 'raise';
+        if (!is_dir($dir) && !mkdir($dir, 0755, true)) Response::serverError('Could not create upload directory');
+
+        $safeName = preg_replace('/[^a-zA-Z0-9_\-\.]/', '_', $file['name']);
+        if (!move_uploaded_file($file['tmp_name'], $dir . DIRECTORY_SEPARATOR . $safeName)) {
+            Response::serverError('Could not save document');
+        }
+        return $safeName;
+    }
+
+    private function cancelAttachmentsDir(int $requestId): string
+    {
+        return API_ROOT . DIRECTORY_SEPARATOR . Config::CPD_IMAGE_PATH
+             . DIRECTORY_SEPARATOR . 'cancellations' . DIRECTORY_SEPARATOR . $requestId;
+    }
+
+    // GET /api/cpd/requests/{id}/cancel-attachments — files raised with the cancellation and
+    // files added by cpd_finance in review. Staff-only (route is auth:true, cancellations
+    // are only listed to cpd staff).
+    public function listCancelAttachments(array $params, array $body, array $query): void
+    {
+        $id   = (int) $params['id'];
+        $base = $this->cancelAttachmentsDir($id);
+        $items = [];
+
+        $raiseDir = $base . DIRECTORY_SEPARATOR . 'raise';
+        if (is_dir($raiseDir)) {
+            foreach (array_diff(scandir($raiseDir), ['.', '..']) as $f) {
+                $items[] = ['label' => 'Attached when raised', 'file' => "raise/{$f}"];
+            }
+        }
+
+        $notesDir = $base . DIRECTORY_SEPARATOR . 'notes';
+        if (is_dir($notesDir)) {
+            foreach (array_diff(scandir($notesDir), ['.', '..']) as $cid) {
+                if (!ctype_digit($cid)) continue;
+                foreach (array_diff(scandir($notesDir . DIRECTORY_SEPARATOR . $cid), ['.', '..']) as $f) {
+                    $items[] = ['label' => 'Added by finance', 'file' => "notes/{$cid}/{$f}"];
+                }
+            }
+        }
+
+        Response::success($items);
+    }
+
+    // GET /api/cpd/requests/{id}/cancel-attachments/raise/{filename}
+    // GET /api/cpd/requests/{id}/cancel-attachments/notes/{commentId}/{filename}
+    public function serveCancelAttachment(array $params, array $body, array $query): void
+    {
+        $id   = (int) $params['id'];
+        $rel  = isset($params['commentId'])
+            ? 'notes/' . (int) $params['commentId'] . '/' . $params['filename']
+            : 'raise/' . $params['filename'];
+
+        $base = realpath($this->cancelAttachmentsDir($id));
+        $full = $base === false ? false : realpath($base . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel));
+        if ($full === false || !str_starts_with($full, $base . DIRECTORY_SEPARATOR) || !is_file($full)) {
+            Response::notFound('Attachment not found');
+        }
+
+        header('Content-Type: ' . mime_content_type($full));
+        header('Content-Disposition: inline; filename="' . basename($full) . '"');
+        header('Content-Length: ' . filesize($full));
+        header('Cache-Control: private, max-age=3600');
+        readfile($full);
+        exit;
+    }
+
+    /**
+     * PUT /api/cpd/cancel-requests/{id}/approve — cpd_finance approves a pending
+     * cancellation, sets the refund amount (defaults client-side to the original receipt
+     * total but is editable), computes the withheld charge, and marks the request Cancelled.
+     */
+    public function approveCancelRequest(array $params, array $body, array $query): void
+    {
+        Validator::make($body)->required('refund_amount')->numeric('refund_amount')->validate();
+        $id     = (int) $params['id'];
+        $refund = round((float) $body['refund_amount'], 2);
+        if ($refund < 0) Response::error('Refund amount cannot be negative', 422);
+
+        $req = $this->db->queryOne('SELECT auto_id, total_amount FROM mn_cpd_requests WHERE auto_id = ?', [$id]);
+        if (!$req) Response::notFound('Request not found');
+
+        $original = (float) $req['total_amount'];
+        if ($refund > $original) Response::error('Refund amount cannot exceed the original receipt amount', 422);
+        $charge = round($original - $refund, 2);
+
+        $cancellation = $this->db->queryOne(
+            'SELECT cancel_auto_id FROM mn_cpd_cancelled_requests WHERE request_auto_id = ? AND cancelled_approved = 0 ORDER BY cancel_auto_id DESC LIMIT 1',
+            [$id],
+        );
+        if (!$cancellation) Response::error('No pending cancellation request found', 422);
 
         $this->db->beginTransaction();
         try {
             $this->db->execute(
-                "UPDATE mn_cpd_requests SET request_status='Cancelled' WHERE auto_id=?",
-                [$params['id']],
+                'UPDATE mn_cpd_cancelled_requests
+                 SET cancelled_approved = 1, cancelled_approved_by = ?, refunded_amount = ?, charge_amount = ?
+                 WHERE cancel_auto_id = ?',
+                [Auth::id(), $refund, $charge, $cancellation['cancel_auto_id']],
             );
-            $this->db->execute(
-                "INSERT INTO mn_cpd_cancelled_requests
-                 (request_auto_id, cancelled_by, cancelled_datetime, cancelled_approved, remarks)
-                 VALUES (?,?,NOW(),0,?)",
-                [$params['id'], Auth::roleName(), $body['reason']],
-            );
+            $this->db->execute('UPDATE mn_cpd_requests SET request_status = 6 WHERE auto_id = ?', [$id]);
             $this->db->commit();
         } catch (\Throwable $e) {
             $this->db->rollback();
-            Response::serverError('Cancel failed: ' . $e->getMessage());
+            Response::serverError('Approval failed: ' . $e->getMessage());
         }
 
-        $this->logEvent('CANCEL', $params['id']);
-        Response::success(null, 'Request cancelled');
+        $this->logEvent('CANCEL_APPROVED', $id);
+        Response::success(['refunded_amount' => $refund, 'charge_amount' => $charge], 'Cancellation approved — request marked as cancelled and refunded');
+    }
+
+    /** PUT /api/cpd/cancel-requests/{id}/reject — cpd_finance rejects a pending cancellation. */
+    public function rejectCancelRequest(array $params, array $body, array $query): void
+    {
+        Validator::make($body)->required('comment')->validate();
+        $id = (int) $params['id'];
+
+        $cancellation = $this->db->queryOne(
+            'SELECT cancel_auto_id, remarks FROM mn_cpd_cancelled_requests WHERE request_auto_id = ? AND cancelled_approved = 0 ORDER BY cancel_auto_id DESC LIMIT 1',
+            [$id],
+        );
+        if (!$cancellation) Response::error('No pending cancellation request found', 422);
+
+        $remarks = trim(($cancellation['remarks'] ?? '') . "\n[Rejected] " . trim($body['comment']));
+
+        $this->db->execute(
+            "UPDATE mn_cpd_cancelled_requests
+             SET cancelled_approved = 2, cancelled_approved_by = ?, remarks = ?
+             WHERE cancel_auto_id = ?",
+            [Auth::id(), $remarks, $cancellation['cancel_auto_id']],
+        );
+
+        $this->logEvent('CANCEL_REJECTED', $id);
+        Response::success(null, 'Cancellation request rejected');
+    }
+
+    /**
+     * POST /api/cpd/requests/{id}/cancel-notes — comment + optional multi-file attachment
+     * on a cancellation, mirroring addReturnNote()'s exact pattern (same underlying
+     * mn_cpd_officer_comments table, same JPG/PNG/PDF upload rules).
+     */
+    public function addCancelNote(array $params, array $body, array $query): void
+    {
+        $id      = (int) $params['id'];
+        $comment = trim($_POST['comment'] ?? '');
+
+        $req = $this->db->queryOne('SELECT auto_id FROM mn_cpd_requests WHERE auto_id = ?', [$id]);
+        if (!$req) Response::notFound('Request not found');
+
+        $commentId = $this->db->insert(
+            'INSERT INTO mn_cpd_officer_comments (request_id, comment, added_by, added_datetime, read_flag)
+             VALUES (?, ?, ?, NOW(), 0)',
+            [$id, $comment !== '' ? $comment : '(attachment only)', Auth::id()],
+        );
+
+        $saved  = [];
+        $errors = [];
+        if (!empty($_FILES['documents'])) {
+            $files = $_FILES['documents'];
+            if (!is_array($files['name'])) {
+                foreach (['name','tmp_name','error','size','type'] as $k) $files[$k] = [$files[$k]];
+            }
+            $count = count($files['name']);
+            $dir   = API_ROOT . DIRECTORY_SEPARATOR . Config::CPD_IMAGE_PATH
+                   . DIRECTORY_SEPARATOR . 'cancellations' . DIRECTORY_SEPARATOR . $id
+                   . DIRECTORY_SEPARATOR . 'notes'          . DIRECTORY_SEPARATOR . $commentId;
+            if ($count > 0 && !is_dir($dir) && !mkdir($dir, 0755, true)) {
+                Response::serverError('Could not create upload directory');
+            }
+            for ($i = 0; $i < $count; $i++) {
+                if ($files['error'][$i] === UPLOAD_ERR_NO_FILE) continue;
+                if ($files['error'][$i] !== UPLOAD_ERR_OK) {
+                    $errors[] = "File {$files['name'][$i]}: upload error {$files['error'][$i]}"; continue;
+                }
+                $mime = mime_content_type($files['tmp_name'][$i]);
+                if (!in_array($mime, ['image/jpeg', 'image/png', 'application/pdf'], true)) {
+                    $errors[] = "File {$files['name'][$i]}: only JPG, PNG or PDF files are accepted"; continue;
+                }
+                if ($files['size'][$i] > Config::UPLOAD_MAX_BYTES) {
+                    $errors[] = "File {$files['name'][$i]}: exceeds file size limit"; continue;
+                }
+                $safeName = preg_replace('/[^a-zA-Z0-9_\-\.]/', '_', $files['name'][$i]);
+                if (move_uploaded_file($files['tmp_name'][$i], $dir . DIRECTORY_SEPARATOR . $safeName)) {
+                    $saved[] = $safeName;
+                } else {
+                    $errors[] = "File {$files['name'][$i]}: failed to save";
+                }
+            }
+        }
+
+        $this->logEvent('CANCEL_NOTE_ADDED', $id);
+        Response::created(['comment_id' => $commentId, 'saved' => $saved, 'errors' => $errors]);
     }
 
     public function markCarnetReturned(array $params, array $body, array $query): void
@@ -1873,8 +2462,12 @@ class CPDController
 
         $this->db->beginTransaction();
         try {
+            // request_status is numeric — 4 is "Returned" (mn_cpd_statuses). The
+            // literal string 'Returned' used to be written here, which MySQL
+            // silently coerces to 0, so a returned CPD never actually showed as
+            // Returned anywhere that filters/displays by status.
             $this->db->execute(
-                "UPDATE mn_cpd_requests SET request_status='Returned' WHERE auto_id=?",
+                "UPDATE mn_cpd_requests SET request_status=4 WHERE auto_id=?",
                 [$params['id']],
             );
             if ($r['carnet_no']) {
@@ -1946,7 +2539,8 @@ class CPDController
     {
         $groups = $this->db->query(
             'SELECT group_code, group_label, fixed_amount, fixed_amount_uae_national,
-                    motorcycle_flat_amount, special_note
+                    motorcycle_flat_amount, special_note,
+                    requires_security_cheque, security_cheque_amount
              FROM mn_cpd_guarantee_groups ORDER BY sort_order',
         );
 
@@ -1978,6 +2572,8 @@ class CPDController
             'extra_driver_fee'  => Config::CPD_EXTRA_DRIVER_FEE,
             'delivery_fee'      => Config::CPD_DELIVERY_FEE,
             'return_pickup_fee' => Config::CPD_RETURN_PICKUP_FEE,
+            'security_cheque_collection_fee' => Config::CPD_SECURITY_CHEQUE_COLLECTION_FEE,
+            'service_fee'       => Config::CPD_SERVICE_FEE,
         ]);
     }
 
@@ -2189,7 +2785,12 @@ class CPDController
             )";
             array_push($binds, $like, $like, $like, $like, $like);
         }
-        if ($status !== '')         { $where .= ' AND r.request_status=?';           $binds[] = $status; }
+        // 'all' explicitly bypasses the status restriction — request_status is numeric
+        // (mn_cpd_statuses.carnet_status_id), so anything other than a real digit or
+        // 'all' here would silently coerce to 0 and match nothing.
+        if ($status === 'all') {
+            // no restriction
+        } elseif ($status !== '')  { $where .= ' AND r.request_status=?';           $binds[] = $status; }
         if ($category !== '')       { $where .= ' AND r.request_category=?';         $binds[] = $category; }
         if ($bookingChannel !== '') { $where .= ' AND r.booking_channel=?';          $binds[] = $bookingChannel; }
         if ($queuePosition !== '')  { $where .= ' AND r.current_queue_position=?';   $binds[] = $queuePosition; }
@@ -2260,10 +2861,16 @@ class CPDController
             Response::error('Invalid payment method', 422);
         }
 
-        // Get next queue position from workflow
+        // Get next queue position from workflow — a Special-category walk-in that has
+        // already cleared Branch Manager approval uses its own action so the audit
+        // trail (mn_event_logs / workflow history) distinguishes it from the Normal path.
+        $category = (string) $this->db->scalar('SELECT request_category FROM mn_cpd_requests WHERE auto_id=?', [$id]);
+        $wfAction = strtoupper(trim($category)) === 'SPECIAL'
+            ? 'APPROVE_CASHIER_SPECIAL_REQUEST_WALKIN'
+            : 'ACCEPT_PAYMENT_NORMAL_REQUEST_WALKIN';
         $wf = $this->db->queryOne(
-            "SELECT next_role FROM mn_workflows_actions
-             WHERE section='CPD' AND action='ACCEPT_PAYMENT_NORMAL_REQUEST_WALKIN' LIMIT 1",
+            "SELECT next_role FROM mn_workflows_actions WHERE section='CPD' AND action=? LIMIT 1",
+            [$wfAction],
         );
         $nextQueue = $wf['next_role'] ?? 'CPD_Officer';
 
@@ -2282,6 +2889,68 @@ class CPDController
         $this->logEvent('CASHIER_PAYMENT', $id, $method);
         $this->sendCpdPaymentConfirmedEmail($id);
         Response::success(null, 'Payment recorded');
+    }
+
+    /**
+     * POST /api/cpd/requests/{id}/receipt — mirrors IDLController::createReceipt(),
+     * same mn_*_receipts table shape (receipt_no format REC/DDMMYYYY/auto_id) and the
+     * same legacy-v3 mn_cpd_receipts table this request-level receipt history has
+     * always lived in; the v2 rebuild just never wired cashier printing to it.
+     */
+    public function createReceipt(array $params, array $body, array $query): void
+    {
+        $autoId = (int)$params['id'];
+
+        $req = $this->db->queryOne(
+            'SELECT auto_id, request_id, total_amount FROM mn_cpd_requests WHERE auto_id=?',
+            [$autoId],
+        );
+        if (!$req) Response::notFound('CPD request not found');
+
+        // Return existing receipt if one already exists — no duplicates
+        $existing = $this->db->queryOne(
+            'SELECT receipt_id, receipt_no FROM mn_cpd_receipts WHERE request_id=?',
+            [$autoId],
+        );
+        if ($existing) {
+            Response::success($existing, 'Receipt already exists');
+            return;
+        }
+
+        $receiptId = $this->db->insert(
+            "INSERT INTO mn_cpd_receipts (receipt_no, request_id, receipt_total, created_by, created_datetime)
+             VALUES ('PENDING', ?, ?, ?, NOW())",
+            [$autoId, $req['total_amount'], Auth::id()],
+        );
+
+        $receiptNo = sprintf('REC/%s/%d', date('dmY'), $receiptId);
+        $this->db->execute(
+            'UPDATE mn_cpd_receipts SET receipt_no=? WHERE receipt_id=?',
+            [$receiptNo, $receiptId],
+        );
+
+        $this->logEvent('PRINT_RECEIPT', $autoId, $receiptNo);
+        Response::success(['receipt_id' => $receiptId, 'receipt_no' => $receiptNo], 'Receipt created');
+    }
+
+    public function getReceipt(array $params, array $body, array $query): void
+    {
+        $autoId = (int)$params['id'];
+
+        $receipt = $this->db->queryOne(
+            "SELECT rc.receipt_id, rc.receipt_no, rc.receipt_total, rc.created_datetime,
+                    r.request_id, r.total_amount, r.delivery_option,
+                    CONCAT(u.first_name,' ',u.last_name) AS customer_name
+             FROM mn_cpd_receipts rc
+             JOIN mn_cpd_requests r ON r.auto_id         = rc.request_id
+             LEFT JOIN mn_users u   ON u.user_id          = r.belonging_user_id
+             WHERE rc.request_id = ?
+             ORDER BY rc.receipt_id DESC LIMIT 1",
+            [$autoId],
+        );
+
+        if (!$receipt) Response::notFound('Receipt not found');
+        Response::success($receipt);
     }
 
     /** Best-effort payment-confirmation email — never blocks the payment action itself. */
@@ -2536,9 +3205,9 @@ class CPDController
             CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
             CURLOPT_TIMEOUT        => 30,
         ]);
-        $jsonResponse = curl_exec($ch);
-        $httpCode     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlError    = curl_error($ch);
+        $response  = curl_exec($ch);
+        $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
         curl_close($ch);
 
         if ($curlError) {
@@ -2546,20 +3215,38 @@ class CPDController
             Response::serverError("Aramex connection failed: {$curlError}");
         }
 
-        $result = json_decode($jsonResponse, true);
+        // Aramex returns XML here despite the /json/ URL path — confirmed via a real
+        // test call (2026-10-23). json_decode() on XML silently returns null, which
+        // meant HasErrors never actually triggered and no real AWB/label URL was ever
+        // extracted here, even on a genuine success — the 'raw' field below was the
+        // only thing that ever reflected real data. See
+        // createSecurityChequeCollectionShipment() for the same fix applied there.
+        $xml = @simplexml_load_string($response);
+        if ($xml === false) {
+            Logger::error("Aramex response was not valid XML for CPD request {$id}: {$response}");
+            Response::serverError('Aramex returned an unexpected response format');
+        }
 
-        // Check for Aramex-level errors
-        if (!empty($result['HasErrors']) && $result['HasErrors'] === true) {
-            $notifications = $result['Notifications'] ?? [];
-            $message = implode('; ', array_column($notifications, 'Message'));
+        $hasErrors = (string)$xml->HasErrors === 'true';
+        $messages  = [];
+        foreach (($xml->Notifications->Notification ?? []) as $n) {
+            $messages[] = (string)$n->Message;
+        }
+        foreach (($xml->Shipments->ProcessedShipment ?? []) as $shipment) {
+            foreach (($shipment->Notifications->Notification ?? []) as $n) {
+                $messages[] = (string)$n->Message;
+            }
+        }
+        if ($hasErrors || $messages) {
+            $message = implode('; ', $messages);
             Logger::error("Aramex error for request {$id}: {$message}");
             Response::error("Aramex error: {$message}", 422);
         }
 
         // Extract shipment number and label URL
-        $shipment  = $result['Shipments'][0] ?? [];
-        $airBillNo = $shipment['ID'] ?? ($shipment['Number'] ?? '');
-        $labelUrl  = $result['ShipmentLabel']['LabelURL'] ?? '';
+        $processedShipment = $xml->Shipments->ProcessedShipment ?? null;
+        $airBillNo = (string)($processedShipment->ID ?? '');
+        $labelUrl  = (string)($processedShipment->ShipmentLabel->LabelURL ?? '');
 
         // Save air bill number back to the request
         if ($airBillNo) {
@@ -2573,7 +3260,7 @@ class CPDController
         Response::success([
             'air_bill_no' => $airBillNo,
             'label_url'   => $labelUrl,
-            'raw'         => $result,
+            'raw'         => $response,
         ], 'AWB created successfully');
     }
 
@@ -3090,6 +3777,96 @@ class CPDController
             empty($errors) ? 'Documents saved' : 'Some documents saved');
     }
 
+    /**
+     * POST /api/cpd/requests/{id}/security-cheque — officer records receipt of the
+     * additional security cheque (per-country requirement, see mn_cpd_guarantee_groups.
+     * requires_security_cheque): cheque number + a scan copy.
+     */
+    public function updateSecurityCheque(array $params, array $body, array $query): void
+    {
+        $id = (int)$params['id'];
+        $chequeNo = trim($_POST['cheque_no'] ?? '');
+        if ($chequeNo === '') Response::error('Cheque number is required', 422);
+
+        $req = $this->db->queryOne('SELECT auto_id FROM mn_cpd_requests WHERE auto_id = ?', [$id]);
+        if (!$req) Response::notFound('Request not found');
+
+        $scanPath = null;
+        if (!empty($_FILES['scan']) && $_FILES['scan']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $file = $_FILES['scan'];
+            if ($file['error'] !== UPLOAD_ERR_OK) Response::error('Upload error code ' . $file['error'], 422);
+            $mime = mime_content_type($file['tmp_name']);
+            if (!in_array($mime, ['image/jpeg', 'image/png', 'application/pdf'], true)) {
+                Response::error('Only JPG, PNG or PDF files are accepted', 422);
+            }
+            if ($file['size'] > Config::UPLOAD_MAX_BYTES) Response::error('File exceeds size limit', 422);
+            $dir = API_ROOT . DIRECTORY_SEPARATOR . Config::CPD_IMAGE_PATH . DIRECTORY_SEPARATOR . $id;
+            if (!is_dir($dir) && !mkdir($dir, 0755, true)) Response::serverError('Could not create upload directory');
+            $ext  = $mime === 'application/pdf' ? 'pdf' : ($mime === 'image/png' ? 'png' : 'jpg');
+            $stem = 'cpd_security_cheque_scan';
+            if (!move_uploaded_file($file['tmp_name'], $dir . DIRECTORY_SEPARATOR . $stem . '.' . $ext)) {
+                Response::serverError('Failed to save scan file');
+            }
+            $scanPath = Config::CPD_IMAGE_PATH . "/{$id}/{$stem}.{$ext}";
+        }
+
+        $this->db->execute(
+            'UPDATE mn_cpd_requests
+             SET security_cheque_no = ?, security_cheque_received_datetime = NOW()
+                 ' . ($scanPath ? ', security_cheque_scan_path = ?' : '') . '
+             WHERE auto_id = ?',
+            $scanPath ? [$chequeNo, $scanPath, $id] : [$chequeNo, $id],
+        );
+
+        $this->logEvent('SECURITY_CHEQUE_RECEIVED', $id);
+        Response::success(null, 'Security cheque receipt recorded');
+    }
+
+    /** GET /api/cpd/requests/{id}/security-cheque-scan — serves the scan to staff only. */
+    public function serveSecurityChequeScan(array $params, array $body, array $query): void
+    {
+        $id  = (int)$params['id'];
+        $user = Auth::user();
+        if (!in_array('cpd', $user['modules'] ?? [], true)) Response::forbidden('Access denied');
+
+        $req = $this->db->queryOne('SELECT security_cheque_scan_path FROM mn_cpd_requests WHERE auto_id = ?', [$id]);
+        if (!$req || empty($req['security_cheque_scan_path'])) Response::notFound('Scan not found');
+
+        $filePath = API_ROOT . DIRECTORY_SEPARATOR . $req['security_cheque_scan_path'];
+        if (!file_exists($filePath)) Response::notFound('Scan not found');
+
+        $ext   = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        $mimes = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'pdf' => 'application/pdf'];
+        header('Content-Type: ' . ($mimes[$ext] ?? 'application/octet-stream'));
+        header('Content-Disposition: inline; filename="security_cheque_scan.' . $ext . '"');
+        header('Content-Length: ' . filesize($filePath));
+        header('Cache-Control: private, max-age=3600');
+        readfile($filePath);
+        exit;
+    }
+
+    /**
+     * PUT /api/cpd/requests/{id}/security-cheque-return — officer records the Aramex
+     * airway bill for delivering the security cheque back to the customer (during the
+     * carnet return process).
+     */
+    public function updateSecurityChequeReturn(array $params, array $body, array $query): void
+    {
+        Validator::make($body)->required('airway_bill')->validate();
+        $id = (int)$params['id'];
+
+        $req = $this->db->queryOne('SELECT auto_id FROM mn_cpd_requests WHERE auto_id = ?', [$id]);
+        if (!$req) Response::notFound('Request not found');
+
+        $this->db->execute(
+            'UPDATE mn_cpd_requests SET security_cheque_return_airway_bill = ? WHERE auto_id = ?',
+            [$body['airway_bill'], $id],
+        );
+
+        $this->logEvent('SECURITY_CHEQUE_RETURN_DISPATCHED', $id);
+        Response::success(null, 'Security cheque return airway bill saved');
+    }
+
     // ── Renew / Copy an existing CPD request ─────────────────────────────────
 
     public function renew(array $params, array $body, array $query): void
@@ -3133,17 +3910,22 @@ class CPDController
         try {
             $newId = $this->db->insert(
                 "INSERT INTO mn_cpd_requests
-                 (request_id, request_category, belonging_user_id,
+                 (request_id, request_category, usage_type, belonging_user_id,
                   vehicle_make, vehicle_model, registration_no, chassis_no, engine_no,
                   manuf_year, color, body_type, no_of_cylinders, horse_power,
                   net_weight, vehicle_value, mulkiya_no,
-                  extra_owner1_name, extra_owner2_name,
+                  extra_owner1_name, extra_owner1_eid, extra_owner1_passport,
+                  extra_owner2_name, extra_owner2_eid, extra_owner2_passport,
+                  uae_refree1, uae_refree1_mobile, uae_refree2, uae_refree2_mobile,
+                  destination_refree1, destination_refree1_mobile,
+                  destination_refree2, destination_refree2_mobile,
                   guarantee_amount, booking_fee, processing_fee, extra_fees, vat_amount, total_amount,
                   method_of_payment, booking_channel, request_status,
                   current_queue_position, request_type, parent_request_id, requested_datetime)
-                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WALKIN',1,?,?,?,NOW())",
+                 VALUES ('PENDING',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WALKIN',1,?,?,?,NOW())",
                 [
                     $body['request_category']   ?? 'NORMAL',
+                    $body['usage_type']         ?? 'PERSONAL',
                     $userId,
                     $body['vehicle_make'],
                     $body['vehicle_model'],
@@ -3159,7 +3941,19 @@ class CPDController
                     $body['vehicle_value']      ?? 0,
                     $body['mulkiya_no']         ?? '',
                     $body['extra_owner1_name']  ?? '',
+                    $body['extra_owner1_eid']   ?? '',
+                    $body['extra_owner1_passport'] ?? '',
                     $body['extra_owner2_name']  ?? '',
+                    $body['extra_owner2_eid']   ?? '',
+                    $body['extra_owner2_passport'] ?? '',
+                    $body['uae_refree1']        ?? '',
+                    $body['uae_refree1_mobile'] ?? '',
+                    $body['uae_refree2']        ?? '',
+                    $body['uae_refree2_mobile'] ?? '',
+                    $body['destination_refree1']        ?? '',
+                    $body['destination_refree1_mobile'] ?? '',
+                    $body['destination_refree2']        ?? '',
+                    $body['destination_refree2_mobile'] ?? '',
                     $body['guarantee_amount']   ?? 0,
                     $body['booking_fee']        ?? 0,
                     $body['processing_fee']     ?? 0,
@@ -3186,8 +3980,8 @@ class CPDController
                 "INSERT INTO mn_cpd_request_user
                  (user_id, request_auto_id, title, first_name, last_name,
                   nationality_id, city, uae_address, po_box,
-                  emirates_id, passport_no, registered_date)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,CURDATE())",
+                  emirates_id, passport_no, company_name, sex, license_no, license_expiry, registered_date)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURDATE())",
                 [
                     $userId, $newId,
                     $body['title']       ?? null,
@@ -3199,6 +3993,10 @@ class CPDController
                     $body['po_box']      ?? '',
                     $body['emirates_id'] ?? '',
                     $body['passport_no'] ?? '',
+                    ($body['usage_type'] ?? '') === 'COMPANY' ? ($body['company_name'] ?? '') : null,
+                    $body['sex']         ?? null,
+                    $body['license_no']  ?? '',
+                    ($body['license_expiry'] ?? '') ?: null,
                 ],
             );
 

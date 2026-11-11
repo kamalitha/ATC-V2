@@ -40,9 +40,71 @@ class AuthController
     public function uaePassStart(array $params, array $body, array $query): void
     {
         $state = bin2hex(random_bytes(16));
+
+        // TEMPORARY (2026-09-22): ?scope=dv requests the Digital Vault data-sharing scope
+        // instead of the normal login scope, so we can capture a real access_token to use
+        // as the `sub` claim in DV API calls per TDRA's onboarding guidance. Remove this
+        // branch (and the matching one in uaePassCallback()) once DV onboarding is done.
+        $scope = 'urn:uae:digitalid:profile:general';
+        if (($query['scope'] ?? null) === 'dv') {
+            $scope = 'urn:uae:digitalid:digitalvault:datasharerequest';
+            $state = 'DVTEST_' . $state;
+        }
+
         $_SESSION['uaepass_state'] = $state;
 
-        header('Location: ' . (new UaePassClient())->getAuthorizeUrl($state));
+        header('Location: ' . (new UaePassClient())->getAuthorizeUrl($state, $scope));
+        exit;
+    }
+
+    /** Which Digital Vault documents the real "Continue with UAE PASS" button requests,
+     * per wizard context. Keep this list and ::DV_CONTEXTS in sync. */
+    private const DV_CONTEXT_DOCUMENTS = [
+        // Context value matches the frontend route name exactly (public.js's
+        // renderPublicApplyIDL via app.js route 'public-apply-idl') so
+        // handleUaePassCallback() can navigate(data.context) directly.
+        'public-apply-idl' => [
+            ['documentType' => 'EmiratesId', 'required' => true],
+            ['documentType' => 'DRIVING_LICENSE', 'required' => true],
+        ],
+        // CPD's widget copy says "Emirates ID, Driving License & Mulkiya" —
+        // VEHICLE_REGISTRATION_CARD is the Mulkiya per the DV document-type catalogue.
+        // Passport was briefly added here (passport_no has no other DV source) and then
+        // explicitly removed — only these 3 documents are wanted for CPD.
+        'public-apply-cpd' => [
+            ['documentType' => 'EmiratesId', 'required' => true],
+            ['documentType' => 'DRIVING_LICENSE', 'required' => true],
+            ['documentType' => 'VEHICLE_REGISTRATION_CARD', 'required' => true],
+        ],
+    ];
+
+    /**
+     * GET /api/auth/uaepass/dv-consent/start?context=idl-new — the REAL "Continue with
+     * UAE PASS" flow for the IDL (and future CPD) wizard: the user is already logged in
+     * (this is a document-sharing consent step mid-wizard, not a login), so unlike
+     * uaePassStart() this does not touch the portal session at all — it only stashes
+     * which wizard/context to return the Digital Vault request to once UAE PASS redirects
+     * back. See the matching DVCONSENT_ branch in uaePassCallback().
+     */
+    public function dvConsentStart(array $params, array $body, array $query): void
+    {
+        if (Auth::id() === null) {
+            Response::error('You must be signed in first', 401);
+        }
+        $context = (string)($query['context'] ?? '');
+        if (!isset(self::DV_CONTEXT_DOCUMENTS[$context])) {
+            Response::error('Unknown request context', 422);
+        }
+
+        $state = 'DVCONSENT_' . bin2hex(random_bytes(16));
+        $_SESSION['uaepass_state']       = $state;
+        $_SESSION['dv_consent_context']  = $context;
+        $_SESSION['dv_consent_user_id']  = Auth::id();
+
+        header('Location: ' . (new UaePassClient())->getAuthorizeUrl(
+            $state,
+            'urn:uae:digitalid:digitalvault:datasharerequest',
+        ));
         exit;
     }
 
@@ -60,6 +122,69 @@ class AuthController
 
         if ($expectedState === null || !hash_equals($expectedState, (string)$body['state'])) {
             Response::error('Invalid or expired UAE PASS session — please try again', 422);
+        }
+
+        // Real "Continue with UAE PASS" document-sharing consent flow (see
+        // dvConsentStart()) — NOT a login. The user's existing portal session is left
+        // untouched; this just exchanges the code for a fresh DV-scope access_token,
+        // uses it to create the Digital Vault presentation request, and hands the
+        // frontend the request id to poll instead of a user/session payload.
+        if (str_starts_with((string)$expectedState, 'DVCONSENT_')) {
+            $context = (string)($_SESSION['dv_consent_context'] ?? '');
+            $userId  = $_SESSION['dv_consent_user_id'] ?? null;
+            unset($_SESSION['dv_consent_context'], $_SESSION['dv_consent_user_id']);
+
+            if ($context === '' || !isset(self::DV_CONTEXT_DOCUMENTS[$context]) || $userId === null) {
+                Response::error('Invalid or expired request — please try again', 422);
+            }
+
+            $client = new UaePassClient();
+            try {
+                $token = $client->exchangeCodeForToken((string)$body['code']);
+            } catch (\RuntimeException $e) {
+                Logger::error('DV consent token exchange failed: ' . $e->getMessage());
+                Response::error('Token exchange failed — please try again', 502);
+            }
+
+            try {
+                $dvResult = DigitalVaultClient::requestPresentation(
+                    (string)$token['access_token'],
+                    self::DV_CONTEXT_DOCUMENTS[$context],
+                );
+            } catch (\RuntimeException $e) {
+                Logger::error('DV presentation request failed: ' . $e->getMessage());
+                Response::error('Could not reach UAE PASS Digital Vault — please try again', 502);
+            }
+
+            $requestId = (string)$dvResult['proofOfPresentationRequestId'];
+            $this->db->execute(
+                'INSERT INTO mn_dv_presentations
+                    (proof_of_presentation_request_id, status, context, user_id, requested_datetime)
+                 VALUES (?, \'pending\', ?, ?, NOW())
+                 ON DUPLICATE KEY UPDATE status = \'pending\', requested_datetime = NOW()',
+                [$requestId, $context, $userId],
+            );
+
+            Response::success(
+                ['proofOfPresentationRequestId' => $requestId, 'context' => $context],
+                'Request sent',
+            );
+        }
+
+        // TEMPORARY (2026-09-22): DV scope test — see matching comment in uaePassStart().
+        // Writes the raw access_token to a file (read directly via SSH, no need for the
+        // browser user to copy anything out of DevTools) instead of logging in normally.
+        // Remove this branch once DV onboarding is done.
+        if (str_starts_with((string)$expectedState, 'DVTEST_')) {
+            $client = new UaePassClient();
+            try {
+                $token = $client->exchangeCodeForToken((string)$body['code']);
+            } catch (\RuntimeException $e) {
+                Logger::error('UAE PASS DV-scope token exchange failed: ' . $e->getMessage());
+                Response::error('Token exchange failed — please try again', 502);
+            }
+            @file_put_contents(__DIR__ . '/../logs/dv-test-token.txt', json_encode($token, JSON_PRETTY_PRINT));
+            Response::success(['ok' => true], 'DV test token captured — you can close this tab');
         }
 
         $client = new UaePassClient();

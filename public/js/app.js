@@ -1,7 +1,7 @@
 // app.js — Main SPA entry point (PHP 8+ / vanilla JS rewrite)
 import api, { setToken, clearToken } from './api.js';
 import { renderDashboard }   from './pages/dashboard.js';
-import { renderIDLRequests, renderIDLNew, renderIDLDetail, renderIDLSalesReport, renderIDLAramexReport, renderIDLMoeReport, renderIDLEmpostReport } from './pages/idl.js';
+import { renderIDLRequests, renderIDLNew, renderIDLDetail, renderIDLCancellations, renderIDLSalesReport, renderIDLAramexReport, renderIDLMoeReport, renderIDLEmpostReport } from './pages/idl.js';
 import { renderCPDRequests, renderCPDNew, renderCPDRenew, renderCPDDetail, renderCPDCarnets, renderCPDStockRequest, renderCPDStockRequestView, renderCPDCancellations, renderCPDReturnRequests, renderCPDClaims, renderCPDHolds } from './pages/cpd.js';
 import { renderUsers }       from './pages/users.js';
 import { renderReports }     from './pages/reports.js';
@@ -71,6 +71,7 @@ export function confirm(message, onConfirm, danger = true) {
 const CRUMBS = {
   dashboard:     [{ label: 'Dashboard' }],
   'idl-requests':[{ label: 'International Driving Licenses' }, { label: 'All Requests' }],
+  'idl-cancellations':[{ label: 'International Driving Licenses' }, { label: 'Cancellation Requests' }],
   'idl-new':     [{ label: 'International Driving Licenses' }, { label: 'All Requests', route: 'idl-requests' }, { label: 'New' }],
   'idl-detail':  [{ label: 'International Driving Licenses' }, { label: 'All Requests', route: 'idl-requests' }, { label: 'Detail' }],
   'idl-sales-report':  [{ label: 'International Driving Licenses' }, { label: 'IDL Sales Report' }],
@@ -133,6 +134,7 @@ function setBreadcrumb(route, typeFilter = null) {
 const ROUTES = {
   dashboard:     ()    => renderDashboard(),
   'idl-requests':param => renderIDLRequests(param),
+  'idl-cancellations':    ()    => renderIDLCancellations(),
   'idl-new':     ()    => renderIDLNew(),
   'idl-detail':  param => renderIDLDetail(param),
   'idl-sales-report': () => renderIDLSalesReport(),
@@ -222,7 +224,11 @@ export function navigate(route, param = null) {
   }
 
   // Pass param directly — string = detail ID, object = filter context
-  Promise.resolve(fn(param))
+  // Returned (not just fired) so callers that need to know when the route has
+  // actually finished rendering — not just been kicked off — can await it; see
+  // handleUaePassCallback()'s use of this to hold a loading overlay up until the
+  // real page is ready, instead of guessing at a timeout.
+  return Promise.resolve(fn(param))
     .catch(err => {
       console.error(`[navigate:${route}]`, err);
       content.innerHTML = `<div class="page-loading"><p style="color:var(--danger)"><i class="fa-solid fa-triangle-exclamation"></i> Error: ${err.message}</p></div>`;
@@ -437,8 +443,8 @@ export async function refreshBadges() {
       }
       const branchEl = document.getElementById('badge-cpd-branch-pending');
       if (branchEl) {
-        if (cs.pending > 0) { branchEl.textContent = cs.pending; branchEl.style.display = ''; }
-        else                  branchEl.style.display = 'none';
+        if (cs.branch_pending > 0) { branchEl.textContent = cs.branch_pending; branchEl.style.display = ''; }
+        else                         branchEl.style.display = 'none';
       }
       const financeEl = document.getElementById('badge-cpd-finance-pending');
       if (financeEl) {
@@ -479,8 +485,13 @@ function showLogin() {
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app-shell').classList.add('hidden');
   showLoginForm();
+  // The UAE PASS round-trip overlay has no business being visible on the login
+  // screen under any circumstance — force it hidden here as a safety net regardless
+  // of how we got to showLogin(), so a stuck overlay (e.g. after logging off) can
+  // never require a manual refresh to clear.
+  document.getElementById('uaepass-loading-overlay')?.classList.add('hidden');
 }
-function showApp()   { document.getElementById('login-screen').classList.add('hidden');    document.getElementById('app-shell').classList.remove('hidden'); }
+function showApp()   { document.getElementById('login-screen').classList.add('hidden');    document.getElementById('app-shell').classList.remove('hidden'); resetInactivityTimer(); }
 
 function populateUserInfo(user) {
   currentUser = user;
@@ -544,23 +555,61 @@ async function handleLogin(e) {
 // Lands here after UAE PASS redirects back with ?code=&state=. Runs before any
 // session exists, so this replaces boot()'s normal session-restore branch entirely.
 async function handleUaePassCallback() {
-  showLogin();
-  const box = document.querySelector('.login-box');
-  const formEl = document.getElementById('login-form');
-  formEl.classList.add('hidden');
-  const loadingEl = document.createElement('div');
-  loadingEl.style.cssText = 'text-align:center;padding:24px 0;color:#fff';
-  loadingEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size:1.4rem;margin-bottom:10px;display:block"></i>Signing you in with UAE PASS…';
-  box.insertBefore(loadingEl, formEl);
+  // The grey full-screen overlay (index.html) is already up by now — shown by an
+  // inline script before this module even loaded, specifically so there is no flash
+  // of the login screen, the sidebar, or any other content during this round trip
+  // (UAE PASS's own review flagged that flash as unacceptable). Belt-and-braces
+  // re-show here in case this ever runs through a path the inline script didn't
+  // catch. It only comes down once the real destination has actually finished
+  // rendering — not just been kicked off — via the awaited navigate() calls below.
+  const overlay = document.getElementById('uaepass-loading-overlay');
+  overlay?.classList.remove('hidden');
 
   const params = new URLSearchParams(window.location.search);
   const code  = params.get('code');
   const state = params.get('state');
-  history.replaceState(null, '', window.location.pathname); // drop code/state from the visible URL
+  // Drop code/state from the visible URL AND the "uaepass-auth-success" path segment
+  // itself — navigate() never touches window.location (it's a pure in-memory content
+  // swap, see its definition above), so without correcting the path here too, the
+  // browser's address bar is stuck on this callback URL for the rest of the tab's
+  // life. That's harmless while the SPA is up, but a later reload (e.g. refreshing
+  // right after logout) re-enters this exact function with no code/state to process
+  // — handled below by throwing straight to the catch block instead of hanging
+  // behind the overlay with nothing to actually process.
+  const cleanPath = window.location.pathname.replace(/\/uaepass-auth-success\/?$/, '/') || '/';
+  history.replaceState(null, '', cleanPath);
 
   try {
     if (!code || !state) throw new Error('Missing UAE PASS response — please try again');
     const data = await api.auth.uaepassCallback(code, state);
+
+    // Real "Continue with UAE PASS" Digital Vault consent round trip (see
+    // AuthController::dvConsentStart/uaePassCallback) — NOT a login, the portal
+    // session was never touched. BUT the full page reload during the external
+    // redirect wipes all in-memory JS state, including currentUser/csrfToken —
+    // showApp() only toggles DOM visibility, it doesn't repopulate either, so the
+    // sidebar (name, menu items) was coming back empty without this. Same
+    // session-restore call boot() makes further down for an ordinary page load.
+    if (data.proofOfPresentationRequestId) {
+      // Match the wording of the wizard's own "waiting for approval" modal (shown
+      // once pollDvStatus() takes over) so the citizen sees one consistent message
+      // through the whole round trip instead of a generic one that then changes.
+      const overlayText = document.getElementById('uaepass-loading-overlay-text');
+      if (overlayText) overlayText.textContent = 'Kindly open your UAE PASS app and approve the document sharing request.';
+      sessionStorage.setItem(`dv_consent_pending_${data.context}`, data.proofOfPresentationRequestId);
+      try {
+        const user = await api.auth.me();
+        setToken(user.csrf_token);
+        populateUserInfo(user);
+      } catch (e) {
+        console.error('[dv-consent] session restore failed', e);
+      }
+      showApp();
+      await navigate(data.context);
+      refreshBadges();
+      overlay?.classList.add('hidden');
+      return;
+    }
 
     // Walk-in "hand the device" flow (IDL or CPD): an officer sent the customer here
     // mid-request to verify via UAE PASS. This login just established the CUSTOMER's
@@ -575,23 +624,24 @@ async function handleUaePassCallback() {
         mobile_no: data.mobile_no, nationality: data.nationality, sex: data.sex,
         emirates_id: data.emirates_id,
       }));
-      loadingEl.remove();
-      formEl.classList.remove('hidden');
+      overlay?.classList.add('hidden');
+      showLogin();
       const bannerEl = document.createElement('div');
       bannerEl.style.cssText = 'background:rgba(76,175,80,.15);color:#4caf50;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:.85rem;display:flex;gap:8px;align-items:center';
       bannerEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> Customer verified via UAE PASS. Please hand the device back to the officer to log in and continue.';
-      box.insertBefore(bannerEl, formEl);
+      document.querySelector('.login-box').insertBefore(bannerEl, document.getElementById('login-form'));
       return;
     }
 
     setToken(data.csrf_token);
     populateUserInfo(data);
     showApp();
-    navigate(data.role_name === 'public' ? 'public-select-service' : defaultRoute(data.role_name));
+    await navigate(data.role_name === 'public' ? 'public-select-service' : defaultRoute(data.role_name));
     refreshBadges();
+    overlay?.classList.add('hidden');
   } catch (err) {
-    loadingEl.remove();
-    formEl.classList.remove('hidden');
+    overlay?.classList.add('hidden');
+    showLogin();
     const errEl = document.getElementById('login-error');
     errEl.textContent = err.message ?? 'UAE PASS login failed — please try again';
     errEl.classList.remove('hidden');
@@ -707,10 +757,35 @@ async function handleLogout() {
   try { await api.auth.logout(); } catch { /* ignore */ }
   clearToken();
   currentUser = null;
+  stopInactivityTimer();
   showLogin();
   document.getElementById('login-username').value = '';
   document.getElementById('login-password').value = '';
 }
+
+// ── Inactivity auto-logout ───────────────────────────────────────────────────────
+// Matches the backend's own session.gc_maxlifetime (api/index.php, 30 min) — once
+// the PHP session would already be dead server-side, there's no reason to leave a
+// stale-looking session on screen until the citizen happens to click something and
+// discovers it via a 401. Logs out client-side at the same threshold instead, with
+// a clear reason shown.
+const INACTIVITY_LIMIT_MS = 30 * 60 * 1000;
+let inactivityTimer = null;
+function resetInactivityTimer() {
+  if (document.getElementById('app-shell')?.classList.contains('hidden')) return; // not logged in — nothing to time out
+  clearTimeout(inactivityTimer);
+  inactivityTimer = setTimeout(() => {
+    handleLogout();
+    toast('You have been logged out due to inactivity. Please sign in again.', 'error', 6000);
+  }, INACTIVITY_LIMIT_MS);
+}
+function stopInactivityTimer() {
+  clearTimeout(inactivityTimer);
+  inactivityTimer = null;
+}
+['mousedown', 'keydown', 'touchstart', 'scroll'].forEach(evt => {
+  window.addEventListener(evt, resetInactivityTimer, { passive: true });
+});
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 async function boot() {
@@ -754,8 +829,19 @@ async function boot() {
   // point (the callback exchange is what creates one), so this has to run before the
   // session-restore attempt below, not alongside the payment-success-style routes.
   if (window.location.pathname.split('/').filter(Boolean).pop() === 'uaepass-auth-success') {
-    await handleUaePassCallback();
-    return;
+    const cbParams = new URLSearchParams(window.location.search);
+    if (cbParams.get('code') && cbParams.get('state')) {
+      await handleUaePassCallback();
+      return;
+    }
+    // Stale URL from an earlier round trip with nothing left to process this time
+    // (navigate() never touches window.location — see its definition above — so this
+    // path segment can persist for the rest of the tab's life once landed on). Clean
+    // it up silently and fall through to the normal boot flow below instead of
+    // calling handleUaePassCallback(), which would flash the "Signing you in with
+    // UAE PASS…" loader for no reason — there's nothing here to sign in with.
+    const cleanPath = window.location.pathname.replace(/\/uaepass-auth-success\/?$/, '/') || '/';
+    history.replaceState(null, '', cleanPath);
   }
 
   // Attempt session restore
